@@ -24,6 +24,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: ui/package-lock.json
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Build the actual macOS application
         run: bash scripts/build-app.sh
       - name: Workbench checks
