@@ -89,7 +89,7 @@ export function ProjectDialog({
         className="modal-body project-form"
         onSubmit={open}
       >
-        <p>在同一个工作区中使用文件、终端和浏览器。</p>
+        <p>选择的目录会加入左侧项目列表，可在目录下新建终端。</p>
         <label htmlFor="project-path">项目文件夹</label>
         <div className="folder-input">
           <input

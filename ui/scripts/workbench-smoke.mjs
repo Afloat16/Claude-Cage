@@ -4,7 +4,10 @@ import { fileURLToPath } from "node:url";
 import { createWorkbench } from "./workbench-fixture.mjs";
 
 const output = fileURLToPath(
-  new URL("../../docs/test-reports/2026-10-31-codex-layout/", import.meta.url),
+  new URL(
+    "../../docs/test-reports/2026-10-31-project-browser/",
+    import.meta.url,
+  ),
 );
 await fs.mkdir(output, { recursive: true });
 const { browser, page, state, errors } = await createWorkbench();
@@ -12,7 +15,7 @@ const checks = [];
 const shot = (name) =>
   page.screenshot({ path: output + name + ".png", animations: "disabled" });
 const settings = () => page.getByRole("button", { name: /^设置/ }).click();
-const tabs = () => page.getByRole("tablist", { name: "工作区标签" });
+const tabs = () => page.getByRole("tablist", { name: "浏览器标签页" });
 try {
   await shot("main");
   await page
@@ -62,14 +65,27 @@ try {
   await page
     .getByRole("heading", { name: "design-lab", exact: true })
     .waitFor();
-  assert.ok(
-    (
-      await page.evaluate(() =>
-        JSON.parse(localStorage.getItem("cage-projects")),
-      )
-    ).includes(state.chosenFolder),
+  await page
+    .getByRole("region", { name: "项目 design-lab", exact: true })
+    .waitFor();
+  assert.ok(state.status.projects.includes(state.chosenFolder));
+  await page.evaluate(() =>
+    localStorage.setItem(
+      "cage-projects",
+      JSON.stringify(["/fake/local-history"]),
+    ),
   );
-  checks.push("本地选择器入口、异步失败保留路径、成功打开、最近项目刷新读回");
+  await page.reload();
+  await page
+    .getByRole("region", { name: "项目 design-lab", exact: true })
+    .waitFor();
+  assert.equal(
+    await page.getByText("local-history", { exact: true }).count(),
+    0,
+  );
+  assert.equal(await page.getByText("环境标签", { exact: true }).count(), 0);
+  assert.equal(await page.getByText("最近项目", { exact: true }).count(), 0);
+  checks.push("真实目录列表刷新读回、不使用本地历史、项目打开失败保留路径");
   await page
     .getByRole("heading", { name: "design-lab", exact: true })
     .waitFor();
@@ -89,16 +105,18 @@ try {
   await page.getByRole("button", { name: "打开地址", exact: true }).click();
   await page.getByRole("tab", { name: "本地预览", exact: true }).waitFor();
   assert.equal(state.tabs[0].url, "http://localhost:3000/");
-  await page
-    .getByRole("button", { name: "管理 本地预览", exact: true })
-    .click();
+  await tabs()
+    .getByRole("tab", { name: "本地预览", exact: true })
+    .click({ button: "right" });
   await page.getByRole("menuitem", { name: "置顶标签", exact: true }).click();
   assert.equal(await tabs().getByRole("tab").first().innerText(), "本地预览");
-  await page.getByRole("button", { name: "打开文件", exact: true }).click();
+  await page.getByRole("button", { name: "项目文件", exact: true }).click();
   await page
     .getByRole("tab", { name: "文件 · design-lab", exact: true })
     .waitFor();
-  await page.getByRole("button", { name: "关闭当前标签", exact: true }).click();
+  await page
+    .getByRole("button", { name: "关闭 文件 · design-lab", exact: true })
+    .click();
   await page.getByRole("dialog", { name: "关闭文件编辑器？" }).waitFor();
   await page
     .getByRole("dialog")
@@ -106,26 +124,68 @@ try {
     .getByRole("button", { name: "取消", exact: true })
     .click();
   assert.equal(state.tabs.length, 2);
-  await page
-    .getByRole("tab", { name: "文件 · design-lab", exact: true })
+  assert.equal(
+    await page.locator(".workspace-sidebar").getByRole("tab").count(),
+    1,
+  );
+  assert.equal(await tabs().getByRole("tab").count(), 2);
+  assert.equal(await page.locator(".content-breadcrumb").count(), 0);
+  await page.getByRole("button", { name: "新建网页", exact: true }).click();
+  await tabs().getByRole("tab", { name: "新标签页", exact: true }).waitFor();
+  await tabs()
+    .getByRole("tab", { name: "新标签页", exact: true })
     .locator("..")
-    .dragTo(page.getByRole("tab", { name: "开发终端" }).locator(".."));
+    .dragTo(
+      tabs()
+        .getByRole("tab", { name: "文件 · design-lab", exact: true })
+        .locator(".."),
+    );
   await page.reload();
-  await page.getByRole("tab", { name: "开发终端" }).waitFor();
+  await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
   assert.deepEqual(await tabs().getByRole("tab").allTextContents(), [
     "本地预览",
+    "新标签页",
     "文件 · design-lab",
-    "开发终端",
   ]);
-  await page.keyboard.press("Meta+3");
+  await page.keyboard.press("Meta+2");
   await page.waitForFunction(
     () =>
-      document.querySelector('[role="tab"][aria-selected="true"]')
+      document.querySelector('.browser-tabs [aria-selected="true"]')
+        ?.textContent === "新标签页",
+  );
+  await page
+    .getByRole("button", { name: "关闭 新标签页", exact: true })
+    .click();
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.browser-tabs [aria-selected="true"]')
+        ?.textContent === "文件 · design-lab",
+  );
+  assert.equal(
+    state.active,
+    state.tabs.find((tab) => tab.kind === "editor").id,
+  );
+  await page.getByRole("tab", { name: "开发终端", exact: true }).click();
+  await page.keyboard.press("Meta+1");
+  await page.waitForFunction(
+    () =>
+      document.querySelector('.sidebar-tabs [aria-selected="true"]')
         ?.textContent === "开发终端",
   );
+  const pageCount = state.tabs.length;
+  await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
+  assert.equal(state.tabs.length, pageCount);
+  assert.equal(
+    await tabs()
+      .getByRole("tab", { name: "文件 · design-lab", exact: true })
+      .getAttribute("aria-selected"),
+    "true",
+  );
+  await shot("workspace-browser");
+  await page.getByRole("tab", { name: "开发终端", exact: true }).click();
   await shot("workspace-terminal");
   checks.push(
-    "终端/浏览器/文件入口、地址导航、标签重命名/置顶/拖动及刷新、按显示顺序快捷切换、文件关闭取消",
+    "浏览器顶部标签、目录下仅终端、浏览器恢复原页、重命名/置顶/排序刷新、分组快捷键、关闭后激活相邻网页",
   );
   const connections = state.terminalConnections;
   await settings();
@@ -213,12 +273,52 @@ try {
     await page.getByRole("tab", { name: "开发终端", exact: true }).count(),
     1,
   );
+  await page
+    .getByRole("button", { name: "在 another-project 新建终端", exact: true })
+    .click();
+  await page
+    .getByRole("region", { name: "项目 another-project", exact: true })
+    .getByRole("tab", { name: "终端 2", exact: true })
+    .waitFor();
+  assert.equal(
+    state.terminals[1].workspace,
+    "/Users/shihao/Projects/another-project",
+  );
+  await page
+    .getByRole("button", { name: "在 design-lab 新建终端", exact: true })
+    .click();
+  await page
+    .getByRole("region", { name: "项目 design-lab", exact: true })
+    .getByRole("tab", { name: "终端 3", exact: true })
+    .waitFor();
+  assert.equal(state.terminals[2].workspace, state.chosenFolder);
+  assert.equal(
+    state.settings.workspace,
+    "/Users/shihao/Projects/another-project",
+  );
+  await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
+  await shot("browser-minimum");
+  assert.equal(
+    await page.locator(".workspace-sidebar").getByRole("tab").count(),
+    3,
+  );
+  assert.equal(await tabs().getByRole("tab").count(), 2);
+  await page.getByRole("button", { name: "项目文件", exact: true }).click();
+  await tabs()
+    .getByRole("tab", { name: "文件 · design-lab", exact: true })
+    .waitFor();
+  assert.equal(state.tabs.filter((tab) => tab.kind === "editor").length, 1);
+  checks.push(
+    "两个项目终端各自归组、指定目录新建不受最后打开项目影响、浏览器与终端保持运行",
+  );
   await page.getByRole("button", { name: "工作台", exact: true }).click();
   await shot("main-minimum");
   await page.getByRole("button", { name: "收起侧栏", exact: true }).click();
   await page.reload();
   await page.getByRole("button", { name: "展开侧栏", exact: true }).waitFor();
   await page.setViewportSize({ width: 375, height: 812 });
+  await page.keyboard.press("Meta+t");
+  await tabs().waitFor();
   await shot("compact-workspace");
   assert.equal(
     await page.evaluate(

@@ -336,10 +336,15 @@ func (s *Server) operationContext() context.Context {
 	return context.Background()
 }
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	projects, err := s.projectPaths()
+	if err != nil {
+		requestError(w, errors.New("无法读取项目列表，请检查项目配置"))
+		return
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
-	jsonReply(w, map[string]any{"ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": s.projectError, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety})
+	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": s.projectError, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety})
 }
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	c, err := loadConfig(s.configPath)

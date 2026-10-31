@@ -42,7 +42,7 @@ try {
     .getByRole("button")
     .allTextContents();
   assert.match(links[0], /工作台/);
-  assert.match(links[1], /打开浏览器/);
+  assert.match(links[1], /浏览器/);
   await shot("running");
   await page.getByRole("button", { name: /^打开浏览器/ }).click();
   await page.getByLabel("网页地址或搜索").waitFor();
@@ -72,6 +72,7 @@ try {
   await page.reload();
   await page.getByRole("heading", { name: "Cage 环境已就绪" }).waitFor();
   await page.getByRole("button", { name: /^打开浏览器/ }).click();
+  await page.getByRole("button", { name: "新建网页", exact: true }).click();
   await page.waitForFunction(
     () =>
       document.querySelector('[aria-label="网页地址或搜索"]')?.value ===

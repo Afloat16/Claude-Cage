@@ -25,11 +25,12 @@ import { SettingsPanel } from "./settings";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
+import { WorkspaceTabs } from "./workspace-tabs";
 import { ProjectDialog } from "./project-dialog";
 import {
   readLocal,
   orderedTabs,
-  rememberProject,
+  projectName,
   tabName,
 } from "./workspace-state.mjs";
 import { SafetyPanel } from "./safety";
@@ -55,7 +56,7 @@ function App() {
     [sidebarCollapsed, setSidebarCollapsed] = useState(
       readLocal("cage-sidebar-collapsed", false),
     ),
-    [projects, setProjects] = useState(readLocal("cage-projects", [])),
+    [selectedProject, setSelectedProject] = useState(""),
     [savedTabs, setSavedTabs] = useState(readLocal("cage-tab-layout", {})),
     [projectDialog, setProjectDialog] = useState(null),
     [rename, setRename] = useState(null),
@@ -71,6 +72,7 @@ function App() {
   const remote = useRef(),
     addressField = useRef(),
     activeRef = useRef(active),
+    lastBrowserTab = useRef(""),
     readyRef = useRef(false),
     browserIds = useRef(new Set()),
     initialized = useRef(false),
@@ -84,6 +86,10 @@ function App() {
     showHome = home || !status?.vm_running || !current,
     showRemote = status?.ready && !terminal && !showHome;
   const running = Boolean(status?.vm_running);
+  const projects = status?.projects || [];
+  const workspace = selectedProject || status?.workspace;
+  const contentWorkspace =
+    terminal && !showHome ? current.workspace : workspace;
   const setupProxy = needsProxySetup(settings, status, proxy);
   const network = connectionError
     ? { mode: "unknown", label: "外网状态待确认" }
@@ -125,6 +131,7 @@ function App() {
     setActive(id);
     localStorage.setItem("cage-active", id);
     const tab = tabs.find((t) => t.id === id);
+    if (tab?.kind === "terminal") setSelectedProject(tab.workspace);
     if (tab && tab.kind !== "terminal") {
       try {
         await api("/browser/activate", { id });
@@ -166,10 +173,20 @@ function App() {
     return result;
   };
   const newPage = () => openBrowserPage();
-  const newTerminal = async () => {
+  const openBrowser = () => {
+    const tab =
+      tabs.find(
+        (t) => t.id === lastBrowserTab.current && t.kind !== "terminal",
+      ) ||
+      tabs.find((t) => t.id === browser.active && t.kind !== "terminal") ||
+      tabs.find((t) => t.kind !== "terminal");
+    return tab ? select(tab.id) : newPage();
+  };
+  const newTerminal = async (path = workspace) => {
     setHome(false);
-    const result = await action("/terminals");
+    const result = await action("/terminals", { workspace: path });
     if (result) {
+      setSelectedProject(result.workspace);
       const tab = {
         ...result,
         id: "terminal:" + result.id,
@@ -180,9 +197,10 @@ function App() {
       setActive(tab.id);
     }
   };
-  const openEditor = async () => {
+  const newTerminalHere = () => newTerminal(contentWorkspace);
+  const openEditor = async (path = workspace) => {
     setHome(false);
-    const result = await action("/browser/editor");
+    const result = await action("/browser/editor", { workspace: path });
     if (result) {
       setTabs((list) =>
         list.some((t) => t.id === result.id)
@@ -192,8 +210,8 @@ function App() {
               {
                 id: result.id,
                 kind: "editor",
-                workspace: status.workspace,
-                url: `http://127.0.0.1:18080/?folder=${encodeURIComponent(status.workspace)}`,
+                workspace: path,
+                url: `http://127.0.0.1:18080/?folder=${encodeURIComponent(path)}`,
                 title: "文件编辑器",
               },
             ],
@@ -232,8 +250,15 @@ function App() {
     }
     setTabs((list) => list.filter((t) => t.id !== tab.id));
     if (active === tab.id) {
-      const at = tabs.findIndex((t) => t.id === tab.id);
-      setActive(tabs[at - 1]?.id || tabs[at + 1]?.id || "");
+      const group = displayTabs.filter((item) =>
+        tab.kind === "terminal"
+          ? item.kind === "terminal" && item.workspace === tab.workspace
+          : item.kind !== "terminal",
+      );
+      const at = group.findIndex((item) => item.id === tab.id);
+      const next = group[at + 1] || group[at - 1];
+      if (next) await select(next.id);
+      else setActive("");
     }
   };
   const navigate = async (e) => {
@@ -404,6 +429,8 @@ function App() {
     return () => stream.close();
   }, [status?.ready]);
   useEffect(() => {
+    if (current && current.kind !== "terminal")
+      lastBrowserTab.current = current.id;
     if (
       current?.kind !== "terminal" &&
       document.activeElement !== addressField.current
@@ -464,7 +491,7 @@ function App() {
         return;
       }
       if (k === "t" && !event.shiftKey) handle = newPage;
-      if (k === "enter" && event.shiftKey) handle = newTerminal;
+      if (k === "enter" && event.shiftKey) handle = newTerminalHere;
       if (k === "l")
         handle = () => {
           addressField.current?.focus();
@@ -472,15 +499,15 @@ function App() {
         };
       if (k === "w" && current) handle = () => closeTab(current);
       if (/^[1-9]$/.test(k)) {
-        const tab = k === "9" ? displayTabs.at(-1) : displayTabs[Number(k) - 1];
+        const tab = k === "9" ? switchTabs.at(-1) : switchTabs[Number(k) - 1];
         if (tab) handle = () => select(tab.id);
       }
       if (event.shiftKey && ["[", "]", "{", "}"].includes(k)) {
         const direction = ["[", "{"].includes(k) ? -1 : 1,
-          at = displayTabs.findIndex((t) => t.id === active),
+          at = switchTabs.findIndex((t) => t.id === active),
           tab =
-            displayTabs[
-              (at + direction + displayTabs.length) % displayTabs.length
+            switchTabs[
+              (at + direction + switchTabs.length) % switchTabs.length
             ];
         if (tab) handle = () => select(tab.id);
       }
@@ -541,7 +568,8 @@ function App() {
       )
         return;
       if (command === "newTab" && status?.ready) await newPage();
-      if (command === "newTerminal" && status?.vm_running) await newTerminal();
+      if (command === "newTerminal" && status?.vm_running)
+        await newTerminalHere();
       if (command === "closeTab") {
         if (dialog) {
           const resolve = dialog.resolve;
@@ -601,13 +629,27 @@ function App() {
     rename,
     showHome,
     savedTabs,
+    selectedProject,
   ]);
-  const project = status?.environment_workspace
-    ? "Cage 环境"
-    : status?.workspace?.split("/").filter(Boolean).at(-1) || "Cage 环境";
+  const project = projectName(contentWorkspace);
   const tabLayoutKey = status?.environment_directory || status?.workspace;
   const metadata = savedTabs[tabLayoutKey] || {};
   const displayTabs = orderedTabs(tabs, metadata);
+  const browserTabs = displayTabs.filter((tab) => tab.kind !== "terminal");
+  const switchTabs =
+    terminal && !showHome
+      ? displayTabs.filter(
+          (tab) =>
+            tab.kind === "terminal" && tab.workspace === current.workspace,
+        )
+      : browserTabs;
+  const renameTab = (tab) =>
+    setRename({ id: tab.id, title: tabName(tab, metadata, project) });
+  const pinTab = (id) =>
+    changeTabMetadata({
+      ...metadata,
+      [id]: { ...metadata[id], pinned: !metadata[id]?.pinned },
+    });
   const persist = (key, value, setter) => {
     try {
       localStorage.setItem(key, JSON.stringify(value));
@@ -630,22 +672,13 @@ function App() {
   };
   const openedProject = async (path) => {
     await refreshSettings();
-    persist("cage-projects", rememberProject(projects, path), setProjects);
+    setSelectedProject(path);
     setProjectDialog(null);
     setHome(true);
   };
   useEffect(() => {
-    if (!status?.workspace || status.environment_workspace) return;
-    setProjects((previous) => {
-      const next = rememberProject(previous, status.workspace);
-      try {
-        localStorage.setItem("cage-projects", JSON.stringify(next));
-      } catch {
-        /* Opening a project still works without recent history. */
-      }
-      return next;
-    });
-  }, [status?.workspace, status?.environment_workspace]);
+    if (status?.workspace) setSelectedProject(status.workspace);
+  }, [status?.workspace]);
   const finishDialog = (value) => {
     const resolve = dialog.resolve;
     setDialog(null);
@@ -769,7 +802,8 @@ function App() {
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
-            workspace={status.workspace}
+            workspace={selectedProject || status.workspace}
+            defaultWorkspace={status.environment_directory}
             projects={projects}
             tabs={displayTabs}
             saved={metadata}
@@ -784,24 +818,12 @@ function App() {
             onOpenProject={(path = "") => setProjectDialog({ path })}
             onSelect={select}
             onClose={closeTab}
-            onRename={(tab) =>
-              setRename({ id: tab.id, title: tabName(tab, metadata, project) })
-            }
-            onPin={(id) =>
-              changeTabMetadata({
-                ...metadata,
-                [id]: { ...metadata[id], pinned: !metadata[id]?.pinned },
-              })
-            }
+            onRename={renameTab}
+            onPin={pinTab}
             onReorder={reorder}
-            onForgetProject={(path) =>
-              persist(
-                "cage-projects",
-                projects.filter((item) => item !== path),
-                setProjects,
-              )
-            }
-            onNew={(kind) => (kind === "terminal" ? newTerminal() : newPage())}
+            onProjectSelect={setSelectedProject}
+            onNewTerminal={newTerminal}
+            onBrowser={openBrowser}
             onEditor={openEditor}
             onSettings={() => openSettings()}
             onSafety={() => setSafetyOpen(true)}
@@ -812,68 +834,114 @@ function App() {
         )}
         <div className="workbench-main">
           <header className="chrome">
-            <div className="content-heading">
-              {sidebarCollapsed && (
-                <button
-                  className="icon-button"
-                  aria-label="展开侧栏"
-                  title="展开侧栏"
-                  onClick={() =>
-                    persist(
-                      "cage-sidebar-collapsed",
-                      false,
-                      setSidebarCollapsed,
-                    )
-                  }
-                >
-                  <PanelLeftOpen size={18} />
-                </button>
-              )}
-              <div className="content-breadcrumb">
-                <button onClick={() => setHome(true)} title={status.workspace}>
-                  <FolderOpen size={15} />
-                  <span>{project}</span>
-                </button>
-                {!showHome && current && (
-                  <>
-                    <ChevronRight size={13} />
-                    <span className="current-title">
-                      {tabName(current, metadata, project)}
-                    </span>
-                  </>
-                )}
-              </div>
-              <div className="heading-actions">
-                <button
-                  className="quiet-button"
-                  onClick={openEditor}
-                  disabled={!status.ready || busy}
-                >
-                  <FileCode2 size={15} />
-                  <span>打开文件</span>
-                </button>
-                <button
-                  className="icon-button"
-                  aria-label="新建终端"
-                  title="新建终端 ⌘⇧↵"
-                  onClick={newTerminal}
-                  disabled={!running || busy}
-                >
-                  <TerminalSquare size={17} />
-                </button>
-                {current && !showHome && (
+            {!showHome && !terminal ? (
+              <div className="browser-tab-bar">
+                {sidebarCollapsed && (
                   <button
                     className="icon-button"
-                    aria-label="关闭当前标签"
-                    title="关闭当前标签 ⌘W"
-                    onClick={() => closeTab(current)}
-                    disabled={busy}
+                    aria-label="展开侧栏"
+                    onClick={() =>
+                      persist(
+                        "cage-sidebar-collapsed",
+                        false,
+                        setSidebarCollapsed,
+                      )
+                    }
                   >
-                    <X size={16} />
+                    <PanelLeftOpen size={18} />
                   </button>
                 )}
+                <WorkspaceTabs
+                  tabs={browserTabs}
+                  saved={metadata}
+                  active={active}
+                  label="浏览器标签页"
+                  horizontal
+                  busy={busy}
+                  ready={status.ready}
+                  onSelect={select}
+                  onClose={closeTab}
+                  onRename={renameTab}
+                  onPin={pinTab}
+                  onReorder={reorder}
+                />
+                <button
+                  className="icon-button browser-new-tab"
+                  aria-label="新建网页"
+                  title="新建网页 ⌘T"
+                  disabled={!status.ready || busy}
+                  onClick={newPage}
+                >
+                  <Plus size={17} />
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="content-heading">
+                {sidebarCollapsed && (
+                  <button
+                    className="icon-button"
+                    aria-label="展开侧栏"
+                    title="展开侧栏"
+                    onClick={() =>
+                      persist(
+                        "cage-sidebar-collapsed",
+                        false,
+                        setSidebarCollapsed,
+                      )
+                    }
+                  >
+                    <PanelLeftOpen size={18} />
+                  </button>
+                )}
+                <div className="content-breadcrumb">
+                  <button
+                    onClick={() => setHome(true)}
+                    title={contentWorkspace}
+                  >
+                    <FolderOpen size={15} />
+                    <span>{project}</span>
+                  </button>
+                  {!showHome && current && (
+                    <>
+                      <ChevronRight size={13} />
+                      <span className="current-title">
+                        {tabName(current, metadata, project)}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <div className="heading-actions">
+                  <button
+                    className="quiet-button"
+                    onClick={() => openEditor(contentWorkspace)}
+                    disabled={!status.ready || busy}
+                  >
+                    <FileCode2 size={15} />
+                    <span>打开文件</span>
+                  </button>
+                  <button
+                    className="icon-button"
+                    aria-label="新建终端"
+                    title="新建终端 ⌘⇧↵"
+                    onClick={newTerminalHere}
+                    disabled={!running || busy}
+                  >
+                    <TerminalSquare size={17} />
+                  </button>
+                  {current && !showHome && (
+                    <button
+                      className="icon-button"
+                      aria-label="关闭当前标签"
+                      title="关闭当前标签 ⌘W"
+                      onClick={() => closeTab(current)}
+                      disabled={busy}
+                    >
+                      <X size={16} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
             {!showHome && (
               <div className="navigation-row">
                 {!terminal ? (
@@ -983,7 +1051,7 @@ function App() {
                     </div>
                     <button
                       className="text-button"
-                      onClick={newTerminal}
+                      onClick={newTerminalHere}
                       disabled={busy}
                     >
                       <Plus size={15} />
@@ -996,7 +1064,7 @@ function App() {
                   title="打开文件编辑器"
                   aria-label="打开文件编辑器"
                   disabled={!status.ready || busy}
-                  onClick={openEditor}
+                  onClick={() => openEditor(contentWorkspace)}
                 >
                   <FileCode2 size={17} />
                 </button>
@@ -1189,12 +1257,12 @@ function App() {
                   </div>
                   {running && (
                     <div className="welcome-shortcuts">
-                      <button onClick={newTerminal} disabled={busy}>
+                      <button onClick={newTerminalHere} disabled={busy}>
                         <TerminalSquare size={16} />
                         新建终端
                       </button>
                       <button
-                        onClick={openEditor}
+                        onClick={() => openEditor(contentWorkspace)}
                         disabled={!status.ready || busy}
                       >
                         <FileCode2 size={16} />

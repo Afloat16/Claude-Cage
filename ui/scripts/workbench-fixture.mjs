@@ -63,6 +63,7 @@ export async function createWorkbench({
     status: {
       environment_directory: "/Users/shihao/.claude-cage-workspace",
       environment_workspace: true,
+      projects: ["/Users/shihao/.claude-cage-workspace"],
       ready: false,
       vm_running: false,
       keyboard: "mac",
@@ -152,6 +153,8 @@ export async function createWorkbench({
         Object.assign(state.settings, body);
         state.status.keyboard = body.keyboard;
         if (switching) {
+          if (!state.status.projects.includes(body.workspace))
+            state.status.projects.push(body.workspace);
           state.status.environment_workspace = body.workspace.endsWith(
             "/.claude-cage-workspace",
           );
@@ -190,10 +193,19 @@ export async function createWorkbench({
     else if (path === "/terminals" && request.method() === "GET")
       result = state.terminals;
     else if (path === "/terminals") {
+      if (
+        !state.status.projects.includes(
+          body?.workspace || state.settings.workspace,
+        )
+      )
+        return route.fulfill({
+          status: 400,
+          body: "请先通过打开项目添加该文件夹",
+        });
       const tab = {
         id: "term-" + ++state.sequence,
         title: "终端 " + (state.terminals.length + 1),
-        workspace: state.settings.workspace,
+        workspace: body?.workspace || state.settings.workspace,
       };
       state.terminals.push(tab);
       result = tab;
@@ -205,19 +217,22 @@ export async function createWorkbench({
         (tab) => tab.id !== path.split("/").at(-1),
       );
     } else if (path === "/browser/new" || path === "/browser/editor") {
+      const workspace = body?.workspace || state.settings.workspace;
+      if (path.endsWith("editor") && !state.status.projects.includes(workspace))
+        return route.fulfill({
+          status: 400,
+          body: "请先通过打开项目添加该文件夹",
+        });
       let tab =
         path.endsWith("editor") &&
         state.tabs.find(
-          (tab) =>
-            tab.kind === "editor" && tab.workspace === state.settings.workspace,
+          (tab) => tab.kind === "editor" && tab.workspace === workspace,
         );
       if (!tab) {
         tab = {
           id: "web-" + ++state.sequence,
           kind: path.endsWith("editor") ? "editor" : "web",
-          workspace: path.endsWith("editor")
-            ? state.settings.workspace
-            : undefined,
+          workspace: path.endsWith("editor") ? workspace : undefined,
           title: path.endsWith("editor") ? "文件编辑器" : "新标签页",
           url: body?.url || state.settings.browser_home_url,
         };
@@ -226,9 +241,10 @@ export async function createWorkbench({
       state.active = tab.id;
       result = tab;
     } else if (path === "/browser/activate") state.active = body.id;
-    else if (path === "/browser/close")
+    else if (path === "/browser/close") {
       state.tabs = state.tabs.filter((tab) => tab.id !== body.id);
-    else if (path === "/browser/navigate")
+      if (state.active === body.id) state.active = state.tabs.at(-1)?.id || "";
+    } else if (path === "/browser/navigate")
       Object.assign(
         state.tabs.find((tab) => tab.id === body.id),
         { url: body.url, title: "本地预览" },

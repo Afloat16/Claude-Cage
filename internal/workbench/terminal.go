@@ -106,12 +106,23 @@ func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "最多保留 12 个终端，请先关闭不用的会话", 409)
 		return
 	}
-	if err := s.ensureProjectShare(s.workspace()); err != nil {
+	var input struct {
+		Workspace string `json:"workspace"`
+	}
+	if !readJSON(w, r, &input) {
+		return
+	}
+	workspace, err := s.projectWorkspace(input.Workspace)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	if err := s.ensureProjectShare(workspace); err != nil {
 		requestError(w, err)
 		return
 	}
 	name := vmname.Name(s.environmentDir())
-	script := "cd " + shellescape.Quote(s.workspace()) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 bash -l"
+	script := "cd " + shellescape.Quote(workspace) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 bash -l"
 	cmd := s.sshCommand(context.Background(), "-tt", "lima-"+name, "--", script)
 	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 100, Rows: 30})
 	if err != nil {
@@ -122,7 +133,7 @@ func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
 	s.terminalSequence++
 	number := s.terminalSequence
 	s.mu.Unlock()
-	t := &terminalSession{workspace: s.workspace(), id: randomToken()[:16], title: fmt.Sprintf("终端 %d", number), cmd: cmd, file: file, clients: map[chan []byte]bool{}}
+	t := &terminalSession{workspace: workspace, id: randomToken()[:16], title: fmt.Sprintf("终端 %d", number), cmd: cmd, file: file, clients: map[chan []byte]bool{}}
 	s.mu.Lock()
 	s.terminals[t.id] = t
 	s.mu.Unlock()

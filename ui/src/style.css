@@ -1234,8 +1234,7 @@ svg {
   font-size: 0.9286rem;
   font-weight: 500;
 }
-.project-disclosure span,
-.recent-project > button:first-child span {
+.project-disclosure span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1325,7 +1324,7 @@ svg {
 .sidebar-tab.active .tab-more {
   opacity: 1;
 }
-.sidebar-menu {
+.workspace-tab-menu {
   position: fixed;
   left: 24px;
   top: auto;
@@ -1341,31 +1340,6 @@ svg {
   line-height: 1.7;
   padding: 4px 10px 4px 24px;
   margin: 0;
-}
-.recent-projects {
-  margin-top: 24px;
-}
-.recent-project {
-  display: flex;
-  border-radius: 7px;
-  align-items: center;
-}
-.recent-project > button:first-child {
-  flex: 1;
-  min-width: 0;
-  justify-content: flex-start;
-  border: 0;
-  background: transparent;
-  padding: 8px 10px;
-  font-size: 0.9286rem;
-}
-.recent-project > .icon-button {
-  opacity: 0;
-  width: 24px;
-}
-.recent-project:hover > .icon-button,
-.recent-project:focus-within > .icon-button {
-  opacity: 1;
 }
 .sidebar-bottom {
   padding: 8px 0 12px;
@@ -1965,4 +1939,73 @@ svg {
 }
 .environment-summary small {
   color: var(--muted);
+}
+
+/* Browser pages share a horizontal strip; project terminals stay in the sidebar. */
+.sidebar-project + .sidebar-project {
+  margin-top: 8px;
+}
+.project-heading.current-project .project-disclosure {
+  color: var(--strong);
+}
+.browser-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 12px 0;
+  height: 48px;
+  background: var(--chrome);
+}
+.browser-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  align-self: stretch;
+}
+.browser-tab {
+  display: flex;
+  align-items: center;
+  flex: 0 0 220px;
+  min-width: 120px;
+  max-width: 240px;
+  border-radius: 8px 8px 0 0;
+  color: var(--muted);
+}
+.browser-tab:hover {
+  background: var(--hover);
+}
+.browser-tab.active {
+  background: var(--paper);
+  color: var(--strong);
+}
+.browser-tab > [role="tab"] {
+  background: transparent;
+  border: 0;
+  border-radius: 8px 0 0 0;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 12px;
+  color: inherit;
+  font-size: 0.9286rem;
+}
+.browser-tab > [role="tab"] > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.browser-tab .tab-close {
+  width: 24px;
+  height: 26px;
+  min-height: 26px;
+  margin-right: 4px;
+  color: inherit;
+}
+.browser-tab-bar > .icon-button {
+  flex-shrink: 0;
 }

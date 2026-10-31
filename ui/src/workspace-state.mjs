@@ -19,10 +19,6 @@ export function orderedTabs(tabs, saved) {
   });
 }
 
-export function rememberProject(projects, path) {
-  return [path, ...projects.filter((item) => item !== path)].slice(0, 12);
-}
-
 export const projectName = (path) =>
   path?.split("/").filter(Boolean).at(-1) || "新项目";
 

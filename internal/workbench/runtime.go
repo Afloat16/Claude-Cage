@@ -511,7 +511,12 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			defer s.op.Unlock()
-			input.Workspace = s.workspace()
+			workspace, err := s.projectWorkspace(input.Workspace)
+			if err != nil {
+				requestError(w, err)
+				return
+			}
+			input.Workspace = workspace
 			if err := s.ensureProjectShare(input.Workspace); err != nil {
 				requestError(w, err)
 				return
