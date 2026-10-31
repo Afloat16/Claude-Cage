@@ -48,9 +48,6 @@ export async function createWorkbench({
     settings: {
       workspace: "/Users/shihao/.claude-cage-workspace",
       browser_home_url: "https://www.bing.com/",
-      proxy_url: "socks5://127.0.0.1:17896",
-      proxy_username: "",
-      has_credentials: false,
       dns_url: "https://cloudflare-dns.com/dns-query",
       timezone: "Asia/Shanghai",
       locale: "zh_CN.UTF-8",
@@ -136,7 +133,27 @@ export async function createWorkbench({
       }
       return route.fulfill({ json: state.appearance });
     }
-    if (path === "/settings" && request.method() === "GET")
+    if (path === "/proxy")
+      result = {
+        active: true,
+        selected: "fixture-node",
+        sources: [
+          {
+            id: "fixture-source",
+            name: "测试来源",
+            nodes: [{ id: "fixture-node", name: "测试节点", type: "http" }],
+            remote: false,
+            interval_hours: 0,
+          },
+        ],
+        port: 17896,
+        core_available: true,
+        running: true,
+        state: state.status.vm_running ? "ready" : "prepared",
+        state_label: state.status.vm_running ? "已联网" : "待启动环境",
+        network_open: Boolean(state.status.vm_running),
+      };
+    else if (path === "/settings" && request.method() === "GET")
       result = state.settings;
     else if (path === "/status")
       result = { ...state.status, workspace: state.settings.workspace };

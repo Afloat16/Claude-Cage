@@ -78,16 +78,11 @@ func (s *Server) prepareEnvironment() error {
 
 type Settings struct {
 	Preferences
-	ProxyURL         string          `json:"proxy_url"`
-	ProxyUsername    string          `json:"proxy_username"`
-	ProxyPassword    string          `json:"proxy_password,omitempty"`
-	HasCredentials   bool            `json:"has_credentials"`
-	ClearCredentials bool            `json:"clear_credentials,omitempty"`
-	DNSURL           string          `json:"dns_url"`
-	Timezone         string          `json:"timezone"`
-	Locale           string          `json:"locale"`
-	BrowserLanguage  string          `json:"browser_language"`
-	ExitPolicy       cage.ExitPolicy `json:"exit_policy"`
+	DNSURL          string          `json:"dns_url"`
+	Timezone        string          `json:"timezone"`
+	Locale          string          `json:"locale"`
+	BrowserLanguage string          `json:"browser_language"`
+	ExitPolicy      cage.ExitPolicy `json:"exit_policy"`
 }
 type Location struct {
 	IP                       string    `json:"ip"`
@@ -136,48 +131,14 @@ func writePrivate(path string, v any) error {
 }
 func settingsView(c cage.Config, p Preferences) Settings {
 	p.BrowserHomeURL = browserHomeURL(p)
-	u, _ := url.Parse(c.ProxyURL)
-	out := Settings{Preferences: p, ProxyURL: c.ProxyURL, DNSURL: c.DNSURL, Timezone: c.Timezone, Locale: c.Locale, BrowserLanguage: c.BrowserLanguage, ExitPolicy: c.ExitPolicy.Normalized()}
-	if u != nil && u.User != nil {
-		out.ProxyUsername = u.User.Username()
-		out.HasCredentials = true
-		u.User = nil
-		out.ProxyURL = u.String()
-	}
-	return out
+	return Settings{Preferences: p, DNSURL: c.DNSURL, Timezone: c.Timezone, Locale: c.Locale, BrowserLanguage: c.BrowserLanguage, ExitPolicy: c.ExitPolicy.Normalized()}
 }
 func proposedSettings(input Settings, old cage.Config, profile string) (cage.Config, Preferences, error) {
 	if input.ExitPolicy == (cage.ExitPolicy{}) {
 		input.ExitPolicy = old.ExitPolicy
 	}
-	c := cage.Config{ProxyURL: input.ProxyURL, ProxyRevision: old.ProxyRevision, DNSURL: input.DNSURL, Timezone: input.Timezone, Locale: input.Locale, BrowserLanguage: input.BrowserLanguage, ExitPolicy: input.ExitPolicy.Normalized()}
-	u, err := url.Parse(c.ProxyURL)
-	if err != nil || u == nil {
-		return c, input.Preferences, errors.New("代理地址格式无效")
-	}
-	username, password := input.ProxyUsername, input.ProxyPassword
-	if u.User != nil {
-		username = u.User.Username()
-		password, _ = u.User.Password()
-	}
-	if password == "" && !input.ClearCredentials {
-		previous, _ := url.Parse(old.ProxyURL)
-		if previous != nil && previous.User != nil {
-			password, _ = previous.User.Password()
-		}
-	}
-	if input.ClearCredentials {
-		u.User = nil
-	} else if username != "" {
-		u.User = url.UserPassword(username, password)
-	} else {
-		u.User = nil
-	}
-	c.ProxyURL = u.String()
-	if c.ProxyURL != old.ProxyURL {
-		c.ProxyRevision = ""
-	}
-	if err = c.Validate(); err != nil {
+	c := cage.Config{ProxyURL: old.ProxyURL, ProxyRevision: old.ProxyRevision, DNSURL: input.DNSURL, Timezone: input.Timezone, Locale: input.Locale, BrowserLanguage: input.BrowserLanguage, ExitPolicy: input.ExitPolicy.Normalized()}
+	if err := c.Validate(); err != nil {
 		return c, input.Preferences, err
 	}
 	if input.Keyboard != "mac" && input.Keyboard != "native" {
@@ -190,10 +151,11 @@ func proposedSettings(input Settings, old cage.Config, profile string) (cage.Con
 		return c, p, errors.New("浏览器默认网站必须是完整的 HTTP 或 HTTPS 网址，且不能包含用户名或密码")
 	}
 	if p.Workspace != "" {
-		p.Workspace, err = validateWorkspace(p.Workspace, profile)
+		workspace, err := validateWorkspace(p.Workspace, profile)
 		if err != nil {
 			return c, p, err
 		}
+		p.Workspace = workspace
 	}
 	return c, p, nil
 }

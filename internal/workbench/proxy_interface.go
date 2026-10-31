@@ -16,7 +16,7 @@ func (s *Server) monitorProxyInterface() {
 		return
 	}
 	cfg, err := loadConfig(s.configPath)
-	if err != nil || (cfg.ProxyRevision == "" && !s.usesManagedProxy(cfg)) || !proxyListening(cfg) {
+	if err != nil || cfg.RequireManagedProxy(s.profile) != nil {
 		return
 	}
 	name, err := physicalProxyInterface(context.Background())
@@ -51,26 +51,9 @@ func (s *Server) rebindProxyInterface() error {
 	if err != nil {
 		return err
 	}
-	if cfg.ProxyRevision != "" {
-		p, err := managedproxy.Load(s.profile)
-		if err != nil {
-			return err
-		}
-		return s.applyProxy(p, cfg, false)
-	}
-	// Also discard old sockets after a disconnected uplink returns under the
-	// same interface name. The guest VM and its local services stay alive.
-	if err := s.runCage("proxy-stop"); err != nil {
+	p, err := managedproxy.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision)
+	if err != nil {
 		return err
 	}
-	if err := s.runCage("proxy-start"); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	paused := s.networkPaused
-	s.mu.Unlock()
-	if !paused && s.vmRunning() {
-		return s.runSafetyCheck()
-	}
-	return nil
+	return s.applyProxy(p, cfg, false)
 }

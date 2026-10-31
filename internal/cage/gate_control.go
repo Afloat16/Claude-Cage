@@ -95,6 +95,18 @@ func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(),
 				w.WriteHeader(400)
 				return
 			}
+			if command.Action == "check" || command.Action == "grant" || command.Action == "renew" || command.Action == "proxy-revision" {
+				cfg, e := Load(configPath)
+				if e == nil {
+					e = cfg.RequireManagedProxy(filepath.Dir(configPath))
+				}
+				if e != nil {
+					gate.Close("代理节点未应用，外网保持关闭")
+					w.WriteHeader(409)
+					_ = json.NewEncoder(w).Encode(map[string]string{"error": e.Error()})
+					return
+				}
+			}
 			switch command.Action {
 			case "proxy-revision":
 				cfg, e := Load(configPath)
@@ -150,6 +162,9 @@ func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(),
 				return
 			case <-ticker.C:
 				cfg, err := Load(configPath)
+				if err == nil {
+					err = cfg.RequireManagedProxy(filepath.Dir(configPath))
+				}
 				if err != nil || cfg.Fingerprint() != gate.Status().Configuration {
 					gate.Close("配置已变更或无法读取，请重启环境并重新检测")
 				}

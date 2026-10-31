@@ -127,6 +127,10 @@ func Serve(configPath string) error {
 	if err = writePrivate(filepath.Join(profile, "control.json"), controlFile{port, s.token, os.Getpid()}); err != nil {
 		return err
 	}
+	// A previously running VM cannot keep an unmanaged endpoint online.
+	if cfg, e := loadConfig(configPath); e != nil || cfg.RequireManagedProxy(profile) != nil {
+		_ = s.closeProxyGate("尚未配置有效节点，外网保持关闭")
+	}
 	go s.monitor()
 	go s.monitorNetwork()
 	server := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
@@ -377,6 +381,10 @@ func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile,
 func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 	v, ok := s.proposed(w, r)
 	if !ok {
+		return
+	}
+	if err := v.Config.RequireManagedProxy(s.profile); err != nil {
+		requestError(w, err)
 		return
 	}
 	loc, err := probeLocation(r.Context(), v.Config)

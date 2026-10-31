@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
@@ -20,7 +20,18 @@ func testServer(t *testing.T) *Server {
 	profile := t.TempDir()
 	path := filepath.Join(profile, "config.json")
 	c := cage.DefaultConfig()
-	c.ProxyURL = "socks5://private-user:never-return-this-password@127.0.0.1:17896"
+	p, _ := managedproxy.Load(profile)
+	p.Auth = strings.Repeat("secret", 8)
+	if err := p.Import("test", "", []byte(`proxies: [{name: qa, type: socks5, server: 127.0.0.1, port: 1}]`), "source", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	p.Selected = p.Sources[0].Nodes[0].ID
+	p.Revision = "test-revision"
+	if err := p.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	c.ProxyURL = p.Endpoint()
+	c.ProxyRevision = p.Revision
 	if e := writePrivate(path, c); e != nil {
 		t.Fatal(e)
 	}
@@ -61,7 +72,7 @@ func TestHostManagementBoundary(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatal(w.Code, w.Body.String())
 	}
-	if strings.Contains(w.Body.String(), "never-return-this-password") {
+	if strings.Contains(w.Body.String(), strings.Repeat("secret", 8)) || strings.Contains(w.Body.String(), "proxy_url") {
 		t.Fatal("password returned to UI")
 	}
 	if w.Header().Get("Access-Control-Allow-Origin") != "" {
@@ -110,15 +121,6 @@ func TestSettingsPreserveSecretsAndRejectHostSharing(t *testing.T) {
 	}
 	if next.ProxyURL != old.ProxyURL {
 		t.Fatal("blank password erased existing authentication")
-	}
-	input.ClearCredentials = true
-	next, _, e = proposedSettings(input, old, s.profile)
-	if e != nil {
-		t.Fatal(e)
-	}
-	u, _ := url.Parse(next.ProxyURL)
-	if u.User != nil {
-		t.Fatal("clear credentials ignored")
 	}
 	input.Workspace = s.profile
 	if _, _, e = proposedSettings(input, old, s.profile); e == nil {
@@ -205,19 +207,18 @@ func TestLocationLiveIntegration(t *testing.T) {
 	t.Log("Proxy geolocation returned a valid IP and IANA timezone; sensitive values omitted")
 }
 
-func TestUnavailableProxyPreservesCurrentEnvironment(t *testing.T) {
+func TestRestoreCannotReplaceManagedEndpoint(t *testing.T) {
 	s := testServer(t)
 	s.ready = true
 	old, _ := cage.Load(s.configPath)
-	before, _ := os.ReadFile(s.configPath)
 	bad := old
 	bad.ProxyURL = "socks5://127.0.0.1:1"
-	if e := s.apply(savedProfile{bad, s.preferences}, true); e == nil {
-		t.Fatal("unavailable proxy accepted")
+	if e := s.apply(savedProfile{bad, s.preferences}, true); e != nil {
+		t.Fatal(e)
 	}
-	after, _ := os.ReadFile(s.configPath)
-	if string(before) != string(after) || !s.ready {
-		t.Fatal("failed validation changed the existing environment")
+	after, _ := loadConfig(s.configPath)
+	if after != old || !s.ready {
+		t.Fatal("restore changed the managed endpoint or interrupted the environment")
 	}
 }
 

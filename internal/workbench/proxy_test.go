@@ -1,8 +1,7 @@
 package workbench
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"net"
 	"strings"
 	"testing"
 
@@ -11,17 +10,30 @@ import (
 
 func TestFailedSubscriptionRefreshKeepsWorkingNodesAndSecretsPrivate(t *testing.T) {
 	s := testServer(t)
-	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(502) }))
-	defer proxy.Close()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	go func() {
+		for {
+			conn, e := listener.Accept()
+			if e != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg.ProxyURL = proxy.URL
+	p, _ := managedproxy.Load(s.profile)
+	p.Port = listener.Addr().(*net.TCPAddr).Port
+	cfg.ProxyURL = p.Endpoint()
 	if err = writePrivate(s.configPath, cfg); err != nil {
 		t.Fatal(err)
 	}
-	p, _ := managedproxy.Load(s.profile)
 	if err = p.Import("source", "https://example.com/sub?token=private-subscription", []byte(`proxies: [{name: qa, type: socks5, server: 127.0.0.1, port: 1080, password: private-node-password}]`), "source", 24, ""); err != nil {
 		t.Fatal(err)
 	}
@@ -51,5 +63,17 @@ func TestFailedSubscriptionRefreshKeepsWorkingNodesAndSecretsPrivate(t *testing.
 	}
 	if w = request(s, "POST", "/api/proxy/stop", s.origin, `{}`, false); w.Code != 401 {
 		t.Fatal("proxy mutation accepted without authentication")
+	}
+}
+
+func TestSettingsCannotWriteProxyEndpoint(t *testing.T) {
+	s := testServer(t)
+	for _, body := range []string{`{"proxy_url":"socks5://127.0.0.1:7890"}`, `{"proxy_username":"user"}`, `{"proxy_password":"secret"}`} {
+		if w := request(s, "POST", "/api/settings", s.origin, body, true); w.Code != 400 {
+			t.Fatal("removed proxy settings accepted", w.Code)
+		}
+	}
+	if w := request(s, "POST", "/api/proxy/migrate", s.origin, `{}`, true); w.Code != 404 {
+		t.Fatal("removed migration entry accepted", w.Code)
 	}
 }

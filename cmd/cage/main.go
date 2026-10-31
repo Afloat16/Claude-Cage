@@ -15,6 +15,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/workbench"
 )
 
@@ -22,10 +23,10 @@ const help = `Claude Cage — local isolated Claude development
 
 cage desktop       Open the unified Cage workbench (desktop launcher)
 cage serve         Run its private localhost control service
-cage init          Create a private configuration; edit proxy_url before setup
+cage init          Create a private profile; add and select nodes in Cage settings
 cage check         Verify proxy transport (no VM required)
-cage proxy-start   Start the privately imported Clash node chain (macOS)
-cage proxy-stop    Stop that chain; guest external traffic then fails
+cage proxy-start   Start Cage's bundled proxy core with the applied node (macOS)
+cage proxy-stop    Stop Cage's core and close external networking
 cage setup         Build the isolated base VM through the specified proxy
 cage up            Start the shared Cage environment, editor and browser
 cage login         Start cage services, then Claude's login flow inside the VM
@@ -126,7 +127,7 @@ func run() int {
 	if limaembed.Run(args) {
 		return 0
 	}
-	if args[0] == "proxy-start" || args[0] == "proxy-stop" || args[0] == "proxy-legacy-stop" {
+	if args[0] == "proxy-start" || args[0] == "proxy-stop" {
 		if err := proxyCommand(args[0], filepath.Dir(path), cfg); err != nil {
 			return fail(err)
 		}
@@ -144,7 +145,16 @@ func run() int {
 		}
 	}
 	if management {
-		return cli.Main(args, cli.Stdio())
+		code := cli.Main(args, cli.Stdio())
+		if code == 0 && args[0] == "stop" {
+			if err := managedproxy.Stop(filepath.Dir(path)); err != nil {
+				return fail(err)
+			}
+		}
+		return code
+	}
+	if err := cfg.RequireManagedProxy(filepath.Dir(path)); err != nil {
+		return fail(err)
 	}
 	if err := cfg.CheckRunning(state); err != nil {
 		return fail(err)

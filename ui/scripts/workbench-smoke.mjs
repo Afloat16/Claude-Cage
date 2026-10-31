@@ -235,7 +235,7 @@ try {
     .last()
     .getByRole("button", { name: "取消", exact: true })
     .click();
-  assert.equal(state.settings.proxy_url, "socks5://127.0.0.1:17896");
+  assert.equal("proxy_url" in state.settings, false);
   checks.push(
     "设置草稿离开确认、保存失败保留输入、保存成功读回、后台终端连接保留、重启取消",
   );

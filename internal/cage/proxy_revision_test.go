@@ -3,6 +3,7 @@ package cage
 import (
 	"context"
 	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"os"
 	"path/filepath"
 	"testing"
@@ -63,6 +64,16 @@ func TestProxyRevisionControlUpdatesHostRunningRecord(t *testing.T) {
 	}
 	cfg := DefaultConfig()
 	cfg.ProxyRevision = "initial"
+	p, _ := managedproxy.Load(profile)
+	if err := p.Import("qa", "", []byte(`proxies: [{name: qa, type: socks5, server: 127.0.0.1, port: 1}]`), "qa", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	p.Selected = p.Sources[0].Nodes[0].ID
+	p.Revision = cfg.ProxyRevision
+	cfg.ProxyURL = p.Endpoint()
+	if err := p.Save(profile); err != nil {
+		t.Fatal(err)
+	}
 	write := func(c Config) {
 		b, _ := json.Marshal(c)
 		if err := os.WriteFile(path, b, 0600); err != nil {
@@ -89,6 +100,10 @@ func TestProxyRevisionControlUpdatesHostRunningRecord(t *testing.T) {
 	}
 	next := cfg
 	next.ProxyRevision = "new-core"
+	p.Revision = next.ProxyRevision
+	if err := p.Save(profile); err != nil {
+		t.Fatal(err)
+	}
 	write(next)
 	status, err := client.SyncProxyRevision(context.Background())
 	if err != nil {

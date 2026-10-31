@@ -80,16 +80,7 @@ make cage
 
 `cage access`、独立 VNC 和编辑器端口仅供诊断，输出可能包含访问凭据，不要直接上传。普通用户通过 App 或 `cage desktop` 自动建立会话，无需输入内部访问密码。
 
-旧式 Clash 导入脚本读取本地缓存，复制所选节点及其 `dialer-proxy` 链路；链路中的选择分组固定采用配置中的第一项。已启用内置代理时，不要用此脚本覆盖运行配置：
-
-```sh
-uv run scripts/cage-import-clash.py \
-  --source /path/to/clash-config.yaml \
-  --group '你的分组名' --index 0
-./_output/bin/cage proxy-start
-```
-
-旧脚本默认使用 `/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo`，可通过 `--core` 指定；内置代理始终使用随 App 分发的核心。代理来源、配置与日志在私有配置的 `proxy/` 子目录，通过独立用户 launchd 任务运行，不添加登录启动项。来源与节点凭据文件权限为 `0600`，状态接口不返回其原始内容。
+代理节点统一通过 Cage 内的订阅、本地 YAML 或手动节点入口配置。运行时只使用 App 随附核心。来源、运行配置和日志位于私有配置的 `proxy/` 子目录，通过独立用户 launchd 任务运行；来源与凭据文件权限为 `0600`。`config.json` 中的代理端点和版本由节点管理器生成，通用设置及恢复操作不能覆盖。
 
 ## 提交改进
 

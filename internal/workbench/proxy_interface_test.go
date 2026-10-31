@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
@@ -25,7 +26,12 @@ func interfaceMonitorServer(t *testing.T) (*Server, *cage.EgressGate) {
 	}
 	t.Cleanup(func() { _ = listener.Close() })
 	cfg, _ := loadConfig(s.configPath)
-	cfg.ProxyURL = "socks5://" + listener.Addr().String()
+	p, _ := managedproxy.Load(s.profile)
+	p.Port = listener.Addr().(*net.TCPAddr).Port
+	if err = p.Save(s.profile); err != nil {
+		t.Fatal(err)
+	}
+	cfg.ProxyURL = p.Endpoint()
 	if err := writePrivate(s.configPath, cfg); err != nil {
 		t.Fatal(err)
 	}

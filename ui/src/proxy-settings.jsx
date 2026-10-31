@@ -257,20 +257,18 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
       <div className="proxy-summary">
         <Server size={22} />
         <div>
-          <strong>{selected?.name || "尚未选择节点"}</strong>
+          <strong>{selected?.name || "尚未配置代理节点"}</strong>
           <span>
             {proxy.active
               ? proxy.running
-                ? "核心运行中"
+                ? "Cage 自带核心运行中"
                 : "核心未就绪"
-              : "尚未启用内置代理"}{" "}
+              : "请选择节点后应用，未配置时无法联网"}{" "}
             · 独立端口 {proxy.port}
           </span>
         </div>
-        <span
-          className={`proxy-badge ${proxy.running && proxy.active ? "online" : ""}`}
-        >
-          {proxy.active && proxy.running ? "已应用" : "离线"}
+        <span className={`proxy-badge ${proxy.network_open ? "online" : ""}`}>
+          {proxy.state_label}
         </span>
       </div>
       {proxy.active && status.location && (
@@ -729,16 +727,6 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
               </div>
             </div>
           )}
-          <details className="proxy-migration">
-            <summary>迁移已有 Cage 节点</summary>
-            <p className="field-help">
-              从当前 Cage 私有配置复制节点，不读取或修改本机 Clash 的选择。
-            </p>
-            <button disabled={busy} onClick={() => mutate("migrate")}>
-              <Download size={14} />
-              导入已有 Cage 节点
-            </button>
-          </details>
         </>
       )}
       {tab === "connections" && (

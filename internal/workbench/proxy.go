@@ -5,8 +5,6 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -50,7 +48,32 @@ func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
+	_, appliedErr := managedproxy.Applied(s.profile, cfg.ProxyURL, cfg.ProxyRevision)
+	active := appliedErr == nil
 	running := managedproxy.Running(ctx, s.profile, p)
+	state, label := "unconfigured", "尚未配置"
+	_, selected := p.Find(p.Selected)
+	if selected {
+		state, label = "unapplied", "尚未应用"
+	}
+	if active {
+		state, label = "stopped", "代理已停止"
+		if running {
+			state, label = "prepared", "待启动环境"
+			if s.vmRunning() {
+				state, label = "paused", "外网未放行"
+				if client, e := s.gateClient(); e == nil {
+					if gate, e := client.Status(ctx); e == nil {
+						if gate.Mode == cage.GateChecking {
+							state, label = "checking", "正在检查"
+						} else if gate.Mode == cage.GateOpen && gate.Report != nil && gate.Report.Authorizes(gate.RunID, cfg.Fingerprint(), time.Now()) == nil && time.Now().Before(gate.Until) {
+							state, label = "ready", "已联网"
+						}
+					}
+				}
+			}
+		}
+	}
 	var version struct {
 		Version string `json:"version"`
 	}
@@ -58,7 +81,7 @@ func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
 		_ = managedproxy.API(ctx, s.profile, "GET", "/version", nil, &version)
 	}
 	_, coreErr := managedproxy.CorePath()
-	jsonReply(w, map[string]any{"sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": cfg.ProxyRevision != "" && cfg.ProxyURL == p.Endpoint(), "core_available": coreErr == nil, "version": version.Version, "revision": p.Revision, "bootstrap_dns": "https://1.1.1.1/dns-query", "udp_blocked": true, "ipv6_blocked": true})
+	jsonReply(w, map[string]any{"sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": active, "state": state, "state_label": label, "network_open": state == "ready", "core_available": coreErr == nil, "version": version.Version, "revision": p.Revision, "bootstrap_dns": "https://1.1.1.1/dns-query", "udp_blocked": true, "ipv6_blocked": true})
 }
 func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 	var input proxyInput
@@ -66,7 +89,7 @@ func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.PathValue("action")
-	allowed := map[string]bool{"import": true, "refresh": true, "edit": true, "delete": true, "select": true, "restart": true, "stop": true, "migrate": true}
+	allowed := map[string]bool{"import": true, "refresh": true, "edit": true, "delete": true, "select": true, "restart": true, "stop": true}
 	if !allowed[action] {
 		http.NotFound(w, r)
 		return
@@ -79,6 +102,9 @@ func (s *Server) subscriptionClient(host bool) (*http.Client, error) {
 	}
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
+		return nil, err
+	}
+	if err = cfg.RequireManagedProxy(s.profile); err != nil {
 		return nil, err
 	}
 	e, err := cage.NewEgress(cfg)
@@ -158,15 +184,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 	} else {
 		var data []byte
 		usage := ""
-		if action == "migrate" {
-			data, err = os.ReadFile(filepath.Join(managedproxy.Dir(s.profile), "config.yaml"))
-			if err != nil {
-				return errors.New("没有可迁移的 Cage 节点配置")
-			}
-			in.Name = "已有 Cage 节点"
-			in.URL = ""
-			in.ID = ""
-		} else if action == "refresh" {
+		if action == "refresh" {
 			if index < 0 || p.Sources[index].URL == "" {
 				return errors.New("该来源没有订阅链接")
 			}
@@ -180,6 +198,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 			s.setMessage("正在下载节点订阅…")
 			client, e := s.subscriptionClient(in.HostDownload)
 			if e != nil {
+				s.proxySourceFailure(in.ID, e)
 				return e
 			}
 			defer client.CloseIdleConnections()
@@ -275,11 +294,6 @@ func (s *Server) applyProxy(p managedproxy.Store, old cage.Config, resume bool) 
 		if err := s.stopEnvironment(); err != nil {
 			return err
 		}
-	}
-	// The old import script's launchd job belongs to this exact Cage profile.
-	// Retire it only when explicitly activating the new built-in proxy.
-	if old.ProxyRevision == "" && s.usesManagedProxy(old) {
-		_ = s.runCage("proxy-legacy-stop")
 	}
 	s.setMessage("正在应用内置代理节点…")
 	if err := managedproxy.Stop(s.profile); err != nil {
@@ -441,13 +455,17 @@ func (s *Server) checkProxyHealth() {
 		return
 	}
 	cfg, err := loadConfig(s.configPath)
-	if err != nil || cfg.ProxyRevision == "" || !s.vmRunning() {
+	if !s.vmRunning() {
+		return
+	}
+	if err != nil {
+		_ = s.closeProxyGate("代理配置无法读取，外网保持关闭")
 		return
 	}
 	p, err := managedproxy.Load(s.profile)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	if err == nil && p.Revision == cfg.ProxyRevision && p.Selected != "" && managedproxy.Running(ctx, s.profile, p) {
+	if err == nil && cfg.RequireManagedProxy(s.profile) == nil && managedproxy.Running(ctx, s.profile, p) {
 		return
 	}
 	_ = s.closeProxyGate("内置代理已中断或节点状态变化，请重试应用节点")

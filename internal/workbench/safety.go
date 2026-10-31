@@ -296,6 +296,10 @@ func (s *Server) runSafetyCheck() (returned error) {
 	if err != nil {
 		return err
 	}
+	if err = cfg.RequireManagedProxy(s.profile); err != nil {
+		_ = s.closeProxyGate(err.Error())
+		return err
+	}
 	client, err := s.gateClient()
 	if err != nil {
 		s.mu.Lock()

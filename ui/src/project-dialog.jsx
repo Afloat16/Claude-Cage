@@ -45,7 +45,6 @@ export function ProjectDialog({
       const result = await api("/settings", {
         ...current,
         workspace: path.trim(),
-        proxy_password: "",
       });
       setJob(result.id);
     } catch (e) {

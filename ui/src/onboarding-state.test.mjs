@@ -2,24 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { needsProxySetup } from "./onboarding-state.mjs";
 
-const settings = { proxy_url: "socks5://127.0.0.1:17896" };
-test("fresh default endpoint and imported but unselected nodes still need setup", () => {
-  assert.equal(needsProxySetup(settings, {}, { active: false }), true);
+test("only an applied Cage node completes setup", () => {
+  assert.equal(needsProxySetup({}, {}, {}), true);
   assert.equal(
-    needsProxySetup(settings, {}, { active: false, selected: "node" }),
+    needsProxySetup({}, {}, { active: false, selected: "node" }),
     true,
   );
-  assert.equal(needsProxySetup({ proxy_url: "" }, {}, {}), true);
+  assert.equal(
+    needsProxySetup({}, {}, { active: true, selected: "node" }),
+    false,
+  );
 });
-test("applied built-in node and external profiles can start without onboarding", () => {
-  assert.equal(
-    needsProxySetup(settings, {}, { active: true, selected: "node" }),
-    false,
-  );
-  assert.equal(
-    needsProxySetup({ proxy_url: "http://127.0.0.1:7890" }, {}, {}),
-    false,
-  );
-  assert.equal(needsProxySetup(settings, { can_restore: true }, {}), false);
-  assert.equal(needsProxySetup(settings, { vm_running: true }, {}), false);
+test("running VM, old endpoint and restore file cannot bypass node setup", () => {
+  for (const status of [{ vm_running: true }, { can_restore: true }]) {
+    assert.equal(
+      needsProxySetup({ proxy_url: "socks5://127.0.0.1:17896" }, status, {}),
+      true,
+    );
+  }
 });

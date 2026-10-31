@@ -73,6 +73,9 @@ func Run(args []string) bool {
 		if err != nil {
 			logrus.Fatal(err)
 		}
+		if err = cfg.RequireManagedProxy(filepath.Dir(path)); err != nil {
+			logrus.Fatal(err)
+		}
 		usernet.Names, usernet.Answered = nil, nil
 		dns.Names, dns.Answered = nil, nil
 		name := args[len(args)-1]

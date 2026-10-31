@@ -32,7 +32,7 @@ export function SettingsPanel({
   onConfirm,
   initialSection = "keyboard",
 }) {
-  const [draft, setDraft] = useState({ ...current, proxy_password: "" }),
+  const [draft, setDraft] = useState({ ...current }),
     [section, setSection] = useState(initialSection),
     [probe, setProbe] = useState(null),
     [probing, setProbing] = useState(false),
@@ -43,18 +43,12 @@ export function SettingsPanel({
     JSON.stringify({
       ...draft,
       exit_policy: canonicalExitPolicy(draft.exit_policy),
-      proxy_password: undefined,
     }) !==
-      JSON.stringify({
-        ...current,
-        exit_policy: canonicalExitPolicy(current.exit_policy),
-        proxy_password: undefined,
-      }) || Boolean(draft.proxy_password);
+    JSON.stringify({
+      ...current,
+      exit_policy: canonicalExitPolicy(current.exit_policy),
+    });
   const environmentChanged = [
-    "proxy_url",
-    "proxy_username",
-    "proxy_password",
-    "clear_credentials",
     "dns_url",
     "timezone",
     "locale",
@@ -63,27 +57,16 @@ export function SettingsPanel({
     "auto_language",
     "exit_policy",
   ].some((k) =>
-    k === "proxy_password"
-      ? Boolean(draft[k])
-      : k === "exit_policy"
-        ? JSON.stringify(canonicalExitPolicy(draft[k])) !==
-          JSON.stringify(canonicalExitPolicy(current[k]))
-        : draft[k] !== current[k],
+    k === "exit_policy"
+      ? JSON.stringify(canonicalExitPolicy(draft[k])) !==
+        JSON.stringify(canonicalExitPolicy(current[k]))
+      : draft[k] !== current[k],
   );
   const busy =
     Boolean(status.job?.running) || probing || submitting || Boolean(jobId);
   const update = (key, value) => {
     setDraft((p) => ({ ...p, [key]: value }));
-    if (
-      [
-        "proxy_url",
-        "proxy_username",
-        "proxy_password",
-        "clear_credentials",
-        "dns_url",
-      ].includes(key)
-    )
-      setProbe(null);
+    if (["dns_url"].includes(key)) setProbe(null);
     setError("");
   };
   const close = async () => {
@@ -226,129 +209,54 @@ export function SettingsPanel({
                   status={status}
                   onConfirm={onConfirm}
                   onApplied={async () => {
-                    const latest = await api("/settings");
-                    if (
-                      latest.proxy_url !== current.proxy_url ||
-                      latest.proxy_username !== current.proxy_username
-                    ) {
-                      setDraft((previous) => ({
-                        ...previous,
-                        proxy_url: latest.proxy_url,
-                        proxy_username: latest.proxy_username,
-                        proxy_password: "",
-                        has_credentials: latest.has_credentials,
-                          clear_credentials: undefined,
-                      }));
-                      setProbe(null);
-                    }
+                    setProbe(null);
                     onSaved();
                   }}
                 />
-                <details className="external-proxy">
-                  <summary>手动配置外部代理与 DNS（兼容方式）</summary>
-                  <div className="section-title">
-                    <h3>网络出口</h3>
-                    <p>为整个 Cage 指定唯一的代理出口。</p>
-                  </div>
-                  <label>
-                    代理地址
-                    <input
-                      value={draft.proxy_url}
-                      onChange={(e) => update("proxy_url", e.target.value)}
-                      placeholder="socks5://127.0.0.1:17896"
-                      spellCheck="false"
-                      autoComplete="off"
-                    />
-                  </label>
-                  <p className="field-help">
-                    支持 HTTP、HTTPS 和 SOCKS5；服务器使用 IP 地址和端口。
-                  </p>
-                  <div className="field-row">
-                    <label>
-                      用户名
-                      <input
-                        value={draft.proxy_username}
-                        onChange={(e) =>
-                          update("proxy_username", e.target.value)
-                        }
-                        autoComplete="off"
-                        placeholder="无需认证时留空"
-                      />
-                    </label>
-                    <label>
-                      密码
-                      <input
-                        type="password"
-                        value={draft.proxy_password}
-                        onChange={(e) =>
-                          update("proxy_password", e.target.value)
-                        }
-                        autoComplete="new-password"
-                        placeholder={
-                          draft.has_credentials
-                            ? "已保存，留空保留"
-                            : "无需认证时留空"
-                        }
-                      />
-                    </label>
-                  </div>
-                  {draft.has_credentials && (
-                    <label className="check-line">
-                      <input
-                        type="checkbox"
-                        checked={draft.clear_credentials || false}
-                        onChange={(e) =>
-                          update("clear_credentials", e.target.checked)
-                        }
-                      />
-                      移除已保存的代理认证
-                    </label>
-                  )}
-                  <label>
-                    加密 DNS
-                    <input
-                      value={draft.dns_url}
-                      onChange={(e) => update("dns_url", e.target.value)}
-                      spellCheck="false"
-                    />
-                  </label>
-                  <div className="probe-line">
-                    <button disabled={busy} onClick={check}>
-                      {probing ? (
-                        <LoaderCircle size={15} className="spin" />
-                      ) : (
-                        <Globe2 size={15} />
-                      )}
-                      验证出口
-                    </button>
-                    <span>通过此代理查询 IP 和位置</span>
-                  </div>
-                  {currentLoc && (
-                    <div className={`location-result ${probe ? "fresh" : ""}`}>
-                      <span className="result-icon">
-                        <Globe2 size={19} />
-                      </span>
-                      <div>
-                        <strong>
-                          {currentLoc.country} · {currentLoc.city}
-                        </strong>
-                        <code>{currentLoc.ip}</code>
-                        <small>
-                          {currentLoc.timezone} ·{" "}
-                          {new Date(currentLoc.checked_at).toLocaleTimeString(
-                            "zh-CN",
-                            { hour: "2-digit", minute: "2-digit" },
-                          )}{" "}
-                          {probe ? "验证通过" : "当前环境 · 最近检测"}
-                        </small>
-                      </div>
-                      {probe && <Check size={18} />}
+                <label>
+                  加密 DNS
+                  <input
+                    value={draft.dns_url}
+                    onChange={(e) => update("dns_url", e.target.value)}
+                    spellCheck="false"
+                  />
+                </label>
+                <div className="probe-line">
+                  <button disabled={busy} onClick={check}>
+                    {probing ? (
+                      <LoaderCircle size={15} className="spin" />
+                    ) : (
+                      <Globe2 size={15} />
+                    )}
+                    验证出口
+                  </button>
+                  <span>通过当前节点查询 IP 和位置</span>
+                </div>
+                {currentLoc && (
+                  <div className={`location-result ${probe ? "fresh" : ""}`}>
+                    <span className="result-icon">
+                      <Globe2 size={19} />
+                    </span>
+                    <div>
+                      <strong>
+                        {currentLoc.country} · {currentLoc.city}
+                      </strong>
+                      <code>{currentLoc.ip}</code>
+                      <small>
+                        {currentLoc.timezone} ·{" "}
+                        {new Date(currentLoc.checked_at).toLocaleTimeString(
+                          "zh-CN",
+                          { hour: "2-digit", minute: "2-digit" },
+                        )}{" "}
+                        {probe ? "验证通过" : "当前环境 · 最近检测"}
+                      </small>
                     </div>
-                  )}
-                  <p className="footnote">
-                    代理不可用时，Cage 会停止对外联网。修改表单后需要重新验证。
-                  </p>
-                </details>
+                    {probe && <Check size={18} />}
+                  </div>
+                )}
+                <p className="footnote">
+                  代理不可用时，Cage 会停止对外联网。修改表单后需要重新验证。
+                </p>
               </>
             )}
             {section === "exit" && (
