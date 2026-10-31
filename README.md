@@ -4,7 +4,7 @@
 
 Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。开发工具和登录状态留在持久的 Linux 环境中，项目文件与 Mac 共享，外部连接统一经过你选择的代理。
 
-[下载 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
+[项目主页（私有预览）](https://claude-cage.aedanheryford981685.chatgpt.site) · [下载 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
 
 ![Cage 浅色工作台与终端，使用演示项目](www/public/workbench.png)
 
@@ -25,7 +25,7 @@ Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。
 
 安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
 
-当前处于 Alpha 阶段，仓库与发行物暂仅对获授权的测试者开放。发行物是否已签名、公证及对应验证范围，以具体 Release 说明为准；没有安装包的发布条目不代表已可安装。干净机器安装、真实 Claude 授权与模型请求仍需完整验收。
+当前处于 Alpha 阶段，仓库与发行物暂仅对获授权的测试者开放，主页预览仅维护者可见。`0.2.0-alpha.1` 的 App 与 DMG 已完成 Developer ID 签名、Apple 公证和票据附加，具体验证范围见 Release 说明。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
 
 ## 三步开始
 
