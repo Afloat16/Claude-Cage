@@ -1,9 +1,9 @@
 {
-  "name": "agent-vm-www",
+  "name": "claude-cage-website",
   "type": "module",
   "version": "0.1.0",
   "private": true,
-  "description": "Website for www.agent-vm.org",
+  "description": "Claude Cage project website and macOS downloads",
   "license": "MIT",
   "scripts": {
     "dev": "astro dev",

@@ -1,80 +1,31 @@
-name: www
-
+name: Website checks
 on:
   push:
-    branches: [main]
-    paths:
-      - 'www/**'
-      - '.github/workflows/www.yml'
+    paths: ['www/**', '.github/workflows/www.yml']
   pull_request:
-    paths:
-      - 'www/**'
-      - '.github/workflows/www.yml'
-  # So a broken deploy can be re-run without an empty commit.
+    paths: ['www/**', '.github/workflows/www.yml']
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: www
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@v4
         with:
           persist-credentials: false
-
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
           cache-dependency-path: www/package-lock.json
-
-      - name: Install
-        run: npm ci
-
-      # Catches a key that exists in en.ts but not in fr.ts, which would
-      # otherwise only show up as a blank spot on the French page.
-      - name: Type check
-        run: npm run check
-
-      - name: Build
-        run: npm run build
-
-      - name: Check the custom domain survived
-        # public/CNAME is what keeps www.agent-vm.org pointed here. Losing it
-        # does not fail the build, it just quietly serves the github.io URL.
-        run: test -f dist/CNAME
-
-      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
+      - run: npm ci --prefix www
+      - run: npm run --prefix www check
+      - run: npm run --prefix www build
+      - uses: actions/upload-artifact@v4
         with:
+          name: cage-website
           path: www/dist
-
-  deploy:
-    # Only main publishes: a pull request builds only, and a manual run
-    # (workflow_dispatch) from another branch would otherwise deploy that
-    # branch's site. The github-pages environment should restrict deployment
-    # branches to main too (RELEASING.md).
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
-    needs: build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # On the deploy job only: at workflow level, a pull request build would
-    # share the group and replace a pending deploy. The in-progress deploy is
-    # never cancelled; a newer pending one replaces an older pending one.
-    concurrency:
-      group: pages
-      cancel-in-progress: false
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
-    steps:
-      - id: deploy
-        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+# Publication is separate from CI while the project is private.
+# GitHub Pages must not silently expose a private preview.

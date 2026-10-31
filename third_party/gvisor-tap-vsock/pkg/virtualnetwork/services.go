@@ -24,7 +24,7 @@ func addServices(configuration *types.Configuration, s *stack.Stack, ipPool *tap
 	var natLock sync.Mutex
 	translation := parseNATTable(configuration)
 
-	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.Outbound)
+	tcpForwarder := forwarder.TCP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.Outbound, configuration.DialContext)
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, tcpForwarder.HandlePacket)
 	udpForwarder := forwarder.UDP(s, translation, &natLock, configuration.Ec2MetadataAccess, configuration.Outbound)
 	s.SetTransportProtocolHandler(udp.ProtocolNumber, udpForwarder.HandlePacket)
@@ -83,6 +83,7 @@ func dnsServer(configuration *types.Configuration, s *stack.Stack) (http.Handler
 	}
 
 	server.SetPolicy(configuration.DNSNames, configuration.DNSAnswered)
+	server.SetExchange(configuration.DNSExchange)
 
 	go func() {
 		if err := server.Serve(); err != nil {

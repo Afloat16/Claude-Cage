@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/env"
 	"github.com/sylvinus/agent-vm/internal/guard"
 	"github.com/sylvinus/agent-vm/internal/host"
@@ -764,6 +765,16 @@ func (s *start) afterBoot(isNew, wasRunning, wantWritable bool) error {
 		s.runHostScript(projectRuntime)
 	}
 	s.bindFiles(isNew)
+	if path := os.Getenv(cage.ConfigEnv); path != "" {
+		cfg, err := cage.Load(path)
+		if err != nil {
+			return err
+		}
+		code, err := s.shellRun(strings.NewReader(cfg.EnvironmentScript()), paths.Guest(s.dir), "bash", "-s")
+		if err != nil || code != 0 {
+			return fmt.Errorf("cage environment could not be applied (exit %d): %w", code, err)
+		}
+	}
 	return nil
 }
 

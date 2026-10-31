@@ -1,0 +1,98 @@
+# 参与开发
+
+Cage 的主要开发环境是 Apple Silicon macOS 14+。用户安装预构建 App 即可使用；本页面向需要修改工作台、控制服务或虚拟机底座的贡献者。
+
+## 从源码构建
+
+需要 Go 1.26.10 或更新版本、Node.js 24、`uv` 和 Xcode Command Line Tools。Go 版本以 `go.mod` 为准，前端依赖使用仓库中的 npm 锁文件，Python 工具统一通过 `uv` 运行。
+
+```sh
+git clone https://github.com/Lee-xeo/Claude-Cage.git
+cd Claude-Cage
+bash scripts/build-app.sh
+```
+
+构建会下载并校验固定版本的 Mihomo，构建前端和嵌入式客机组件，再生成 `_output/Cage.app`。未指定签名身份的本地开发构建使用 ad-hoc 签名；不能将其视为可通过 Gatekeeper 的正式发行包。
+
+安装到当前用户的 Applications 目录：
+
+```sh
+bash scripts/build-app.sh --install
+```
+
+安装位置为 `~/Applications/Cage.app`。不要在已启动的 App 上直接覆盖构建结果；先保存文件、停止环境并退出。正式发行的签名、公证与安装包构建见[发布 macOS 安装包](docs/releasing.md)。仓库中保留的上游 Nix 和多平台发行配置供参考，不代表 Cage 桌面版支持这些发行目标。
+
+仅修改界面时可运行 `npm run --prefix ui dev`，但独立前端服务器仍需要控制服务和正确会话，不能用空白页面代替真实 App 验收。整体构建入口是 `make cage`，会生成 `_output/bin/cage`。
+
+## 代码与设计入口
+
+| 目录 | 职责 |
+|---|---|
+| `desktop/` | Swift 原生 Mac 窗口、菜单和系统集成 |
+| `ui/` | React 工作台、代理管理、设置和网络状态 |
+| `internal/workbench/` | 工作台控制接口、任务、终端和设置 |
+| `internal/cage/` | 强制代理、网络门槛和客机服务 |
+| `internal/managedproxy/` | 订阅、节点、代理核心和私有配置 |
+| `third_party/`、`patches/` | 固定的上游源码与补丁 |
+| `www/` | 项目主页 |
+
+修改前阅读对应的[工作台设计](docs/design/workbench.md)、[网络检查设计](docs/design/network-checks.md)或[内置代理设计](docs/design/managed-proxy.md)。调整接口、数据归属或安全边界时，同时更新设计与用户说明。
+
+## 验证改动
+
+选择覆盖本次行为的检查。工作台的基础检查：
+
+```sh
+npm ci --prefix ui
+npm run --prefix ui lint
+npm test --prefix ui
+node --test internal/cage/clipboard.test.cjs
+go test -race ./internal/workbench ./internal/cage ./internal/managedproxy
+go test ./internal/... ./cmd/...
+```
+
+修改底层网络时，还需执行相关模块测试：
+
+```sh
+go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
+  github.com/lima-vm/lima/v2/pkg/hostagent/dns \
+  github.com/lima-vm/lima/v2/pkg/networks/usernet
+```
+
+修改上游源码时，保持 `patches/` 与 `third_party/` 一致，并按 `patches/README.md` 核对同步方式。UI 改动需要在实际 App 中验证状态、失败恢复和关键交互；编译通过不能证明登录、联网或用户操作已成功。
+
+建议使用独立测试配置和非敏感测试项目，避免将开发验证写入日常环境。启动前的 Git 保护检查属于主机状态：单独指定 Cage 配置目录不会隔离全局 Git 设置，测试修改路径时应使用隔离的测试用户目录。应用必须先解释影响，用户明确确认后才将 `safe.bareRepository` 设置为 `explicit`，并在复检通过后启动环境；读取状态不得修改 Git 配置。真实网络验证应区分代理连通、环境放行、浏览器访问、Claude 授权与模型请求，不能互相替代。
+
+## 开发诊断
+
+配置与状态默认在 `~/.claude-cage/`。`CLAUDE_CAGE_CONFIG` 可以指向另一份私有配置，其父目录拥有独立状态。配置文件权限为 `0600`；不要把该目录作为共享项目或提交到 Git。
+
+`environment.json` 固定记录环境的 VM 目录，`projects.json` 保存明确打开的共享目录，`workbench.json` 保存当前项目与偏好。选择项目不会改变 VM 身份。浏览器配置在客机的 `/home/cage-browser/profile`，Claude Code 的固定安装版本见 `agent-vm.setup.sh`。
+
+```sh
+bash scripts/fetch-proxy-core.sh
+make cage
+./_output/bin/cage check   # 检查配置的代理出口
+./_output/bin/cage shell   # 打开共享 Cage 环境中的 shell
+./_output/bin/cage stop    # 停止该环境
+./_output/bin/cage desktop # 在本机浏览器打开一次性入口
+```
+
+`cage access`、独立 VNC 和编辑器端口仅供诊断，输出可能包含访问凭据，不要直接上传。普通用户通过 App 或 `cage desktop` 自动建立会话，无需输入内部访问密码。
+
+旧式 Clash 导入脚本读取本地缓存，复制所选节点及其 `dialer-proxy` 链路；链路中的选择分组固定采用配置中的第一项。已启用内置代理时，不要用此脚本覆盖运行配置：
+
+```sh
+uv run scripts/cage-import-clash.py \
+  --source /path/to/clash-config.yaml \
+  --group '你的分组名' --index 0
+./_output/bin/cage proxy-start
+```
+
+旧脚本默认使用 `/Applications/Clash Verge.app/Contents/MacOS/verge-mihomo`，可通过 `--core` 指定；内置代理始终使用随 App 分发的核心。代理来源、配置与日志在私有配置的 `proxy/` 子目录，通过独立用户 launchd 任务运行，不添加登录启动项。来源与节点凭据文件权限为 `0600`，状态接口不返回其原始内容。
+
+## 提交改进
+
+提交说明应包含用户遇到的具体问题、改动后的行为、验证方式及尚未覆盖的情形。保留与本次任务无关的在途改动，不将本机路径、账号、代理订阅、密钥、构建产物或私人截图提交到仓库。
+
+新增依赖需保留许可和来源。Cage 主许可为 MIT，随附组件有各自许可；更新 Mihomo 等独立程序时同时更新固定版本、校验值、来源与发行包中的许可资料。

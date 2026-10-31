@@ -36,6 +36,7 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/store"
 	"github.com/lima-vm/lima/v2/pkg/yqutil"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -325,6 +326,14 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 		e, err := exprs(s)
 		if err != nil {
 			return err
+		}
+		if path := os.Getenv(cage.ConfigEnv); path != "" {
+			cfg, err := cage.Load(path)
+			if err != nil {
+				return err
+			}
+			tz, _ := json.Marshal(cfg.Timezone)
+			e = append(e, ".propagateProxyEnv = false", `.env = {"http_proxy":"","https_proxy":"","ftp_proxy":"","no_proxy":"","HTTP_PROXY":"","HTTPS_PROXY":"","FTP_PROXY":"","NO_PROXY":"","ALL_PROXY":"","all_proxy":""}`, ".timezone = "+string(tz), ".user.name = \"cage\"", ".user.home = \"/home/cage\"", ".user.uid = 1000")
 		}
 		if len(e) > 0 {
 			if tmpl.Bytes, err = yqutil.EvaluateExpression(ctx, yqutil.Join(e), tmpl.Bytes); err != nil {

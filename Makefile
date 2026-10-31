@@ -51,6 +51,17 @@ GO_BUILD := CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -tags $(TAGS) -ldfl
 
 all: agent-vm
 
+# Claude Cage ships a separate entry point with a mandatory proxy profile.
+cage: cage-ui assets
+	$(GO_BUILD) -o _output/bin/cage ./cmd/cage
+ifeq ($(GOOS),darwin)
+	codesign -f --entitlements third_party/lima/vz.entitlements -s - _output/bin/cage
+endif
+
+cage-ui:
+	npm --prefix ui ci --no-audit --no-fund
+	npm run --prefix ui build
+
 agent-vm: assets
 	$(GO_BUILD) -o _output/bin/agent-vm$(EXE) ./cmd/agent-vm
 ifeq ($(GOOS),darwin)

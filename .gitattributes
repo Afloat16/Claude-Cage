@@ -24,5 +24,6 @@
 
 # Byte for byte as upstream and the patches have them: no line ending
 # conversion, or the patches stop applying and the sync check fails.
-/third_party/** -text
-/patches/** -text
+/third_party/** -text -whitespace
+/patches/** -text -whitespace
+/ui/vendor/** -text -whitespace

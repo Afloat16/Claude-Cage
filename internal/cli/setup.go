@@ -412,7 +412,12 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 			return 1
 		}
 	}
-	if !e.deleteVM(ctx, building) {
+	resume := false
+	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
+		previous, err := b.Get(ctx, building)
+		resume = err == nil && previous != nil
+	}
+	if !resume && !e.deleteVM(ctx, building) {
 		return 1
 	}
 
@@ -450,7 +455,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 
 	fmt.Fprintln(e.io.Stdout, "Creating base VM...")
 	none := []vm.Mount{}
-	if !windowed(func(w io.Writer) error {
+	if !resume && !windowed(func(w io.Writer) error {
 		return b.Create(ctx, building, "template:debian-13", vm.Settings{CPUs: cpus, MemoryGiB: memory, DiskGiB: disk, Mounts: &none, NoContainerd: true}, w)
 	}) {
 		fmt.Fprintf(e.io.Stderr, "Error: Failed to create base VM. Full log: %s\n", logPath)
@@ -471,7 +476,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 	fmt.Fprintln(e.io.Stdout, "Installing packages inside VM...")
 	if !windowed(func(w io.Writer) error {
 		code, err := b.Shell(ctx, building, vm.ShellOpts{Args: []string{"bash", "-l"},
-			Stdin: strings.NewReader(in.exports() + agentvm.SetupScript), Stdout: w, Stderr: w})
+			Stdin: strings.NewReader(cageInstallEnv() + in.exports() + agentvm.SetupScript), Stdout: w, Stderr: w})
 		if err == nil && code != 0 {
 			err = fmt.Errorf("exit status %d", code)
 		}
@@ -516,4 +521,11 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 		fmt.Fprint(e.io.Stdout, "\nNote: Existing VMs were not updated. Use --reset to re-clone them from the new base.\n")
 	}
 	return 0
+}
+
+func cageInstallEnv() string {
+	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
+		return "export CLAUDE_CAGE=1\n"
+	}
+	return ""
 }

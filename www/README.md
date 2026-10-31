@@ -1,82 +1,16 @@
-# www.agent-vm.org
+# Cage 项目主页
 
-The agent-vm website. One page, two languages, no runtime: Astro builds it to
-static HTML and GitHub Pages serves it.
+面向首次使用者的中文介绍、安装入口、三步开始和使用边界。页面采用暖白底与陶土橙强调色，使用实际工作台渲染的演示截图。
 
-## Run it
-
-```bash
-npm install
+```sh
+npm ci
 npm run dev      # http://localhost:4822
-npm run build    # -> dist/
-npm run preview  # serve dist/ locally
+npm run check
+npm run build    # dist/
 ```
 
-## Where the content lives
+当前页面位于 `src/pages/index.astro`，样式位于 `src/styles/cage.css`，产品截图在 `public/`。版本与下载地址需和根目录 `VERSION`、GitHub Release 保持一致。App 的签名、公证状态只能根据实际发布证据填写。
 
-All copy is in `src/i18n/`. `en.ts` is the source of truth for the shape;
-`fr.ts` is typed against it, so a missing or renamed key fails the build rather
-than falling back to English silently. Shell snippets are not translated.
+私有阶段主页通过 Sites 以仅所有者可见的方式预览，身份记录在 `.openai/hosting.json`。安装包存放于私有 GitHub Release，访问者仍需仓库权限；网站不保存或转发 GitHub 令牌。GitHub Actions 只构建静态产物，不自动公开 Pages。
 
-French strings are written with plain apostrophes and ordinary spaces.
-`src/lib/french-typography.ts` converts them at load: apostrophes become
-typographic, and the space before `;` `!` `?` `»` and `:` becomes a no-break
-one. Keys named `code`, `href`, `lang` or ending in `Code` are left alone, so a
-command stays pasteable.
-
-Adding a section means adding a key in both dictionaries, a component in
-`src/components/`, an entry in `Landing.astro`, and a link in `Nav.astro`.
-
-## Adding a language
-
-1. Add the code to `locales` in `astro.config.mjs` and to `LOCALES` in
-   `src/i18n/index.ts`.
-2. Copy `fr.ts`, translate, register it in the `dictionaries` map.
-3. Add `src/pages/<code>/index.astro`, two lines like the French one.
-
-English is served from `/` (`prefixDefaultLocale: false`), every other language
-from `/<code>/`.
-
-## The installer
-
-`public/install.sh` is served as-is at `/install.sh`, for
-`curl -fsSL https://www.agent-vm.org/install.sh | sh`. It is plain `sh`, not
-bash. It installs a release as `../release.sh` makes it, or a clone, and runs
-`agent-vm.sh install` in it. Its tests are in `../tests/installer.sh`, and CI
-runs `sh -n` on it. A change goes
-live with the next deploy of the site, not with a release.
-
-## Social image
-
-`public/og.png` is committed. Regenerate it after changing the wording:
-
-```bash
-npm run og
-```
-
-That needs `sharp` (a devDependency) and a font on the machine. The deploy does
-not: it only reads the committed PNG.
-
-`public/favicon.png`, the fallback for browsers without SVG favicons, and
-`public/apple-touch-icon.png` are committed too. Regenerate them after changing
-`public/favicon.svg`:
-
-```bash
-npm run favicon
-```
-
-## Deploying
-
-`.github/workflows/www.yml` builds on every push to `main` that touches `www/`
-and publishes to GitHub Pages. A pull request builds but does not publish.
-
-Two things have to be set once in the repository settings:
-
-- **Settings → Pages → Source: GitHub Actions.**
-- **Settings → Pages → Custom domain: `www.agent-vm.org`**, with a `CNAME`
-  record at the DNS provider pointing `www` to `sylvinus.github.io`. Tick
-  *Enforce HTTPS* once the certificate is issued.
-
-`public/CNAME` carries the domain into every build; the workflow fails if it
-goes missing, because losing it silently reverts the site to the `github.io`
-URL.
+公开发布前需确认仓库、Release 和网站的访问范围，并更新正式域名。`SITE_URL` 可覆盖构建时站点地址。保留的上游组件不作为 Cage 页面入口。

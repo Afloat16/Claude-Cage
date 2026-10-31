@@ -150,6 +150,10 @@ func (s *start) checkBareRepo() bool {
 	if st == gitguard.BareOK || st == gitguard.BareNoGit {
 		return true
 	}
+	if st == gitguard.BareUnavailable {
+		s.warnf("Aborted. Host Git could not be checked. Check the Git installation, then retry.")
+		return false
+	}
 	if s.vmUp {
 		s.warnf("Warning: git on this machine uses repositories a VM creates under another name than .git ('agent-vm doctor' says more).")
 		return true

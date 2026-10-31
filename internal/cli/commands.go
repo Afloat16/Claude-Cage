@@ -67,6 +67,24 @@ func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
 		return e.scratch(ctx, cleanup, opts, dir, fn)
 	}
 	s := &start{app: e, ctx: ctx, opts: opts, dir: dir, name: vmname.Name(dir)}
+	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
+		b, err := s.backend()
+		if err != nil {
+			fmt.Fprintln(e.io.Stderr, err)
+			return 1
+		}
+		instances, err := b.List(ctx)
+		if err != nil {
+			fmt.Fprintln(e.io.Stderr, err)
+			return 1
+		}
+		for _, inst := range instances {
+			if inst.Status == vm.Running && inst.Name != s.name {
+				fmt.Fprintf(e.io.Stderr, "Cage uses one persistent environment per profile; stop legacy VM %s before connecting it.\n", inst.Name)
+				return 1
+			}
+		}
+	}
 	st := 1
 	started := s.ensureRunning() == nil
 	if started {

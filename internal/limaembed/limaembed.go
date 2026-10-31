@@ -20,15 +20,19 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/osutil"
 	"github.com/lima-vm/sshocker/pkg/reversesshfs"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guard"
 	"github.com/sylvinus/agent-vm/internal/netguard"
 	"github.com/sylvinus/agent-vm/internal/state"
+	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 // Run runs args (os.Args[1:]) when they are a command Lima's libraries start
 // this executable for, as limactl would, and reports whether they were. Such
 // a command never returns: it exits.
 func Run(args []string) bool {
+	var stopGateControl func()
+	var stopJobWatch func()
 	i := 0
 	for i < len(args) && args[i] == "--debug" {
 		i++
@@ -60,6 +64,42 @@ func Run(args []string) bool {
 		usernet.Names, usernet.Answered = policy.Name, policy.Answered
 		dns.Names, dns.Answered = policy.Name, policy.Answered
 	}
+	if path := os.Getenv(cage.ConfigEnv); path != "" {
+		stopJobWatch, err = cage.WatchJobStop(filepath.Dir(path), os.Getenv(cage.JobEnv), func() { _ = osutil.SysKill(os.Getpid(), osutil.SigInt) })
+		if err != nil {
+			logrus.Fatal(err)
+		}
+		cfg, err := cage.Load(path)
+		if err != nil {
+			logrus.Fatal(err)
+		}
+		usernet.Names, usernet.Answered = nil, nil
+		dns.Names, dns.Answered = nil, nil
+		name := args[len(args)-1]
+		if name == vmname.Template+"-building" {
+			// The base builder installs trusted tooling before any project is
+			// mounted. Project VMs always start with the external gate closed.
+			egress, err := cage.NewEgress(cfg)
+			if err != nil {
+				logrus.Fatal(err)
+			}
+			usernet.Outbound, usernet.GuestDial = egress.Allows, egress.DialContext
+			usernet.DNSExchange, dns.Exchange = egress.ExchangeDNS, egress.ExchangeDNS
+		} else {
+			gate, err := cage.NewEgressGate(cfg)
+			if err != nil {
+				logrus.Fatal(err)
+			}
+			if stopGateControl, err = cage.StartGateControl(path, filepath.Join(string(st), "lima", name), gate); err != nil {
+				logrus.Fatal(err)
+			}
+			usernet.Outbound, usernet.GuestDial = gate.Allows, gate.DialContext
+			usernet.DNSExchange, dns.Exchange = gate.ExchangeDNS, gate.ExchangeDNS
+		}
+		if err := cfg.RecordRunning(string(st), args[len(args)-1]); err != nil {
+			logrus.Fatal(err)
+		}
+	}
 	// The user is asked before the VM changes a file their machine runs on
 	// its own (guard): the shares' SFTP server runs here.
 	g, err := guard.Load(string(st), args[len(args)-1])
@@ -85,6 +125,12 @@ func Run(args []string) bool {
 	// instance is the last argument.
 	root.SetOut(newEventWatch(os.Stdout, args[len(args)-1]))
 	err = root.Execute()
+	if stopJobWatch != nil {
+		stopJobWatch()
+	}
+	if stopGateControl != nil {
+		stopGateControl()
+	}
 	server.Disconnect()
 	osutil.HandleExitError(err)
 	if err != nil {

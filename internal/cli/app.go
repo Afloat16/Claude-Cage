@@ -176,6 +176,10 @@ func newApp(io IO) (*app, error) {
 	// name): cut in their folder part, not refused.
 	vmname.MaxLen = vm.MaxName(LimaHome(st))
 	e.migrate = func() { e.migrateOld(context.Background(), oldLimaHome(), LimaHome(st)) }
+	// Cage owns a separate profile; it never imports another tool's VMs.
+	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
+		e.migrate = nil
+	}
 	e.newBack = func() (vm.Backend, error) {
 		// Every VM there is agent-vm's: list, rm and destroy-all take them
 		// all. Never a Lima home the user's own VMs live in.

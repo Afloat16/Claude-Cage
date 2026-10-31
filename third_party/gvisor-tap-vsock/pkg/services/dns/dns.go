@@ -24,6 +24,7 @@ type upstreamResolver interface {
 }
 
 type dnsHandler struct {
+	exchange  func(context.Context, *dns.Msg) (*dns.Msg, error)
 	zones     []types.Zone
 	zonesLock sync.RWMutex
 	upstream  upstreamResolver
@@ -36,7 +37,16 @@ func (h *dnsHandler) handle(w dns.ResponseWriter, r *dns.Msg, responseMessageSiz
 	m := new(dns.Msg)
 	m.SetReply(r)
 	m.RecursionAvailable = true
-	h.addAnswers(m)
+	if h.exchange != nil {
+		answer, err := h.exchange(context.Background(), r)
+		if err != nil {
+			m.SetRcode(r, dns.RcodeServerFailure)
+		} else {
+			m = answer
+		}
+	} else {
+		h.addAnswers(m)
+	}
 	edns0 := r.IsEdns0()
 	if edns0 != nil {
 		responseMessageSize = int(edns0.UDPSize())
@@ -331,4 +341,9 @@ func (s *Server) addZone(req types.Zone) {
 	}
 	// No existing zone for req.Name, add new one
 	s.handler.zones = append(s.handler.zones, req)
+}
+
+// SetExchange replaces all upstream DNS resolution; errors never fall back.
+func (s *Server) SetExchange(exchange func(context.Context, *dns.Msg) (*dns.Msg, error)) {
+	s.handler.exchange = exchange
 }

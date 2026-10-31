@@ -150,7 +150,20 @@ func NewHandler(opts HandlerOptions) (dns.Handler, error) {
 	return h, nil
 }
 
+// Exchange overrides upstream resolution; a failed exchange returns SERVFAIL.
+var Exchange func(context.Context, *dns.Msg) (*dns.Msg, error)
+
 func (h *Handler) handleQuery(ctx context.Context, w dns.ResponseWriter, req *dns.Msg) {
+	if Exchange != nil {
+		defer w.Close()
+		answer, err := Exchange(ctx, req)
+		if err != nil {
+			answer = new(dns.Msg)
+			answer.SetRcode(req, dns.RcodeServerFailure)
+		}
+		_ = w.WriteMsg(answer)
+		return
+	}
 	var (
 		reply   dns.Msg
 		handled bool

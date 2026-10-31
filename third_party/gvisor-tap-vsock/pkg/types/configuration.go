@@ -1,6 +1,8 @@
 package types
 
 import (
+	"context"
+	"github.com/miekg/dns"
 	"net"
 	"net/netip"
 	"regexp"
@@ -15,7 +17,11 @@ func (o Outbound) Allows(network string, dst netip.AddrPort) bool {
 	return o == nil || o(network, dst)
 }
 
+type DialContext func(context.Context, string, string) (net.Conn, error)
+
 type Configuration struct {
+	DialContext DialContext                                       `yaml:"-"`
+	DNSExchange func(context.Context, *dns.Msg) (*dns.Msg, error) `yaml:"-"`
 	// Print packets on stderr
 	Debug bool `yaml:"debug,omitempty"`
 

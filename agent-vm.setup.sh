@@ -241,7 +241,13 @@ fi
 
 if [[ "$INSTALL_CLAUDE" == "1" ]]; then
   echo "Installing Claude Code..."
-  curl -fsSL https://claude.ai/install.sh | bash
+  if [[ "${CLAUDE_CAGE:-}" == "1" ]]; then
+    # Official npm distribution; lock the first cage release to a known version.
+    # npm retries interrupted package transfers and verifies registry integrity.
+    npm install --prefix "$HOME/.local" --global @anthropic-ai/claude-code@2.1.314
+  else
+    curl -fsSL https://claude.ai/install.sh | bash
+  fi
   echo 'export PATH=$HOME/.claude/local/bin:$PATH' >> ~/.zshenv
 fi
 

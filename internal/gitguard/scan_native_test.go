@@ -108,7 +108,7 @@ func TestScanGitTimeout(t *testing.T) {
 	if !strings.Contains(got, "could not check the repository of the project: git did not answer in time") {
 		t.Errorf("risks:\n%s", got)
 	}
-	if st := BareState(context.Background()); st != BareUnset && st != BareOld {
+	if st := BareState(context.Background()); st != BareUnavailable {
 		t.Errorf("BareState with a hung git: %s", st)
 	}
 }

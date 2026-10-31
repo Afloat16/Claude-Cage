@@ -30,7 +30,7 @@ tags="$(awk '$1 == "TAGS" && $2 == ":=" { print $3 }' Makefile)"
 # <path> <version> <dir> per module, for one target.
 modules() {  # <goos> <goarch> <cgo> <package>
   GOOS="$1" GOARCH="$2" CGO_ENABLED="$3" GOWORK=off go list -deps -tags "$tags" \
-    -f '{{with .Module}}{{if not .Main}}{{.Path}} {{with .Replace}}{{.Path}}{{else}}{{.Version}}{{end}} {{.Dir}}{{end}}{{end}}' "$4"
+    -f '{{with .Module}}{{if not .Main}}{{.Path}}{{"\t"}}{{with .Replace}}{{.Path}}{{else}}{{.Version}}{{end}}{{"\t"}}{{.Dir}}{{end}}{{end}}' "$4"
 }
 
 # Modules only the macOS or Windows builds use are not in a cache filled by a
@@ -43,12 +43,13 @@ trap 'rm -f "$list"' EXIT
   modules linux amd64 0 ./cmd/agent-vm
   modules linux arm64 0 ./cmd/agent-vm
   modules darwin arm64 1 ./cmd/agent-vm
+  modules darwin arm64 1 ./cmd/cage
   modules darwin amd64 1 ./cmd/agent-vm
   modules windows amd64 0 ./cmd/agent-vm
   modules windows arm64 0 ./cmd/agent-vm
   modules linux arm64 0 github.com/lima-vm/lima/v2/cmd/lima-guestagent
   modules linux amd64 0 github.com/lima-vm/lima/v2/cmd/lima-guestagent
-} | awk 'NF == 3 && !seen[$1]++' | LC_ALL=C sort > "$list"
+} | awk -F '\t' 'NF == 3 && !seen[$1]++' | LC_ALL=C sort > "$list"
 
 [ -s "$list" ] || { echo "licenses: go list found no module" >&2; exit 1; }
 
@@ -68,9 +69,12 @@ EOF
   printf '================================================================================\n'
   printf 'Go standard library (BSD-3-Clause)\n'
   printf '================================================================================\n\n'
-  cat "$(go env GOROOT)/LICENSE"
+  go_license="$(go env GOROOT)/LICENSE"
+  # Homebrew keeps the Go license beside libexec rather than inside GOROOT.
+  if [ ! -f "$go_license" ]; then go_license="$(go env GOROOT)/../LICENSE"; fi
+  cat "$go_license"
   printf '\n'
-  while read -r path version dir; do
+  while IFS=$'\t' read -r path version dir; do
     found=0
     # LICENSE, LICENCE, COPYING, NOTICE, UNLICENSE, PATENTS, with any suffix.
     while IFS= read -r f; do

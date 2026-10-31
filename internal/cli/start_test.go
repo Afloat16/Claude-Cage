@@ -93,6 +93,19 @@ func (se *startEnv) base() {
 	os.WriteFile(se.state.Path(state.BaseBuiltBy), []byte("0.3.0\n"), 0o644)
 }
 
+func TestCageRefusesSecondActiveEnvironment(t *testing.T) {
+	se := newStartEnv(t)
+	se.base()
+	t.Setenv("CLAUDE_CAGE_CONFIG", "/unused-by-rejected-command")
+	se.fake.VMs["other-workspace"] = &vm.Instance{Name: "other-workspace", Status: vm.Running}
+	if code := se.run("run", "true"); code != 1 || !strings.Contains(se.out(), "one persistent environment") {
+		t.Fatalf("second workspace was not refused: %d %s", code, se.out())
+	}
+	if len(se.g.ran) != 0 {
+		t.Fatal("command entered a guest before the workspace check")
+	}
+}
+
 func TestStartNoBase(t *testing.T) {
 	se := newStartEnv(t)
 	if se.run("run", "true") != 1 || !strings.Contains(se.out(), "Error: Base VM not found. Run 'agent-vm setup' first.") {

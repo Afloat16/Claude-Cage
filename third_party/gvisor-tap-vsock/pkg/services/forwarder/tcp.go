@@ -19,7 +19,7 @@ import (
 
 const linkLocalSubnet = "169.254.0.0/16"
 
-func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, outbound types.Outbound) *tcp.Forwarder {
+func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mutex, ec2MetadataAccess bool, outbound types.Outbound, dialers ...types.DialContext) *tcp.Forwarder {
 	return tcp.NewForwarder(s, 0, 10, func(r *tcp.ForwarderRequest) {
 		localAddress := r.ID().LocalAddress
 
@@ -37,7 +37,11 @@ func TCP(s *stack.Stack, nat map[tcpip.Address]tcpip.Address, natLock *sync.Mute
 			r.Complete(true)
 			return
 		}
-		outbound, err := net.Dial("tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)))
+		dial := (&net.Dialer{}).DialContext
+		if len(dialers) > 0 && dialers[0] != nil {
+			dial = dialers[0]
+		}
+		outbound, err := dial(context.Background(), "tcp", net.JoinHostPort(localAddress.String(), fmt.Sprint(r.ID().LocalPort)))
 		if err != nil {
 			log.Tracef("net.Dial() = %v", err)
 			r.Complete(true)

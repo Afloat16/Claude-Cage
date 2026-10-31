@@ -490,6 +490,8 @@ case "$ci" in
   *)       die "unexpected CI state for ${head:0:12}: $ci" ;;
 esac
 for f in agent-vm.sh agent-vm.setup.sh runtime.example.sh release.sh tests/*.sh scripts/*; do
+  [[ -f "$f" ]] || continue
+  head -1 "$f" | grep -Eq '^#!.*(bash|/sh|env sh)' || continue
   bash -n "$f" || die "syntax error in $f"
 done
 sh -n www/public/install.sh || die "syntax error in www/public/install.sh"

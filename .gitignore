@@ -12,3 +12,15 @@ dist
 # Built by the Makefile, embedded in the binary.
 /internal/limaembed/assets/*
 !/internal/limaembed/assets/README
+/ui/.generated/
+/internal/workbench/web/*
+!/internal/workbench/web/README
+# Local acceptance artifacts may contain host paths, node addresses and sessions.
+/docs/test-reports/
+/docs/plans/
+.env
+.env.*
+!.env.example
+*.p8
+*.p12
+*.keychain-db

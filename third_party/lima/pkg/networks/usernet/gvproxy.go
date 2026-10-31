@@ -22,6 +22,7 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/transport"
 	"github.com/containers/gvisor-tap-vsock/pkg/types"
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
+	"github.com/miekg/dns"
 	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
@@ -53,6 +54,23 @@ const gatewayMacAddr = "5a:94:ef:e4:0c:dd"
 // guests of the per-instance netstacks may reach (types.Configuration.Outbound).
 // The host services the guest needs (AllowHostService) are reached past it.
 var Outbound types.Outbound
+
+// GuestDial and DNSExchange are host-owned transport hooks.
+var GuestDial types.DialContext
+var DNSExchange func(context.Context, *dns.Msg) (*dns.Msg, error)
+
+func dialGuest(ctx context.Context, network, addr string) (net.Conn, error) {
+	if GuestDial == nil {
+		return (&net.Dialer{}).DialContext(ctx, network, addr)
+	}
+	dst, err := netip.ParseAddrPort(addr)
+	if err == nil && dst.Addr().Unmap() == netip.MustParseAddr("127.0.0.1") {
+		if _, ok := hostServices.Load(hostService{network, dst.Port()}); ok {
+			return (&net.Dialer{}).DialContext(ctx, network, addr)
+		}
+	}
+	return GuestDial(ctx, network, addr)
+}
 
 // Names and Answered, when set by the program running the hostagent, are
 // applied by the gateway's DNS server of the per-instance netstacks to every
@@ -125,6 +143,8 @@ func StartGVisorNetstack(ctx context.Context, gVisorOpts *GVisorNetstackOpts) er
 		},
 		GatewayVirtualIPs: []string{gatewayIP},
 		Outbound:          outbound,
+		DialContext:       dialGuest,
+		DNSExchange:       DNSExchange,
 		DNSNames:          Names,
 		DNSAnswered:       Answered,
 	}

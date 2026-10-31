@@ -297,3 +297,16 @@ func TestSetupBase(t *testing.T) {
 		t.Errorf("override.yaml: %s\n%s", te.out(), te.fake.CallLog())
 	}
 }
+
+func TestCageSetupResumesExistingBuild(t *testing.T) {
+	t.Setenv("CLAUDE_CAGE_CONFIG", filepath.Join(t.TempDir(), "config.json"))
+	te := newTestEnv(t, vmtest.New())
+	te.fake.VMs[building] = &vm.Instance{Name: building, Status: vm.Stopped, CPUs: 2, Memory: 4 << 30, Disk: 24 << 30}
+	if code := te.setupBase([]string{"setup", "--preinstall=none"}); code != 0 {
+		t.Fatalf("resume failed: %s", te.out())
+	}
+	log := te.fake.CallLog()
+	if strings.Contains(log, "create base-building") || !strings.Contains(log, "clone base-building base") {
+		t.Fatalf("partial build was recreated instead of resumed: %s", log)
+	}
+}

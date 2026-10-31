@@ -18,22 +18,30 @@ import (
 
 // Bare-repository states.
 const (
-	BareOK    = "ok"
-	BareUnset = "unset"
-	BareOld   = "old" // git before 2.38, which ignores the setting
-	BareNoGit = "nogit"
+	BareOK          = "ok"
+	BareUnset       = "unset"
+	BareOld         = "old" // git before 2.38, which ignores the setting
+	BareNoGit       = "nogit"
+	BareUnavailable = "unavailable"
 )
 
 // BareState is whether git on this machine ignores bare repositories it is
 // not told about. Read from /, outside any repository: git only honours the
 // setting from the system and global config.
 func BareState(ctx context.Context) string {
-	if !gitx.Have() {
+	available, err := gitx.Available(ctx)
+	if err != nil {
+		return BareUnavailable
+	}
+	if !available {
 		return BareNoGit
 	}
 	ctx, cancel := context.WithTimeout(ctx, gitTimeout)
 	defer cancel()
-	out, _ := gitx.Untrusted(ctx, "--version").Output()
+	out, err := gitx.Untrusted(ctx, "--version").Output()
+	if err != nil {
+		return BareUnavailable
+	}
 	v := strings.TrimPrefix(strings.TrimSpace(string(out)), "git version ")
 	v, _, _ = strings.Cut(v, " ")
 	// Git's release candidates (2.38.0-rc1) are not semver prereleases.

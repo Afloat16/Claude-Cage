@@ -200,7 +200,12 @@ case "$rc:$out" in 1:*"NEXT_VERSION is '9.9.8'"*) pass "a Makefile on another ve
 
 # flake.nix names the checksum of go.mod and go.sum its vendorHash is for.
 mods="$(cat "$SELF_DIR/go.mod" "$SELF_DIR/go.sum" | sha256_of /dev/stdin)"
-check "flake.nix: its note is the checksum release.sh computes" "$(grep -c "go.mod+go.sum: $mods\$" "$SELF_DIR/flake.nix")" "1"
+# Cage ships through package-macos.sh. The retained upstream Nix definition
+# is not a Cage build target; still test release.sh's stale-hash rejection
+# below against the throwaway repository.
+if [ ! -f "$SELF_DIR/VERSION" ]; then
+  check "flake.nix: its note is the checksum release.sh computes" "$(grep -c "go.mod+go.sum: $mods\$" "$SELF_DIR/flake.nix")" "1"
+fi
 ( cd "$RR" && cp "$SELF_DIR/go.mod" "$SELF_DIR/go.sum" . && printf '# go.mod+go.sum: %s\n' "$mods" > flake.nix \
     && git add -A && git commit -qm n && git push -q origin main ) >/dev/null 2>&1
 out="$(relrun)"; rc=$?

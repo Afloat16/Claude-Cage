@@ -136,6 +136,8 @@ func (e *app) doctorCmd(ctx context.Context, args []string) int {
 		switch st {
 		case gitguard.BareOK:
 			d.line("ok", "safe.bareRepository = explicit")
+		case gitguard.BareUnavailable:
+			d.line("warn", "host Git could not be checked; check the Git installation, then retry")
 		case gitguard.BareOld:
 			out, _ := exec.CommandContext(ctx, "git", "--version").Output()
 			d.line("warn", strings.TrimSpace(string(out))+" is older than 2.38: it would use a repository a VM creates under another name than .git, and run what its config names",

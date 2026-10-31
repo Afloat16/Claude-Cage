@@ -1,5 +1,9 @@
 # Releasing agent-vm
 
+This is the retained upstream release procedure. For Claude Cage, use
+[the macOS release guide](docs/releasing.md) and `scripts/package-macos.sh`.
+The upstream Homebrew/Nix/multi-platform artifacts are not Cage releases.
+
 `release.sh` checks a commit, tags it, builds a tarball per platform from the tag, publishes them
 on GitHub with their `SHA256SUMS`, and prints the Homebrew lines. It runs on a Mac: the macOS
 binaries need its SDK and `codesign`; Linux and Windows are cross-built there. It bumps and

@@ -1,0 +1,298 @@
+// Package workbench owns the trusted host UI; guest web content never runs in it.
+package workbench
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/mounts"
+	"github.com/sylvinus/agent-vm/internal/vmname"
+)
+
+type Preferences struct {
+	Workspace      string `json:"workspace"`
+	BrowserHomeURL string `json:"browser_home_url"`
+	Keyboard       string `json:"keyboard"`
+	AutoTimezone   bool   `json:"auto_timezone"`
+	AutoLanguage   bool   `json:"auto_language"`
+}
+
+const defaultBrowserHomeURL = "https://www.bing.com/"
+
+func browserHomeURL(p Preferences) string {
+	if p.BrowserHomeURL == "" {
+		return defaultBrowserHomeURL
+	}
+	return p.BrowserHomeURL
+}
+
+// The environment workspace is separate from the private control profile.
+func environmentWorkspace(profile string) string { return cage.EnvironmentDir(profile) }
+
+func (s *Server) prepareEnvironment() error {
+	path := environmentWorkspace(s.profile)
+	// Promote an existing installation's VM once, preserving its disk and login state.
+	if _, err := os.Stat(filepath.Join(s.profile, "environment.json")); os.IsNotExist(err) {
+		previous := s.workspace()
+		if previous != "" {
+			if _, err := os.Stat(filepath.Join(s.profile, "state", "lima", vmname.Name(previous), "lima.yaml")); err == nil {
+				path = previous
+			}
+		}
+	}
+	if err := os.MkdirAll(path, 0700); err != nil {
+		return err
+	}
+	path, err := validateWorkspace(path, s.profile)
+	if err != nil {
+		return err
+	}
+	if err = writePrivate(filepath.Join(s.profile, "environment.json"), map[string]string{"directory": path}); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	p := s.preferences
+	s.mu.Unlock()
+	if p.Workspace == "" {
+		p.Workspace = path
+	}
+	if err := writePrivate(filepath.Join(s.profile, "workbench.json"), p); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	s.preferences = p
+	s.mu.Unlock()
+	return nil
+}
+
+type Settings struct {
+	Preferences
+	ProxyURL         string          `json:"proxy_url"`
+	ProxyUsername    string          `json:"proxy_username"`
+	ProxyPassword    string          `json:"proxy_password,omitempty"`
+	HasCredentials   bool            `json:"has_credentials"`
+	ClearCredentials bool            `json:"clear_credentials,omitempty"`
+	DNSURL           string          `json:"dns_url"`
+	Timezone         string          `json:"timezone"`
+	Locale           string          `json:"locale"`
+	BrowserLanguage  string          `json:"browser_language"`
+	ExitPolicy       cage.ExitPolicy `json:"exit_policy"`
+}
+type Location struct {
+	IP                       string    `json:"ip"`
+	Country                  string    `json:"country"`
+	CountryCode              string    `json:"country_code"`
+	Region                   string    `json:"region"`
+	RegionCode               string    `json:"region_code,omitempty"`
+	SuggestedLocale          string    `json:"suggested_locale,omitempty"`
+	SuggestedBrowserLanguage string    `json:"suggested_browser_language,omitempty"`
+	City                     string    `json:"city"`
+	Timezone                 string    `json:"timezone"`
+	CheckedAt                time.Time `json:"checked_at"`
+}
+type savedProfile struct {
+	Config      cage.Config `json:"config"`
+	Preferences Preferences `json:"preferences"`
+}
+
+func writePrivate(path string, v any) error {
+	b, err := json.MarshalIndent(v, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		return err
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), ".cage-write-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if err = f.Chmod(0600); err == nil {
+		_, err = f.Write(append(b, '\n'))
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	closeErr := f.Close()
+	if err != nil {
+		return err
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	return os.Rename(f.Name(), path)
+}
+func settingsView(c cage.Config, p Preferences) Settings {
+	p.BrowserHomeURL = browserHomeURL(p)
+	u, _ := url.Parse(c.ProxyURL)
+	out := Settings{Preferences: p, ProxyURL: c.ProxyURL, DNSURL: c.DNSURL, Timezone: c.Timezone, Locale: c.Locale, BrowserLanguage: c.BrowserLanguage, ExitPolicy: c.ExitPolicy.Normalized()}
+	if u != nil && u.User != nil {
+		out.ProxyUsername = u.User.Username()
+		out.HasCredentials = true
+		u.User = nil
+		out.ProxyURL = u.String()
+	}
+	return out
+}
+func proposedSettings(input Settings, old cage.Config, profile string) (cage.Config, Preferences, error) {
+	if input.ExitPolicy == (cage.ExitPolicy{}) {
+		input.ExitPolicy = old.ExitPolicy
+	}
+	c := cage.Config{ProxyURL: input.ProxyURL, ProxyRevision: old.ProxyRevision, DNSURL: input.DNSURL, Timezone: input.Timezone, Locale: input.Locale, BrowserLanguage: input.BrowserLanguage, ExitPolicy: input.ExitPolicy.Normalized()}
+	u, err := url.Parse(c.ProxyURL)
+	if err != nil || u == nil {
+		return c, input.Preferences, errors.New("代理地址格式无效")
+	}
+	username, password := input.ProxyUsername, input.ProxyPassword
+	if u.User != nil {
+		username = u.User.Username()
+		password, _ = u.User.Password()
+	}
+	if password == "" && !input.ClearCredentials {
+		previous, _ := url.Parse(old.ProxyURL)
+		if previous != nil && previous.User != nil {
+			password, _ = previous.User.Password()
+		}
+	}
+	if input.ClearCredentials {
+		u.User = nil
+	} else if username != "" {
+		u.User = url.UserPassword(username, password)
+	} else {
+		u.User = nil
+	}
+	c.ProxyURL = u.String()
+	if c.ProxyURL != old.ProxyURL {
+		c.ProxyRevision = ""
+	}
+	if err = c.Validate(); err != nil {
+		return c, input.Preferences, err
+	}
+	if input.Keyboard != "mac" && input.Keyboard != "native" {
+		return c, input.Preferences, errors.New("请选择 Mac 或原生 Linux 按键习惯")
+	}
+	p := input.Preferences
+	p.BrowserHomeURL = strings.TrimSpace(browserHomeURL(p))
+	home, e := url.Parse(p.BrowserHomeURL)
+	if e != nil || home == nil || (home.Scheme != "https" && home.Scheme != "http") || home.Hostname() == "" || home.User != nil {
+		return c, p, errors.New("浏览器默认网站必须是完整的 HTTP 或 HTTPS 网址，且不能包含用户名或密码")
+	}
+	if p.Workspace != "" {
+		p.Workspace, err = validateWorkspace(p.Workspace, profile)
+		if err != nil {
+			return c, p, err
+		}
+	}
+	return c, p, nil
+}
+func validateWorkspace(path, profile string) (string, error) {
+	home, _ := os.UserHomeDir()
+	if strings.HasPrefix(path, "~/") {
+		path = filepath.Join(home, path[2:])
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", errors.New("项目路径无效")
+	}
+	abs, err = filepath.EvalSymlinks(abs)
+	if err != nil {
+		return "", errors.New("项目目录不存在或无法访问")
+	}
+	st, err := os.Stat(abs)
+	if err != nil || !st.IsDir() {
+		return "", errors.New("请选择一个项目文件夹")
+	}
+	realProfile, err := filepath.EvalSymlinks(profile)
+	if err != nil {
+		realProfile = profile
+	}
+	contains := func(parent, child string) bool {
+		rel, e := filepath.Rel(parent, child)
+		return e == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	}
+	if executable, e := os.Executable(); e == nil {
+		if real, e := filepath.EvalSymlinks(executable); e == nil && contains(abs, real) {
+			return "", errors.New("不能共享正在运行的工作台程序所在目录。请将安装版 Cage.app 放在项目外，并重启控制服务后选择此项目。")
+		}
+	}
+	if mounts.UnderName(filepath.ToSlash(abs), nil) {
+		return "", errors.New("请选择项目根目录，不要共享 Git 等版本控制元数据目录")
+	}
+	if contains(abs, realProfile) || contains(realProfile, abs) || abs == home || abs == "/" {
+		return "", errors.New("请选择具体项目，不要共享主目录、Cage 配置或包含配置的上级目录")
+	}
+	return abs, nil
+}
+
+// probeLocation uses the same fail-closed transport as the VM. No host resolver,
+// environment proxy, or direct fallback participates, including redirects.
+func probeLocation(ctx context.Context, c cage.Config) (Location, error) {
+	ip, err := cage.ProbeExitIP(ctx, c)
+	if err != nil {
+		return Location{}, err
+	}
+	loc, err := probeLocationForIP(ctx, c, ip)
+	if err != nil {
+		return Location{IP: ip, CheckedAt: time.Now()}, err
+	}
+	return loc, nil
+}
+
+func (l Location) exitLocation() cage.ExitLocation {
+	return cage.ExitLocation{IP: l.IP, CountryCode: l.CountryCode, Region: l.Region, City: l.City}
+}
+
+func probeLocationForIP(ctx context.Context, c cage.Config, ip string) (Location, error) {
+	address := net.ParseIP(ip)
+	if address == nil {
+		return Location{}, errors.New("出口地址无效")
+	}
+	e, err := cage.NewEgress(c)
+	if err != nil {
+		return Location{}, err
+	}
+	transport := &http.Transport{Proxy: nil, DialContext: e.DialContext, ForceAttemptHTTP2: true}
+	defer transport.CloseIdleConnections()
+	client := &http.Client{Transport: transport, Timeout: 15 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://ipwho.is/"+address.String()+"?fields=success,ip,country,country_code,region,region_code,city,timezone.id", nil)
+	r, err := client.Do(req)
+	if err != nil {
+		return Location{}, errors.New("无法经指定代理查询出口；请检查代理是否运行。没有使用直连回退。")
+	}
+	defer r.Body.Close()
+	if r.StatusCode != 200 {
+		return Location{}, fmt.Errorf("出口定位服务返回 HTTP %d；原配置保持不变", r.StatusCode)
+	}
+	var v struct {
+		Success     bool   `json:"success"`
+		IP          string `json:"ip"`
+		Country     string `json:"country"`
+		CountryCode string `json:"country_code"`
+		Region      string `json:"region"`
+		RegionCode  string `json:"region_code"`
+		City        string `json:"city"`
+		Timezone    struct {
+			ID string `json:"id"`
+		} `json:"timezone"`
+	}
+	if json.NewDecoder(io.LimitReader(r.Body, 128<<10)).Decode(&v) != nil || !v.Success || net.ParseIP(v.IP) == nil || !net.ParseIP(v.IP).Equal(address) {
+		return Location{}, errors.New("出口定位服务未返回有效位置；可关闭自动时区后手动设置")
+	}
+	if _, err = time.LoadLocation(v.Timezone.ID); err != nil {
+		return Location{}, errors.New("出口位置未包含有效时区；请手动选择时区")
+	}
+	locale, browser := languageSuggestion(v.CountryCode)
+	return Location{IP: v.IP, Country: v.Country, CountryCode: v.CountryCode, Region: v.Region, RegionCode: v.RegionCode, City: v.City, Timezone: v.Timezone.ID, CheckedAt: time.Now(), SuggestedLocale: locale, SuggestedBrowserLanguage: browser}, nil
+}
