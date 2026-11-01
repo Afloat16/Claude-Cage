@@ -209,9 +209,9 @@ footer a:hover,
 }
 .product > img {
   width: 100%;
-  aspect-ratio: 1360/850;
-  object-fit: cover;
-  object-position: top;
+  height: auto;
+  aspect-ratio: auto;
+  object-fit: contain;
 }
 figcaption {
   font-size: 12px;
@@ -223,10 +223,10 @@ figcaption {
 }
 .tools {
   display: grid;
-  grid-template-columns: 1fr 1.15fr;
-  gap: 90px;
-  padding-top: 112px;
-  padding-bottom: 108px;
+  grid-template-columns: 1fr;
+  gap: 36px;
+  padding-top: 80px;
+  padding-bottom: 80px;
 }
 .section-intro .eyebrow,
 .section-heading .eyebrow,
@@ -235,11 +235,16 @@ figcaption {
 }
 .tool-list {
   display: grid;
-  gap: 30px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 60px;
+  row-gap: 36px;
 }
 .tool-list article {
-  display: flex;
-  gap: 22px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
 }
 .tool-list p,
 .boundary-list p {
@@ -319,10 +324,10 @@ figcaption {
 }
 .boundaries {
   display: grid;
-  grid-template-columns: 1fr 1.1fr;
-  gap: 85px;
-  padding-top: 105px;
-  padding-bottom: 105px;
+  grid-template-columns: 1fr;
+  gap: 36px;
+  padding-top: 80px;
+  padding-bottom: 80px;
 }
 .section-lead {
   color: var(--muted);
@@ -331,11 +336,16 @@ figcaption {
 }
 .boundary-list {
   display: grid;
-  gap: 29px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 60px;
+  row-gap: 36px;
 }
 .boundary-list article {
-  display: flex;
-  gap: 20px;
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 24px;
 }
 .boundary-list article > span {
   display: grid;
@@ -611,6 +621,11 @@ code {
     padding-bottom: 65px;
   }
   .tool-list {
+    grid-template-columns: 1fr;
+    gap: 26px;
+  }
+  .boundary-list {
+    grid-template-columns: 1fr;
     gap: 26px;
   }
   .start-section {

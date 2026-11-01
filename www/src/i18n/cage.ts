@@ -54,7 +54,7 @@ function readCopy(language: typeof languages[number]) {
     why: reason.title, whyText: reasonParagraphs[0], whyNote: limit,
     keyFeatures: bullets(reason.body).map(plain),
     featureTitle: uses.title, features: bullets(uses.body).map(pair),
-    workbench: `${captions[1] || 'Claude Cage'} · hello-cage`,
+    workbench: `${captions[1] || 'Claude Cage'} · claude.ai`,
     evidenceTitle: captions[0] || language.checksLabel, evidenceNote: limit,
     quickTitle: quick.title, quickText: paragraphs(quick.body)[0],
     prompt: quick.body.match(/```[^\n]*\n([\s\S]*?)```/)?.[1]?.trim() || '',

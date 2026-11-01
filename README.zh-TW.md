@@ -25,7 +25,7 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 
 **Cage 執行主介面：**
 
-![Cage 工作臺與終端，使用演示專案 hello-cage](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## 你可以用它做什麼
 
