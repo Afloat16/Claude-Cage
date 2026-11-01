@@ -25,7 +25,7 @@ Claude Cage የሊኑክስ ተርሚናልን፣ አሳሽ እና ፋይል አ
 
 **የ Cage ዋና በይነገጽ**
 
-! [Cage የስራ ቤንች እና ተርሚናል ሄሎ-ካጅ ማሳያ ፕሮጄክትን ያሳያል](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## በ Cage ምን ማድረግ ይችላሉ
 

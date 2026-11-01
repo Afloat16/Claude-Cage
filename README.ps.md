@@ -25,7 +25,7 @@
 
 **د Cage اصلي انٹرفیس:**
 
-! [د Cage ورک بینچ او ترمینل د هیلو Cage ډیمو پروژه ښیې](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## تاسو د Cage سره څه کولی شئ
 

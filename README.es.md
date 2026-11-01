@@ -25,7 +25,7 @@ Claude Cage es una máquina virtual Linux liviana que combina una terminal Linux
 
 **Interfaz principal de Cage:**
 
-! [Banco de trabajo y terminal Cage que muestra el proyecto de demostración hello-cage](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## ¿Qué puedes hacer con la jaula?
 

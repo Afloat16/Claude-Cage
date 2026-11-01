@@ -25,7 +25,7 @@
 
 **ቀንዲ መተሓላለፊ Cage፤**
 
-! [Cage ወርክቤንችን ተርሚናልን ንሄሎ-Cage ዲሞ ፕሮጀክት ዘርኢ](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## ብCage እንታይ ክትገብር ትኽእል
 

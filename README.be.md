@@ -25,7 +25,7 @@ Claude Cage - гэта лёгкая віртуальная машына Linux, �
 
 **Асноўны інтэрфейс Cage:**
 
-! [Варштат і тэрмінал Cage, якія паказваюць дэма-праект Hello-Cage](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## Што ты можаш зрабіць з Cageам
 

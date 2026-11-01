@@ -25,7 +25,7 @@ Claude Cage는 Linux 터미널, 브라우저 및 파일 편집기를 단일 데�
 
 **Cage의 기본 인터페이스:**
 
-! [hello-cage 데모 프로젝트를 보여주는 Cage 워크벤치 및 터미널](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## 케이지로 할 수 있는 일
 

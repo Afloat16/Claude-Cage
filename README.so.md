@@ -25,7 +25,7 @@ Claude Cage waa mashiin macmal ah oo Linux ah oo fudud kaas oo isku dara termina
 
 **Interface ugu weyn ee Cage:**
 
-! [Kursiga shaqada ee Cage iyo terminal muujinaya mashruuca demo-qafiska](www/public/workbench.jpg)
+![Claude Cage · claude.ai](www/public/workbench.jpg)
 
 ## Maxaad ku samayn kartaa Cage
 
