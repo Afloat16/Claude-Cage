@@ -25,7 +25,7 @@
 
 **ቀንዲ መተሓላለፊ Cage፤**
 
-![Claude Cage · claude.ai](www/public/workbench.jpg)
+![Cage · hello-cage](www/public/workbench.jpg)
 
 ## ብCage እንታይ ክትገብር ትኽእል
 

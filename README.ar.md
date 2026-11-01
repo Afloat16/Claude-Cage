@@ -25,7 +25,7 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 
 **الواجهة الرئيسية للقفص:**
 
-![Claude Cage · claude.ai](www/public/workbench.jpg)
+![Cage · hello-cage](www/public/workbench.jpg)
 
 ## ما يمكنك فعله مع كيج
 

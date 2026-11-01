@@ -25,7 +25,7 @@
 
 **د Cage اصلي انٹرفیس:**
 
-![Claude Cage · claude.ai](www/public/workbench.jpg)
+![Cage · hello-cage](www/public/workbench.jpg)
 
 ## تاسو د Cage سره څه کولی شئ
 

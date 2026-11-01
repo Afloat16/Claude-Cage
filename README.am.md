@@ -25,7 +25,7 @@ Claude Cage የሊኑክስ ተርሚናልን፣ አሳሽ እና ፋይል አ
 
 **የ Cage ዋና በይነገጽ**
 
-![Claude Cage · claude.ai](www/public/workbench.jpg)
+![Cage · hello-cage](www/public/workbench.jpg)
 
 ## በ Cage ምን ማድረግ ይችላሉ
 
