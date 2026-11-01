@@ -1,12 +1,31 @@
 # Claude Cage
 
-**在 Mac 上，为 Claude Code 准备一个独立工作区。**
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
-Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。开发工具和登录状态留在持久的 Linux 环境中，项目文件与 Mac 共享，外部连接统一经过你选择的代理。
+**把 Claude 大小姐关起来，为了更好地保护我们的相遇**
 
-[项目主页（私有预览）](https://claude-cage.aedanheryford981685.chatgpt.site) · [下载 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
+<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-![Cage 浅色工作台与终端，使用演示项目](www/public/workbench.png)
+[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下载 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
+
+## 受够了 Anthropic
+
+作为一个只是想和 Claude 对话与合作的正常用户，受够了折腾各种 VPS，指纹浏览器，环境检测，面对封号的担惊受怕和财产损失。我们提出 **Claude Cage** 项目：**一个开箱即用的桌面程序，配置好自己的网络代理，集中管理隔离环境、时区语言和环境检查。**
+
+Claude Cage 是一个轻量 Linux 虚拟机，把 Linux 终端、浏览器和文件编辑器放进同一个桌面应用。支持以下几个重点功能：
+
+- 和主机隔离的网络设置，Cage 自己接管和代理内部的所有网络流量
+- 和主机隔离的指纹设置，包括时区、语言等，支持自动与代理 IP 同步
+- 针对 Claude 使用过程中的全链路适配（浏览器登录，授权，claude code 进程）
+- 内置网络与隔离检查，关键检查失败或证据不完整时暂停外网；社区和第三方检测提供补充参考
+
+**使用 Cage 的环境检测结果：**
+
+<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+
+**Cage 运行主界面：**
+
+![Alpha 2 工作台与终端，使用演示项目 hello-cage](www/public/workbench.jpg)
 
 ## 你可以用它做什么
 
@@ -14,6 +33,16 @@ Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。
 - **控制共享范围。** 只共享默认工作区和明确打开的项目文件夹；主机的 Claude 登录、浏览器配置和 SSH 密钥不会自动导入。
 - **看清网络状态。** 内置代理管理支持导入订阅、选择节点和检查出口。关键检查未通过时，环境保持离线；代理不可用时没有直连回退。
 - **下次继续使用。** 工具、文件和登录状态保存在虚拟磁盘里，关闭窗口可以保留后台任务。
+
+## 快速开始
+
+把这句话发给你的 agent（codex，dsh，workbuddy，反正不会是 claude code😁）
+
+```markdown
+帮我安装 https://github.com/Lee-xeo/Claude-Cage ，并把 Cage 的代理配置为我本机 Clash 的 xxx 节点。
+```
+
+你唯一需要的，是一个靠谱的代理节点，本项目不做任何代理推广，可以自行搜索黑色错误网站解决。
 
 ## 下载与安装
 
@@ -25,7 +54,9 @@ Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。
 
 安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
 
-当前处于 Alpha 阶段，仓库与发行物暂仅对获授权的测试者开放，主页预览仅维护者可见。`0.2.0-alpha.1` 的 App 与 DMG 已完成 Developer ID 签名、Apple 公证和票据附加，具体验证范围见 Release 说明。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
+当前版本为 `0.2.0-alpha.2`。源码、主页与发行物公开；安装包的签名、公证和验收范围以对应 Release 说明为准。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
+
+支持应用内更新的版本会在左下角显示更新入口：有新版时，向下箭头的悬浮提示为“下载更新”，点击后下载、校验、安装并重启；有运行任务时先确认保存并停止。更新经所选代理下载，无直连回退。自动安装要求同一发布者签名且通过 Apple 验证；Alpha 1 用户需要先手动安装 Alpha 2，后续版本可通过应用内更新。具体条件见[升级与卸载](docs/getting-started.md#升级与卸载)。
 
 ## 三步开始
 
@@ -52,6 +83,8 @@ Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。
 
 ## 文档与贡献
 
+完整入口见[文档导航](docs/README.md)。
+
 | 你要做什么 | 从这里开始 |
 |---|---|
 | 第一次安装、配置代理、打开项目 | [开始使用](docs/getting-started.md) |
@@ -61,10 +94,28 @@ Cage 把 Linux 终端、浏览器和文件编辑器放进同一个 Mac 应用。
 | 了解模块与网络约束 | [工作台设计](docs/design/workbench.md) |
 | 报告可复现问题 | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
+本项目仍在快速迭代中，欢迎加入交流群提意见，欢迎社区大佬一起维护
+
+<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+
 ## 来源与许可
 
-Cage 基于 [agent-vm](https://github.com/sylvinus/agent-vm) 二次开发，上游基线为 `652688aae92c35ce536b9be52262e1cc5ec6e03a`。感谢 Lima、gvisor-tap-vsock、sshocker、noVNC、Mihomo 等项目提供基础能力。
+Cage 基于 [agent-vm](https://github.com/sylvinus/agent-vm) 二次开发，上游基线为 `652688aae92c35ce536b9be52262e1cc5ec6e03a`。
 
 项目主许可为 [MIT](LICENSE)。随附组件保留各自许可，Mihomo 作为独立可执行文件按 GPL-3.0 分发；请同时参阅 [NOTICE](NOTICE)、[第三方许可](THIRD_PARTY_LICENSES)、[第三方来源](third_party/SOURCES)及 [noVNC 来源说明](ui/vendor/novnc/README.cage.md)。上游项目的说明保存在[上游 README](docs/agent-vm-upstream.md)。
 
 Cage 是独立社区项目，与 Anthropic 无隶属关系。
+
+## 参考与致谢
+
+感谢以下项目为 Cage 提供基础能力或设计参考：
+
+- [agent-vm](https://github.com/sylvinus/agent-vm)：Cage 的二次开发底座。
+- [Lima](https://github.com/lima-vm/lima)：Linux 虚拟机管理。
+- [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock)：虚拟机网络能力。
+- [sshocker](https://github.com/lima-vm/sshocker) 和 [SFTP](https://github.com/pkg/sftp)：虚拟机与主机之间的文件共享能力。
+- [noVNC](https://github.com/novnc/noVNC)：浏览器中的远程画面与交互。
+- [Mihomo](https://github.com/MetaCubeX/mihomo)：内置代理核心。
+- [code-server](https://github.com/coder/code-server)：浏览器中的代码编辑器。
+- [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作环境和交互体验参考。
+- [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：网络检查和安全诊断方法参考。
