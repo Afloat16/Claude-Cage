@@ -1,7 +1,9 @@
 package managedproxy
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,88 @@ import (
 
 	"go.yaml.in/yaml/v3"
 )
+
+func TestCumulativeImportsPreserveReadableStoreOnOverflow(t *testing.T) {
+	profile := t.TempDir()
+	s, err := Load(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := []byte("proxies:\n  - name: synthetic\n    type: socks5\n    server: example.com\n    port: 1080\n    password: " + strings.Repeat("x", 7<<20) + "\n")
+	for i := 0; i < 4; i++ {
+		if err := s.Import(fmt.Sprintf("source-%d", i), "", data, "", 0, ""); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Save(profile); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path := filepath.Join(Dir(profile), "sources.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Import("overflow", "", data, "", 0, ""); err != nil {
+		t.Fatal("individual import should remain within its input limit", err)
+	}
+	if err := s.Save(profile); err == nil {
+		t.Fatal("cumulative imports saved an unreadable store")
+	}
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("failed save changed the previous file", err)
+	}
+	loaded, err := Load(profile)
+	if err != nil || len(loaded.Sources) != 4 || loaded.Auth != s.Auth {
+		t.Fatal("previous sources could not be recovered after rejected import", err)
+	}
+	// Normal source removal must still work after the rejected import.
+	loaded.Sources = loaded.Sources[:3]
+	if err := loaded.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	if loaded, err := Load(profile); err != nil || len(loaded.Sources) != 3 {
+		t.Fatal("source removal failed after rejected import", err)
+	}
+}
+
+func TestStoreLimitCoversSerializedBytesAndAllowsExactLimit(t *testing.T) {
+	profile := t.TempDir()
+	s, _ := Load(profile)
+	if err := s.Import("source", "", []byte(testNodes), "source", 0, ""); err != nil {
+		t.Fatal(err)
+	}
+	s.Sources[0].Nodes[0].Config["password"] = ""
+	if err := s.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(Dir(profile), "sources.json")
+	base, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	padding := strings.Repeat("x", maxStoreSize-int(base.Size()))
+	s.Sources[0].Nodes[0].Config["password"] = padding
+	if err := s.Save(profile); err != nil {
+		t.Fatal("exact limit was rejected", err)
+	}
+	if info, err := os.Stat(path); err != nil || info.Size() != maxStoreSize {
+		t.Fatal("fixture did not reach the exact serialized limit", err)
+	}
+	if _, err := Load(profile); err != nil {
+		t.Fatal("exact-size saved store was not readable", err)
+	}
+	// The raw string has the same byte length, but JSON escapes '<' into six
+	// bytes. Limits must cover the persisted representation, not input lengths.
+	s.Sources[0].Nodes[0].Config["password"] = padding[:len(padding)-1] + "<"
+	if err := s.Save(profile); err == nil {
+		t.Fatal("JSON expansion bypassed the persisted-size limit")
+	}
+	loaded, err := Load(profile)
+	if err != nil || loaded.Sources[0].Nodes[0].Config["password"] != padding {
+		t.Fatal("overflow replaced the exact-size previous store", err)
+	}
+}
 
 const testNodes = `mixed-port: 7890
 external-controller: 0.0.0.0:9090

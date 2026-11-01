@@ -11,6 +11,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { EnvironmentShield } from "./environment-shield";
+import logo from "./logo.png";
 import { projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
 
@@ -41,6 +42,7 @@ export function WorkspaceSidebar({
   onSettings,
   onSafety,
   onCollapse,
+  updateAction,
 }) {
   const [collapsed, setCollapsed] = useState({});
   const activeWorkspace = tabs.find((tab) => tab.id === active)?.workspace;
@@ -53,7 +55,7 @@ export function WorkspaceSidebar({
     <aside className="workspace-sidebar" aria-label="项目与终端">
       <div className="sidebar-top">
         <span className="sidebar-brand">
-          <EnvironmentShield size={21} healthy={healthy} />
+          <img className="brand-logo" src={logo} alt="" />
           Cage
         </span>
         <button
@@ -207,10 +209,13 @@ export function WorkspaceSidebar({
           <span>{healthy ? "环境运行正常" : runtimeLabel}</span>
           <EnvironmentShield size={17} healthy={healthy} />
         </button>
-        <button className="sidebar-link" onClick={onSettings}>
-          <Settings2 size={17} />
-          设置<kbd>⌘,</kbd>
-        </button>
+        <div className="sidebar-footer-actions">
+          <button className="sidebar-link" onClick={onSettings}>
+            <Settings2 size={17} />
+            设置<kbd>⌘,</kbd>
+          </button>
+          {updateAction}
+        </div>
       </div>
     </aside>
   );

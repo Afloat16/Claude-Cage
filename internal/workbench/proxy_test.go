@@ -42,7 +42,7 @@ func TestFailedSubscriptionRefreshKeepsWorkingNodesAndSecretsPrivate(t *testing.
 		t.Fatal(err)
 	}
 	before := p.Sources[0]
-	if err = s.changeProxy("refresh", proxyInput{ID: "source"}); err == nil {
+	if err = s.changeProxy("refresh", proxyInput{ID: "source"}, nil); err == nil {
 		t.Fatal("broken subscription accepted")
 	}
 	after, err := managedproxy.Load(s.profile)

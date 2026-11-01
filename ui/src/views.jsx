@@ -12,18 +12,21 @@ import { FitAddon } from "@xterm/addon-fit";
 import RFB from "../.generated/novnc/core/rfb.js";
 import { api, readClipboard, writeClipboard } from "./api";
 import { installRemoteInput } from "./remote-input";
+import { useWindowVisibility } from "./window-visibility";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export const RemoteView = forwardRef(function RemoteView(
-  { visible, keyboard, onStatus, onFallback },
+  { visible, keyboard, tabId, onStatus, onFallback },
   ref,
 ) {
+  const windowVisible = useWindowVisibility();
+  const screenVisible = visible && windowVisible;
   const box = useRef(),
     rfb = useRef(),
     input = useRef(),
     current = useRef({ visible, keyboard, onStatus, onFallback });
-  current.current = { visible, keyboard, onStatus, onFallback };
+  current.current = { visible: screenVisible, keyboard, tabId, onStatus, onFallback };
   const failures = useRef(0);
   const [connection, setConnection] = useState("connecting"),
     [attempt, setAttempt] = useState(0);
@@ -40,6 +43,7 @@ export const RemoteView = forwardRef(function RemoteView(
       onFallback(input.current?.text() || "", "可在此使用本机复制、粘贴。"),
   }));
   useEffect(() => {
+    if (!screenVisible) return;
     let disposed = false,
       client,
       resizeObserver,
@@ -76,6 +80,7 @@ export const RemoteView = forwardRef(function RemoteView(
           const resize = () => {
             clearTimeout(resizeTimer);
             resizeTimer = setTimeout(() => {
+              if (disposed) return;
               const { width, height } = box.current.getBoundingClientRect();
               if (width >= 320 && height >= 240)
                 api("/browser/resize", {
@@ -90,6 +95,14 @@ export const RemoteView = forwardRef(function RemoteView(
           resizeObserver.observe(box.current);
           resize();
           input.current = installRemoteInput(client, box.current, {
+            insertText: (text) => {
+              const id = current.current.tabId;
+              return client.cageRunInput(() => {
+                if (disposed || !current.current.visible || current.current.tabId !== id)
+                  throw new Error("Input target changed");
+                return api("/browser/insert-text", { id, text });
+              });
+            },
             mode: () => current.current.keyboard,
             isActive: () => current.current.visible,
             onStatus: (t) => current.current.onStatus(t),
@@ -98,6 +111,7 @@ export const RemoteView = forwardRef(function RemoteView(
           if (current.current.visible) client.focus();
         });
         client.addEventListener("disconnect", () => {
+          if (disposed) return;
           input.current?.dispose();
           input.current = null;
           retry();
@@ -119,13 +133,13 @@ export const RemoteView = forwardRef(function RemoteView(
       client?.disconnect();
       rfb.current = null;
     };
-  }, [attempt]);
+  }, [attempt, screenVisible]);
   useEffect(() => {
-    if (visible && connection === "connected") {
+    if (screenVisible && connection === "connected") {
       const t = setTimeout(() => rfb.current?.focus(), 80);
       return () => clearTimeout(t);
     }
-  }, [visible, connection]);
+  }, [screenVisible, connection]);
   return (
     <div className={`remote-view ${visible ? "" : "concealed"}`}>
       <div className="remote-canvas" ref={box} />

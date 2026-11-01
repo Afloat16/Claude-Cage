@@ -25,7 +25,7 @@ Claude Cage waa mashiin macmal ah oo Linux ah oo fudud kaas oo isku dara termina
 
 **Interface ugu weyn ee Cage:**
 
-! [Kursiga shaqada ee Alpha 2 iyo terminal muujinaya mashruuca demo-qafiska](www/public/workbench.jpg)
+! [Kursiga shaqada ee Cage iyo terminal muujinaya mashruuca demo-qafiska](www/public/workbench.jpg)
 
 ## Maxaad ku samayn kartaa Cage
 
@@ -54,9 +54,9 @@ Siideynta hore waa ay taageertaa **Apple Silicon Macs (M-series chips), oo ku sh
 
 Rakibahu waxa ka mid ah bench-ka shaqada iyo xudunta wakiilka network. Isticmaalka maalinlaha ah uma baahna rakibida Go, Node.js, Docker, ama Clash. Daahfurka ugu horreeya wuxuu weli u baahan yahay isku xirka internetka si loo soo dejiyo sawirka Linux iyo aaladaha horumarinta. Cage ma bixiso adeeg wakiil shabakad ama akoon Claude.
 
-Nooca hadda: `0.2.0-alpha.2`. Koodhka isha, mareegaha, iyo sii daynta waa dadwayne. Tixraac qoraalada sii daynta kasta ee saxeexa rakibaha, notarization Apple, iyo baaxadda ansixinta. Ku rakibida mashiinka nadiifka ah, waafaqid ku saabsan Macs-ka jireed ee ku shaqeeya macOS 14, oggolaanshaha koontada Claude dhabta ah, iyo codsiyada moodeelka ayaa wali u baahan ansaxinta buuxda.
+Nooca hadda: `0.1.0-alpha.1`. Koodhka isha, mareegaha, iyo sii daynta waa dadwayne. Tixraac qoraalada sii daynta kasta ee saxeexa rakibaha, notarization Apple, iyo baaxadda ansixinta. Ku rakibida mashiinka nadiifka ah, waafaqid ku saabsan Macs-ka jireed ee ku shaqeeya macOS 14, oggolaanshaha koontada Claude dhabta ah, iyo codsiyada moodeelka ayaa wali u baahan ansaxinta buuxda.
 
-Noocyada leh taageerada cusboonaysiinta app-ku waxay muujinayaan xakamaynta cusboonaysiinta ee geeska bidix ee hoose. Marka cusboonaysiinta la heli karo, aaladda fallaadha hoose waxay akhridaa 'Download update'. Markaad gujiso waxay soo dejisaa, xaqiijisaa, rakibtaa, oo dib u bilawdaa arjiga. Keydi oo jooji socodsiinta hawlaha marka hore. Cusboonaysiinta soo dejinta iyada oo loo marayo wakiilka shabakadda ee la xushay, iyada oo aan dib loogu laaban xiriir toos ah. Rakibaadda tooska ah waxay u baahan tahay saxeex isla daabacaha iyo xaqiijinta Apple. Isticmaalayaasha Alpha 1 waa inay marka hore gacanta ku rakibaan Alpha 2; Noocyada soo socda waxay isticmaali karaan cusbooneysiinta app-ka. Faahfaahinta, eeg [Kor u qaad oo ka saar](docs/getting-started.md#升级与卸载).
+Noocyada leh taageerada cusboonaysiinta app-ku waxay muujinayaan xakamaynta cusboonaysiinta ee geeska bidix ee hoose. Marka cusboonaysiinta la heli karo, aaladda fallaadha hoose waxay akhridaa 'Download update'. Markaad gujiso waxay soo dejisaa, xaqiijisaa, rakibtaa, oo dib u bilawdaa arjiga. Keydi oo jooji socodsiinta hawlaha marka hore. Cusboonaysiinta soo dejinta iyada oo loo marayo wakiilka shabakadda ee la xushay, iyada oo aan dib loogu laaban xiriir toos ah. Rakibaadda tooska ah waxay u baahan tahay saxeex isla daabacaha iyo xaqiijinta Apple. Noocyada soo socda waxay isticmaali karaan cusbooneysiinta app-ka. Faahfaahinta, eeg [Kor u qaad oo ka saar](docs/getting-started.md#升级与卸载).
 
 ## Ku bilow saddex tallaabo
 

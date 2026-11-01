@@ -10,6 +10,17 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     private var loading: NSTextField!
     private var retry: NSButton!
     private var backdrop: NSVisualEffectView!
+    private var completeUpdateButton: NSButton!
+    private var existingEnvironmentButton: NSButton!
+    private var completeUpdateMenu: NSMenuItem!
+    private var controllerNeedsUpdate = false
+    private var appUpdater: CageAppUpdater!
+
+    private struct DesktopEntry {
+        let status: String
+        let url: URL?
+        let message: String
+    }
 
     static func main() {
         let app = NSApplication.shared
@@ -63,8 +74,32 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         retry.translatesAutoresizingMaskIntoConstraints = false
         retry.isHidden = true
         content.addSubview(retry)
+        completeUpdateButton = NSButton(title: "保存后停止环境并完成更新", target: self, action: #selector(completePendingUpdate))
+        completeUpdateButton.bezelStyle = .rounded
+        completeUpdateButton.translatesAutoresizingMaskIntoConstraints = false
+        completeUpdateButton.isHidden = true
+        content.addSubview(completeUpdateButton)
+        existingEnvironmentButton = NSButton(title: "打开现有环境保存文件", target: self, action: #selector(openExistingEnvironment))
+        existingEnvironmentButton.bezelStyle = .rounded
+        existingEnvironmentButton.translatesAutoresizingMaskIntoConstraints = false
+        existingEnvironmentButton.isHidden = true
+        content.addSubview(existingEnvironmentButton)
         NSLayoutConstraint.activate([loading.centerXAnchor.constraint(equalTo: content.centerXAnchor), loading.centerYAnchor.constraint(equalTo: content.centerYAnchor, constant: -16), loading.widthAnchor.constraint(lessThanOrEqualToConstant: 600), retry.centerXAnchor.constraint(equalTo: content.centerXAnchor), retry.topAnchor.constraint(equalTo: loading.bottomAnchor, constant: 20)])
+        NSLayoutConstraint.activate([existingEnvironmentButton.centerXAnchor.constraint(equalTo: content.centerXAnchor), existingEnvironmentButton.topAnchor.constraint(equalTo: retry.bottomAnchor, constant: 10), completeUpdateButton.centerXAnchor.constraint(equalTo: content.centerXAnchor), completeUpdateButton.topAnchor.constraint(equalTo: existingEnvironmentButton.bottomAnchor, constant: 10)])
         applyAppearance(appearance)
+        appUpdater = CageAppUpdater(bundleURL: Bundle.main.bundleURL, onChange: { [weak self] state in
+            guard let data = try? JSONSerialization.data(withJSONObject: state), let json = String(data: data, encoding: .utf8) else { return }
+            self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('cage-app-update',{detail:\(json)}));", completionHandler: nil)
+        }, confirmStop: { [weak self] completion in
+            guard let self else { completion(false); return }
+            let alert = NSAlert()
+            alert.messageText = "更新已下载，保存并停止环境后安装重启"
+            alert.informativeText = "请先保存编辑器中的文件并结束正在运行的工作。继续后 Cage 会停止环境、安装已验证的更新并重新启动。"
+            alert.addButton(withTitle: "已保存，停止并安装")
+            alert.addButton(withTitle: "稍后安装")
+            self.window.makeKeyAndOrderFront(nil)
+            alert.beginSheetModal(for: self.window) { completion($0 == .alertFirstButtonReturn) }
+        }, quit: { [weak self] in self?.allowQuit = true; NSApp.terminate(nil) }, reconnect: { [weak self] in self?.bootstrap() })
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         bootstrap()
@@ -76,6 +111,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let appMenu = NSMenu(title: "Cage")
         appItem.submenu = appMenu
         appMenu.addItem(withTitle: "关于 Cage", action: #selector(about), keyEquivalent: "")
+        appMenu.addItem(withTitle: "检查应用更新…", action: #selector(checkApplicationUpdate), keyEquivalent: "")
+        completeUpdateMenu = appMenu.addItem(withTitle: "完成待安装更新…", action: #selector(completePendingUpdate), keyEquivalent: "")
+        completeUpdateMenu.isHidden = true
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "设置…", action: #selector(settings), keyEquivalent: ",")
         appMenu.addItem(.separator())
@@ -123,7 +161,8 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
     @objc private func about() {
         let version = Bundle.main.object(forInfoDictionaryKey: "CageVersion") as? String ?? Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "开发版本"
-        NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Cage", .applicationVersion:version, .credits:NSAttributedString(string:"本机隔离编码工作区\n基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js")])
+        let status = controllerNeedsUpdate ? "\n当前连接旧后台；更新尚未完成。" : ""
+        NSApp.orderFrontStandardAboutPanel(options: [.applicationName:"Cage", .applicationVersion:version, .credits:NSAttributedString(string:"本机隔离编码工作区\n基于 agent-vm、Lima、Chromium、noVNC 与 xterm.js" + status)])
     }
     @objc private func settings() { action("settings") }
     @objc private func openProject() { action("openProject") }
@@ -132,32 +171,56 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     @objc private func closeTab() { action("closeTab") }
     @objc private func closeWindow() { window.close() }
     @objc private func requestQuit() { NSApp.terminate(nil) }
+    @objc private func checkApplicationUpdate() { _ = appUpdater?.handle("check") }
     @objc private func retryConnection() { bootstrap() }
+    @objc private func openExistingEnvironment() { bootstrap(options: ["--existing"]) }
+    @objc private func completePendingUpdate() {
+        let alert = NSAlert()
+        alert.messageText = "保存文件后完成更新"
+        alert.informativeText = "这会停止现有环境和终端任务，再切换到新版后台。项目文件和登录状态会保留。请先保存编辑器中的修改。"
+        alert.addButton(withTitle: "已保存，停止并更新")
+        alert.addButton(withTitle: "继续当前工作")
+        alert.beginSheetModal(for: window) { response in
+            if response == .alertFirstButtonReturn { self.bootstrap(options: ["--complete-update"]) }
+        }
+    }
     private func action(_ name: String) { webView.evaluateJavaScript("window.cageNativeAction?.('\(name)')", completionHandler: nil) }
-    private func requestEntry(_ completion: @escaping (Result<URL, Error>) -> Void) {
+    private func requestEntry(options: [String] = [], _ completion: @escaping (Result<DesktopEntry, Error>) -> Void) {
         guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else {
             completion(.failure(NSError(domain: "Cage", code: 1))); return
         }
         DispatchQueue.global(qos: .userInitiated).async {
-            let process = Process(); process.executableURL = executable; process.arguments = ["desktop", "--json"]
+            let process = Process(); process.executableURL = executable; process.arguments = ["desktop", "--json"] + options
             let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
             do {
                 try process.run()
                 let data = output.fileHandleForReading.readDataToEndOfFile()
                 process.waitUntilExit()
-                let result = try JSONSerialization.jsonObject(with: data) as? [String:String]
-                guard process.terminationStatus == 0, let raw = result?["url"], let url = URL(string: raw), url.scheme == "http", url.host == "localhost", url.port != nil, url.fragment?.isEmpty == false else { throw NSError(domain:"Cage", code:1) }
-                DispatchQueue.main.async { completion(.success(url)) }
+                let result = try JSONSerialization.jsonObject(with: data) as? [String:Any]
+                let message = result?["message"] as? String ?? "工作台未能启动，请重试连接。"
+                guard process.terminationStatus == 0, let status = result?["status"] as? String else { throw NSError(domain:"Cage", code:1, userInfo:[NSLocalizedDescriptionKey:message]) }
+                if status == "upgrade_pending" {
+                    DispatchQueue.main.async { completion(.success(DesktopEntry(status:status, url:nil, message:message))) }
+                    return
+                }
+                guard let raw = result?["url"] as? String, let url = URL(string: raw), url.scheme == "http", url.host == "localhost", url.port != nil, url.fragment?.isEmpty == false else { throw NSError(domain:"Cage", code:1, userInfo:[NSLocalizedDescriptionKey:message]) }
+                DispatchQueue.main.async { completion(.success(DesktopEntry(status:status, url:url, message:""))) }
             } catch { DispatchQueue.main.async { completion(.failure(error)) } }
         }
     }
-    private func bootstrap() {
-        loading.stringValue = "正在启动 Cage 工作台…"
+    private func bootstrap(options: [String] = []) {
+        loading.stringValue = options.contains("--complete-update") ? "正在停止环境并切换到新版后台…" : "正在启动 Cage 工作台…"
         loading.isHidden = false; retry.isHidden = true; webView.isHidden = true
-        requestEntry { result in
+        completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true
+        requestEntry(options: options) { result in
             switch result {
-            case .success(let url): self.expectedPort = url.port!; self.webView.load(URLRequest(url: url))
-            case .failure: self.showError("工作台未能启动。请重试；详细信息位于 ~/.claude-cage/control.log。")
+            case .success(let entry):
+                self.controllerNeedsUpdate = entry.status != "ready"
+                self.completeUpdateMenu.isHidden = !self.controllerNeedsUpdate
+                self.window.title = self.controllerNeedsUpdate ? "Cage（更新待完成）" : "Cage"
+                if let url = entry.url { self.expectedPort = url.port!; self.webView.load(URLRequest(url: url)) }
+                else { self.showError(entry.message); self.completeUpdateButton.isHidden = false; self.existingEnvironmentButton.isHidden = false }
+            case .failure(let error): self.showError(error.localizedDescription)
             }
         }
     }
@@ -173,7 +236,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         window.backgroundColor = NSColor(srgbRed: Double((hex >> 16) & 255)/255, green: Double((hex >> 8) & 255)/255, blue: Double(hex & 255)/255, alpha: 1)
         loading.textColor = .labelColor
     }
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loading.isHidden = true; retry.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView) }
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loading.isHidden = true; retry.isHidden = true; completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView); publishWindowVisibility() }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError("无法连接工作台。后台任务不会因此自动结束。") }
     func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { bootstrap() }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
@@ -184,6 +247,13 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, let body = message.body as? [String:Any], let action = body["action"] as? String else { replyHandler(nil,"请求来源无效"); return }
         switch action {
+        case "workbenchReady":
+            guard !controllerNeedsUpdate else { replyHandler(nil,"后台版本尚未同步，更新未完成"); return }
+            appUpdater?.markLaunchReady()
+            replyHandler(true,nil)
+        case "appUpdate":
+            guard let operation = body["operation"] as? String, ["status", "check", "install", "cancel"].contains(operation) else { replyHandler(nil,"更新操作无效"); return }
+            replyHandler(appUpdater.handle(operation),nil)
         case "appearance":
             guard let mode = body["mode"] as? String, ["system", "light", "dark"].contains(mode), let background = body["background"] as? String, background.range(of: "^#[0-9a-fA-F]{6}$", options: .regularExpression) != nil else { replyHandler(nil,"外观参数无效"); return }
             let value: [String:Any] = ["mode":mode,"background":background,"translucent":body["translucent"] as? Bool ?? false]
@@ -198,9 +268,11 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = "共享此项目"; panel.message = "仅此文件夹会与 Cage 共享。请选择具体项目。"
             panel.beginSheetModal(for:window) { response in replyHandler(response == .OK ? panel.url?.path : "",nil) }
         case "refreshSession":
-            requestEntry { result in
+            requestEntry(options: controllerNeedsUpdate ? ["--existing"] : []) { result in
                 switch result {
-                case .success(let url): replyHandler(["url":url.absoluteString],nil)
+                case .success(let entry):
+                    if let url = entry.url { replyHandler(["url":url.absoluteString],nil) }
+                    else { replyHandler(nil,entry.message) }
                 case .failure: replyHandler(nil,"工作台会话恢复失败，请重新连接后重试。")
                 }
             }
@@ -211,11 +283,25 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
     func webView(_ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) { let alert = NSAlert(); alert.messageText = message; alert.beginSheetModal(for:window){_ in completionHandler()} }
     func webView(_ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) { let alert = NSAlert(); alert.messageText = message; alert.addButton(withTitle:"确定"); alert.addButton(withTitle:"取消"); alert.beginSheetModal(for:window){completionHandler($0 == .alertFirstButtonReturn)} }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window.makeKeyAndOrderFront(nil); return true }
+    private func publishWindowVisibility(forceHidden: Bool = false) {
+        guard window != nil, webView != nil else { return }
+        let visible = !forceHidden && window.isVisible && !window.isMiniaturized && window.occlusionState.contains(.visible)
+        webView.evaluateJavaScript("window.cageWindowVisible = \(visible ? "true" : "false"); window.dispatchEvent(new Event('cage-window-visibility'));", completionHandler: nil)
+    }
+    func windowDidChangeOcclusionState(_ notification: Notification) { publishWindowVisibility() }
+    func windowDidMiniaturize(_ notification: Notification) { publishWindowVisibility() }
+    func windowDidDeminiaturize(_ notification: Notification) { publishWindowVisibility() }
+    func windowWillClose(_ notification: Notification) { publishWindowVisibility(forceHidden: true) }
+    func applicationDidHide(_ notification: Notification) { publishWindowVisibility(forceHidden: true) }
+    func applicationDidUnhide(_ notification: Notification) { publishWindowVisibility() }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { window.makeKeyAndOrderFront(nil); publishWindowVisibility(); return true }
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
+    func applicationWillTerminate(_ notification: Notification) { appUpdater?.cancelForTermination() }
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if allowQuit { return .terminateNow }
-        if webView.isHidden { return .terminateNow }
+        if allowQuit || webView.isHidden || appUpdater?.awaitingInitialWorkbench == true {
+            if appUpdater?.prepareForTermination({ NSApp.reply(toApplicationShouldTerminate: true) }) == true { return .terminateLater }
+            return .terminateNow
+        }
         window.makeKeyAndOrderFront(nil); action("quit"); return .terminateCancel
     }
 }

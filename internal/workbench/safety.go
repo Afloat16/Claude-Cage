@@ -25,11 +25,12 @@ import (
 var guestSafetyProbe string
 
 type safetyState struct {
-	Gate       *cage.GateStatus   `json:"gate,omitempty"`
-	Report     *cage.SafetyReport `json:"report,omitempty"`
-	Error      string             `json:"error,omitempty"`
-	ExitIP     string             `json:"exit_ip,omitempty"`
-	VerifiedAt time.Time          `json:"verified_at,omitempty"`
+	pauseVersion uint64
+	Gate         *cage.GateStatus   `json:"gate,omitempty"`
+	Report       *cage.SafetyReport `json:"report,omitempty"`
+	Error        string             `json:"error,omitempty"`
+	ExitIP       string             `json:"exit_ip,omitempty"`
+	VerifiedAt   time.Time          `json:"verified_at,omitempty"`
 }
 
 type networkObservation struct {
@@ -102,9 +103,12 @@ func (s *Server) pauseNetworkNow(reason string) error {
 }
 
 func (s *Server) revokeNetworkNow(reason string, pause bool) error {
+	var intentErr error
 	s.mu.Lock()
 	if pause {
 		s.networkPaused = true
+		s.safety.pauseVersion++
+		intentErr = s.saveNetworkIntentLocked(true)
 	}
 	if s.checkCancel != nil {
 		s.checkCancel()
@@ -117,13 +121,13 @@ func (s *Server) revokeNetworkNow(reason string, pause bool) error {
 	defer s.safetyOp.Unlock()
 	client, err := s.gateClient()
 	if err != nil {
-		return err
+		return errors.Join(intentErr, err)
 	}
 	state, err := client.Close(context.Background(), reason)
 	if err == nil {
 		s.publishGate(state)
 	}
-	return err
+	return errors.Join(intentErr, err)
 }
 
 func (s *Server) safetyExport(w http.ResponseWriter, r *http.Request) {
@@ -530,7 +534,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 // failure drill. Lost supervision eventually closes existing guest connections.
 func (s *Server) monitorSafety() {
 	s.mu.Lock()
-	ready, busy, last := s.ready, s.job.Running || s.networkPaused, s.safety.VerifiedAt
+	ready, busy, last := s.ready, (s.job.Running && s.job.Kind != "environment-tools") || s.networkPaused, s.safety.VerifiedAt
 	s.mu.Unlock()
 	if !ready || busy || time.Since(last) < 30*time.Second {
 		return
@@ -594,10 +598,15 @@ func (s *Server) monitorSafety() {
 			issue = "浏览器时区或语言的运行状态无法确认，请重新检测"
 		}
 	}
+	s.finishSafetyMonitor(ctx, client, state, ip, issue)
+}
+
+// Recheck the user operation and configuration at the actual lease write.
+func (s *Server) finishSafetyMonitor(ctx context.Context, client *cage.GateClient, state cage.GateStatus, ip, issue string) {
 	s.safetyOp.Lock()
 	defer s.safetyOp.Unlock()
 	s.mu.Lock()
-	busy = s.job.Running || s.networkPaused
+	busy := (s.job.Running && s.job.Kind != "environment-tools") || s.networkPaused
 	s.mu.Unlock()
 	if busy {
 		return

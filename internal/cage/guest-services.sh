@@ -20,6 +20,28 @@ NODE
 SCRIPT
 sudo chmod 0755 /usr/local/bin/cage-open
 sudo ln -sf /usr/local/bin/cage-open /usr/local/bin/xdg-open
+sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
+#!/bin/sh
+set -eu
+workspace=$(cat /home/cage/.config/claude-cage/editor-workspace)
+exec /usr/bin/code-server --bind-addr 127.0.0.1:18080 --config /home/cage/.config/claude-cage/code-server.yaml --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$workspace"
+SCRIPT
+sudo chmod 0755 /usr/local/bin/cage-editor-start
+sudo tee /etc/systemd/system/cage-editor.service >/dev/null <<'UNIT'
+[Unit]
+Description=Cage file editor
+[Service]
+User=cage
+WorkingDirectory=/home/cage
+Environment=HOME=/home/cage
+EnvironmentFile=/etc/claude-cage/environment
+ExecStart=/usr/local/bin/cage-editor-start
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=15
+UNIT
+printf 'cage-browser ALL=(root) NOPASSWD: /usr/bin/systemctl restart cage-editor.service\n' | sudo tee /etc/sudoers.d/cage-editor >/dev/null
+sudo chmod 0440 /etc/sudoers.d/cage-editor
 sudo tee /etc/profile.d/claude-cage.sh >/dev/null <<'SCRIPT'
 if [ -f /etc/claude-cage/environment ]; then
   set -a
@@ -71,6 +93,9 @@ User=cage-browser
 Environment=DISPLAY=:77
 EnvironmentFile=/etc/claude-cage/environment
 ExecStart=/usr/bin/node /usr/local/lib/cage-browser-agent.mjs
+# Let the controller close Chromium and flush its tabs and profile before
+# systemd terminates any remaining child processes.
+KillMode=mixed
 Restart=on-failure
 RestartSec=2
 UNIT

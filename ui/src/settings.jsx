@@ -16,6 +16,7 @@ import { AppearanceSettings } from "./appearance-settings";
 import { ProxySettings } from "./proxy-settings";
 import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
+import { EnvironmentVersions } from "./environment-versions";
 const sections = [
   ["keyboard", "通用", SlidersHorizontal],
   ["appearance", "外观", Palette],
@@ -526,6 +527,7 @@ export function SettingsPanel({
                 <p className="footnote">
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
+                <EnvironmentVersions status={status} onConfirm={onConfirm} />
                 {status.can_restore && (
                   <button
                     className="text-button"

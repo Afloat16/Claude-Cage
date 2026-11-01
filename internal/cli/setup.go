@@ -11,6 +11,7 @@ import (
 	"time"
 
 	agentvm "github.com/sylvinus/agent-vm"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/env"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/state"
@@ -525,7 +526,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 
 func cageInstallEnv() string {
 	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
-		return "export CLAUDE_CAGE=1\n"
+		return "export CLAUDE_CAGE=1\n" + cage.ToolInstallPrelude()
 	}
 	return ""
 }

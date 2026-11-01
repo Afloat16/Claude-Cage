@@ -16,7 +16,7 @@
 
 发布或编辑 Release 会运行 `Website and public releases`：匿名下载附件，核对 SHA-256、应用版本、Developer ID 签名、公证票据与 Gatekeeper；通过后重建并部署主页。草稿不会进入公开下载列表。验收失败时，该轮主页部署停止，维护者应检查 Actions 日志并修正发行物。
 
-版本标签对应的源码须包含发布工作流。`v0.2.0-alpha.1` 等早期标签没有该触发配置，编辑其 Release 不会自动运行新流程；需要复验时，使用下文带 `release_tag` 的手动命令。
+版本标签对应的源码须包含发布工作流。需要复验时，使用下文带 `release_tag` 的手动命令。
 
 GitHub Release 一旦公开，应用内更新即可读到它，早于这项事后检查完成。因此，本地打包验收必须在发布草稿前通过，不能依赖 Actions 作为安装包公开前的审批门槛。CI 中若用默认 `GITHUB_TOKEN` 发布 Release，不会触发后续工作流，须另外显式调用网站工作流；手工网页发布或 `gh` 用户凭据发布会正常触发。
 
@@ -24,12 +24,12 @@ GitHub Release 一旦公开，应用内更新即可读到它，早于这项事�
 
 支持应用内更新的客户端直接读取公开 Release，经所选受管代理下载，没有主机直连回退。正式客户端忽略预发行；预发行客户端可接收更新的预发行或正式版本。客户端仍独立核对摘要、应用身份、同一 Developer ID Team 和 Apple 验证结果。
 
-`0.2.0-alpha.1` 不包含更新器，用户须手动下载安装 Alpha 2。Alpha 2 包含应用内更新器，后续版本可通过应用内入口升级。公开源校验与单元测试不能证明真实用户环境下的替换、重启和回滚已经验收；每次发布均须在 Release 中说明实际验证范围。
+首个内测版本为 `0.1.0-alpha.1`，首次安装使用 DMG，后续版本可通过应用内入口升级。公开源校验与单元测试不能证明真实用户环境下的替换、重启和回滚已经验收；每次发布均须在 Release 中说明实际验证范围。
 
 可在不安装、不启动 App 的情况下验证公开附件：
 
 ```sh
-node www/scripts/sync-release.mjs --tag v0.2.0-alpha.1 \
+node www/scripts/sync-release.mjs --tag v0.1.0-alpha.1 \
   --output /tmp/cage-release-check/release.json \
   --archive-directory /tmp/cage-release-check/assets
 bash scripts/verify-macos-release.sh /tmp/cage-release-check/assets
@@ -43,7 +43,7 @@ GitHub Pages 的发布源设为 GitHub Actions。`main` 的网站文件变更会
 gh workflow run www.yml --repo Lee-xeo/Claude-Cage --ref main
 ```
 
-需要同时重验某个公开安装包时，在命令后增加 `-f release_tag=v0.2.0-alpha.1`，替换为实际版本。
+需要同时重验某个公开安装包时，在命令后增加 `-f release_tag=v0.1.0-alpha.1`，替换为实际版本。
 
 主页构建从公开 Release 刷新下载链接，避免源码版本领先安装包时出现失效下载。图片、样式、404 返回链接与兼容重定向均使用 `/Claude-Cage/` 子路径。
 

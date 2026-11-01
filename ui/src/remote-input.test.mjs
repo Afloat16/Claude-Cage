@@ -15,24 +15,33 @@ function fixture(native = false) {
     local = {},
     keys = [],
     pastes = [],
+    texts = [],
     writes = [],
     statuses = [];
   let reads = 0,
     mode = "mac";
   doc.activeElement = canvas;
   doc.body = { append() {} };
-  doc.createElement = () => ({
+  const target = Object.assign(new EventTarget(), {
+    value: "",
     style: {},
+    classList: { add() {}, remove() {} },
     setAttribute() {},
     focus() {
       doc.activeElement = this;
     },
     remove() {},
   });
+  doc.createElement = () => target;
+  win.innerWidth = 1280;
+  win.innerHeight = 800;
   const rfb = new EventTarget();
+  rfb.cageSetKeyboardTarget = (element) => {
+    rfb.target = element;
+  };
   rfb.sendKey = (...args) => keys.push(args);
   rfb.focus = () => {
-    doc.activeElement = canvas;
+    doc.activeElement = rfb.target || canvas;
   };
   rfb.cagePasteText = (text) => {
     pastes.push(text);
@@ -57,16 +66,27 @@ function fixture(native = false) {
     getKeysym: (e) =>
       ({ Shift: 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb })[e.key] ??
       (e.key.length === 1 ? e.key.codePointAt(0) : null),
+    Keysyms: {
+      lookup: (codepoint) =>
+        codepoint <= 255 ? codepoint : 0x01000000 | codepoint,
+    },
   };
   const install = vm.runInNewContext(source + "\ninstallRemoteInput;", context);
   const controller = install(
     rfb,
-    { contains: (element) => element === canvas },
+    Object.assign(new EventTarget(), {
+      contains: (element) => element === canvas || element === target,
+      append() {},
+      getBoundingClientRect: () => ({ left: 0, top: 0 }),
+    }),
     {
       mode: () => mode,
       onStatus: (t) => statuses.push(t),
       onFallback() {},
       isActive: () => true,
+      insertText: async (text) => {
+        texts.push(text);
+      },
     },
   );
   const key = (type, key, code, extra = {}) => {
@@ -89,11 +109,13 @@ function fixture(native = false) {
     rfb,
     keys,
     pastes,
+    texts,
     writes,
     statuses,
     controller,
     key,
     local,
+    target,
     setMode: (value) => {
       mode = value;
     },
@@ -129,6 +151,85 @@ test("Mac find and redo preserve the Linux Ctrl/Shift chord", () => {
         [0xffe3, false],
       ],
     );
+  } finally {
+    f.controller.dispose();
+  }
+});
+
+function inputEvent(f, type, properties = {}) {
+  const event = new Event(type, { cancelable: true });
+  Object.assign(event, properties);
+  f.target.dispatchEvent(event);
+  return event;
+}
+
+test("host IME receives composition keys and sends only committed Unicode in order", () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    assert.equal(f.doc.activeElement, f.target);
+    assert.equal(
+      f.key("keydown", "Process", "KeyN", { keyCode: 229 }).defaultPrevented,
+      false,
+    );
+    inputEvent(f, "compositionstart");
+    f.target.value = "nihao";
+    inputEvent(f, "input", {
+      data: "nihao",
+      isComposing: true,
+      inputType: "insertCompositionText",
+    });
+    assert.equal(
+      f.key("keydown", " ", "Space", { isComposing: true }).defaultPrevented,
+      false,
+    );
+    assert.deepEqual(f.keys, []);
+    inputEvent(f, "compositionend", { data: "你好🙂" });
+    // Safari sends a final input after compositionend; Chromium sends it before.
+    f.target.value = "你好🙂";
+    inputEvent(f, "input", {
+      data: "你好🙂",
+      inputType: "insertFromComposition",
+    });
+    assert.deepEqual(f.keys, []);
+    assert.equal(f.target.value, "");
+    assert.deepEqual(f.texts, ["你好🙂"]);
+    assert.equal(f.reads(), 0);
+    inputEvent(f, "compositionstart");
+    inputEvent(f, "compositionend", { data: "你好" });
+    assert.equal(
+      f.texts.length,
+      2,
+      "identical consecutive commits are not deduplicated",
+    );
+  } finally {
+    f.controller.dispose();
+  }
+  assert.equal(f.rfb.target, null);
+});
+
+test("cancelled and disconnected compositions do not insert text", () => {
+  const f = fixture();
+  f.rfb.focus();
+  inputEvent(f, "compositionstart");
+  inputEvent(f, "compositionend", { data: "" });
+  assert.deepEqual(f.keys, []);
+  inputEvent(f, "compositionstart");
+  f.controller.dispose();
+  inputEvent(f, "compositionend", { data: "迟到的文本" });
+  assert.deepEqual(f.keys, []);
+  assert.deepEqual(f.texts, []);
+});
+
+test("text input without a composition supports emoji and clears the host buffer", () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    f.target.value = "🙂";
+    inputEvent(f, "input", { data: "🙂", inputType: "insertText" });
+    assert.deepEqual(f.keys, []);
+    assert.deepEqual(f.texts, ["🙂"]);
+    assert.equal(f.target.value, "");
   } finally {
     f.controller.dispose();
   }

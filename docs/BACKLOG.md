@@ -1,6 +1,8 @@
-# Backlog
+# Upstream agent-vm backlog
 
-Known gaps and ideas, not on the website.
+This file retains upstream ideas and their original status. It is historical reference, not the Cage roadmap or a statement of current platform support. Cage desktop targets Apple Silicon macOS; current usage and development entry points are in the [Cage documentation index](README.md).
+
+Known upstream gaps and ideas follow.
 
 ## Windows, natively
 

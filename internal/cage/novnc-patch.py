@@ -1,4 +1,4 @@
-# Patch noVNC's RFB transport so a paste finishes before the next one starts.
+# Patch noVNC's keyboard target and serialize clipboard transfers.
 # The resulting rfb.js retains noVNC's MPL-2.0 license header.
 from pathlib import Path
 import sys
@@ -24,14 +24,70 @@ h = h.replace('src="cage-clipboard.js"', 'src="cage-clipboard.js?cage=3"')
 def replace_once(old, new):
     global source
     if source.count(old) != 1:
-        raise SystemExit('Unsupported noVNC version: clipboard transport patch did not apply')
+        raise SystemExit('Unsupported noVNC version: Cage input/clipboard patch did not apply')
     source = source.replace(old, new)
+
+# Keep noVNC's key tracking and focus lifecycle when the workbench supplies an
+# editable host target for IME. Legacy viewers continue to use the canvas.
+replace_once('''    focus(options) {
+        this._canvas.focus(options);
+    }
+
+    blur() {
+        this._canvas.blur();
+    }''', '''    cageSetKeyboardTarget(target) {
+        this._keyboard.ungrab();
+        this._cageKeyboardTarget = target || this._canvas;
+        this._keyboard = new Keyboard(this._cageKeyboardTarget);
+        this._keyboard.onkeyevent = this._handleKeyEvent.bind(this);
+        if (this._rfbConnectionState === 'connected' && !this._viewOnly) {
+            this._keyboard.grab();
+        }
+    }
+
+    focus(options) {
+        (this._cageKeyboardTarget || this._canvas).focus(options);
+    }
+
+    blur() {
+        (this._cageKeyboardTarget || this._canvas).blur();
+    }''')
 
 replace_once('    clipboardPasteFrom(text) {', '''    // Cage: serialize the clipboard notification, data transfer and paste.
     // A server fence confirms it has processed the provided clipboard data.
+    _cageQueueInput(action) {
+        const result = (this._cageInputChain || Promise.resolve()).then(action);
+        this._cageInputChain = result;
+        const clear = () => {
+            if (this._cageInputChain === result) this._cageInputChain = null;
+        };
+        // A failed text transfer also cancels keys/clicks already queued behind
+        // it, so an Enter cannot submit a form with the committed text missing.
+        result.then(clear, clear);
+        return result;
+    }
+
+    cageRunInput(action) {
+        return this._cageQueueInput(async () => {
+            if (this._rfbConnectionState !== 'connected' || this._viewOnly || !this._supportsFence)
+                throw new Error('Input transport is not ready');
+            // Flush preceding VNC clicks/keys before a browser text insertion.
+            await new Promise((resolve, reject) => {
+                const id = 'cage-input-' + (this._cageInputSequence = (this._cageInputSequence || 0) + 1);
+                const timer = setTimeout(() => {
+                    this._cageInputFence = null;
+                    reject(new Error('Input fence timed out'));
+                }, 4000);
+                this._cageInputFence = { id, timer, resolve };
+                RFB.messages.clientFence(this._sock, (1 << 31) | 1, id);
+            });
+            if (this._rfbConnectionState !== 'connected') throw new Error('Input disconnected');
+            return action();
+        });
+    }
+
     cagePasteText(text) {
-        const previous = this._cagePasteChain || Promise.resolve();
-        const result = previous.then(() => new Promise((resolve, reject) => {
+        return this._cageQueueInput(() => new Promise((resolve, reject) => {
             if (this._rfbConnectionState !== 'connected' || this._viewOnly ||
                 !this._supportsFence ||
                 !this._clipboardServerCapabilitiesActions[extendedClipboardActionNotify] ||
@@ -47,11 +103,33 @@ replace_once('    clipboardPasteFrom(text) {', '''    // Cage: serialize the cli
             this._cagePasteJob = {id, timer, resolve, phase: 'data'};
             this.clipboardPasteFrom(text);
         }));
-        this._cagePasteChain = result.catch(() => {});
-        return result;
     }
 
     clipboardPasteFrom(text) {''')
+
+replace_once('''    sendKey(keysym, code, down) {
+        if (this._rfbConnectionState''', '''    sendKey(keysym, code, down) {
+        if (this._cageInputChain) {
+            this._cageQueueInput(() => this._cageSendKey(keysym, code, down));
+            return;
+        }
+        this._cageSendKey(keysym, code, down);
+    }
+
+    _cageSendKey(keysym, code, down) {
+        if (this._rfbConnectionState''')
+replace_once('''            this.sendKey(keysym, code, true);
+            this.sendKey(keysym, code, false);''', '''            this._cageSendKey(keysym, code, true);
+            this._cageSendKey(keysym, code, false);''')
+replace_once('''    _sendMouse(x, y, mask) {''', '''    _sendMouse(x, y, mask) {
+        if (this._cageInputChain) {
+            this._cageQueueInput(() => this._cageSendMouse(x, y, mask));
+            return;
+        }
+        this._cageSendMouse(x, y, mask);
+    }
+
+    _cageSendMouse(x, y, mask) {''')
 provide = 'RFB.messages.extendedClipboardProvide(this._sock, [extendedClipboardFormatText], [this._clipboardText]);'
 replace_once(provide, provide + '''
                         if (this._cagePasteJob?.phase === 'data') {
@@ -61,12 +139,20 @@ replace_once(provide, provide + '''
 replace_once('''        if (!(flags & (1<<31))) {
             return this._fail("Unexpected fence response");
         }''', '''        if (!(flags & (1<<31))) {
+            const input = this._cageInputFence;
+            if (input && payload === input.id) {
+                clearTimeout(input.timer);
+                this._cageInputFence = null;
+                input.resolve();
+                return true;
+            }
+            if (payload.startsWith('cage-input-')) return true;
             const job = this._cagePasteJob;
             if (job && job.phase === 'fence' && payload === job.id) {
-                this.sendKey(0xffe3, 'ControlLeft', true);
-                this.sendKey(0x76, 'KeyV', true);
-                this.sendKey(0x76, 'KeyV', false);
-                this.sendKey(0xffe3, 'ControlLeft', false);
+                this._cageSendKey(0xffe3, 'ControlLeft', true);
+                this._cageSendKey(0x76, 'KeyV', true);
+                this._cageSendKey(0x76, 'KeyV', false);
+                this._cageSendKey(0xffe3, 'ControlLeft', false);
                 job.phase = 'keys';
                 RFB.messages.clientFence(this._sock, (1 << 31) | 1, job.id + '-keys');
                 return true;

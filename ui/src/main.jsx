@@ -1,3 +1,4 @@
+import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
@@ -26,6 +27,8 @@ import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { WorkspaceTabs } from "./workspace-tabs";
+import { BrowserFavorites } from "./browser-favorites";
+import { BrowserDownloads, useDownloadNotifications } from "./browser-downloads";
 import { ProjectDialog } from "./project-dialog";
 import {
   readLocal,
@@ -37,11 +40,19 @@ import { SafetyPanel } from "./safety";
 import { networkState, isGuestLocalURL } from "./safety-state.mjs";
 import { needsProxySetup } from "./onboarding-state.mjs";
 import { HostGitPreparation } from "./host-git";
+import { NetworkLatency } from "./network-latency";
+import { useWindowVisibility } from "./window-visibility";
+import { AppUpdateButton, useAppUpdates } from "./app-updates";
 import "./style.css";
 import "./appearance.css";
 import { stopAndExit } from "./quit";
 
 function App() {
+  const appUpdates = useAppUpdates();
+  const [recoveringEditor, setRecoveringEditor] = useState(false);
+  const windowVisible = useWindowVisibility();
+  const windowVisibleRef = useRef(windowVisible);
+  windowVisibleRef.current = windowVisible;
   const [status, setStatus] = useState(null),
     [settings, setSettings] = useState(null),
     [proxy, setProxy] = useState(null),
@@ -76,6 +87,10 @@ function App() {
     readyRef = useRef(false),
     browserIds = useRef(new Set()),
     initialized = useRef(false),
+    browserStreamReady = useRef(false),
+    browserSnapshot = useRef({ tabs: [] }),
+    refreshStatus = useRef(null),
+    launchAcknowledged = useRef(false),
     lastJob = useRef(""),
     quitAfterStop = useRef(null);
   activeRef.current = active;
@@ -109,9 +124,10 @@ function App() {
           ? "运行中"
           : "离线可用"
         : running
-          ? "浏览器待恢复"
+          ? status?.environment_update_required ? "环境待更新" : "浏览器待恢复"
           : "已停止";
   const notify = (text) => setToast(text);
+  useDownloadNotifications(browser.downloads, notify);
   const refreshSettings = async () => {
     const results = await Promise.allSettled([api("/settings"), api("/proxy")]);
     if (results[0].status === "fulfilled") setSettings(results[0].value);
@@ -316,11 +332,17 @@ function App() {
   };
   useEffect(() => {
     let live = true,
-      timer;
+      timer,
+      polling = false;
     const poll = async () => {
+      if (!live || polling) return;
+      clearTimeout(timer);
+      polling = true;
+      let jobRunning = false;
       try {
         const next = await api("/status");
         if (!live) return;
+        jobRunning = next.job.running;
         setStatus(next);
         setConnectionError("");
         if (
@@ -333,11 +355,14 @@ function App() {
           if (next.job.error) notify(next.job.error);
         }
         if (next.ready) {
-          const [b, t] = await Promise.all([
-            api("/browser/tabs"),
+          const fetchBrowser = !browserStreamReady.current || !initialized.current;
+          const [browserResult, t] = await Promise.all([
+            fetchBrowser ? api("/browser/tabs") : null,
             api("/terminals"),
           ]);
           if (!live) return;
+          const b = browserResult || browserSnapshot.current;
+          browserSnapshot.current = b;
           setBrowser(b);
           const all = [
             ...b.tabs,
@@ -371,8 +396,14 @@ function App() {
         }
       } catch (e) {
         if (live) setConnectionError(e.message);
+      } finally {
+        polling = false;
+        if (live)
+          timer = setTimeout(
+            poll,
+            jobRunning ? 1200 : windowVisibleRef.current ? 3000 : 15000,
+          );
       }
-      if (live) timer = setTimeout(poll, 1200);
     };
     (async () => {
       try {
@@ -392,6 +423,7 @@ function App() {
         } catch {
           // Network settings remain available when the core cannot be read.
         }
+        refreshStatus.current = poll;
         await poll();
       } catch (e) {
         if (live) setFatal(e.message);
@@ -399,14 +431,31 @@ function App() {
     })();
     return () => {
       live = false;
+      refreshStatus.current = null;
       clearTimeout(timer);
     };
   }, []);
   useEffect(() => {
+    if (windowVisible) refreshStatus.current?.();
+  }, [windowVisible]);
+  useEffect(() => {
+    if (!settings || !status || fatal || connectionError || launchAcknowledged.current || !nativeAvailable()) return;
+    // Effects run after the workbench render commits. HTML navigation alone
+    // cannot confirm a successful upgrade when session/API startup failed.
+    let live = true;
+    native("workbenchReady").then((accepted) => {
+      if (live && accepted === true) launchAcknowledged.current = true;
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [settings, status, fatal, connectionError]);
+  useEffect(() => {
     if (!status?.ready) return;
     const stream = new EventSource("/api/browser/events");
+    stream.onopen = () => { browserStreamReady.current = true; };
+    stream.onerror = () => { browserStreamReady.current = false; };
     stream.onmessage = (event) => {
       const b = JSON.parse(event.data);
+      browserSnapshot.current = b;
       setBrowser((previous) => ({ ...previous, ...b }));
       setTabs((previous) => {
         const map = new Map(b.tabs.map((t) => [t.id, t]));
@@ -426,7 +475,10 @@ function App() {
         setActive(b.active);
       browserIds.current = new Set(b.tabs.map((t) => t.id));
     };
-    return () => stream.close();
+    return () => {
+      browserStreamReady.current = false;
+      stream.close();
+    };
   }, [status?.ready]);
   useEffect(() => {
     if (current && current.kind !== "terminal")
@@ -451,6 +503,14 @@ function App() {
     const key = (event) => {
       if (!event.metaKey) return;
       const k = event.key.toLowerCase();
+      if (document.querySelector("[data-browser-dialog]")) {
+        if (k === "w") {
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          document.dispatchEvent(new Event("cage-close-modal"));
+        }
+        return;
+      }
       if (dialog) {
         if (k === "w") {
           event.preventDefault();
@@ -487,10 +547,15 @@ function App() {
       if (k === "o") {
         event.preventDefault();
         event.stopImmediatePropagation();
+        if (event.shiftKey) {
+          document.dispatchEvent(new Event("cage-show-favorites"));
+          return;
+        }
         if (!busy && running) setProjectDialog({ path: "" });
         return;
       }
       if (k === "t" && !event.shiftKey) handle = newPage;
+      if (k === "d") handle = () => document.dispatchEvent(new Event("cage-add-favorite"));
       if (k === "enter" && event.shiftKey) handle = newTerminalHere;
       if (k === "l")
         handle = () => {
@@ -571,6 +636,10 @@ function App() {
       if (command === "newTerminal" && status?.vm_running)
         await newTerminalHere();
       if (command === "closeTab") {
+        if (document.querySelector("[data-browser-dialog]")) {
+          document.dispatchEvent(new Event("cage-close-modal"));
+          return;
+        }
         if (dialog) {
           const resolve = dialog.resolve;
           setDialog(null);
@@ -664,7 +733,14 @@ function App() {
       { ...savedTabs, [tabLayoutKey]: next },
       setSavedTabs,
     );
-  const reorder = (from, to) => {
+  const reorder = (from, to, scopeOrder) => {
+    if (scopeOrder) {
+      const ids = new Set(scopeOrder);
+      let index = 0;
+      const order = displayTabs.map((tab) => ids.has(tab.id) ? scopeOrder[index++] : tab.id);
+      changeTabMetadata({ ...metadata, order });
+      return;
+    }
     if (from === to) return;
     const order = displayTabs.map((tab) => tab.id).filter((id) => id !== from);
     order.splice(order.indexOf(to), 0, from);
@@ -802,6 +878,7 @@ function App() {
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
+            updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             defaultWorkspace={status.environment_directory}
             projects={projects}
@@ -838,7 +915,7 @@ function App() {
               <div className="browser-tab-bar">
                 {sidebarCollapsed && (
                   <button
-                    className="icon-button"
+                    className="icon-button sidebar-expand"
                     aria-label="展开侧栏"
                     onClick={() =>
                       persist(
@@ -848,7 +925,8 @@ function App() {
                       )
                     }
                   >
-                    <PanelLeftOpen size={18} />
+                    <img className="sidebar-expand-logo" src={logo} alt="" />
+                    <PanelLeftOpen className="sidebar-expand-icon" size={18} />
                   </button>
                 )}
                 <WorkspaceTabs
@@ -879,7 +957,7 @@ function App() {
               <div className="content-heading">
                 {sidebarCollapsed && (
                   <button
-                    className="icon-button"
+                    className="icon-button sidebar-expand"
                     aria-label="展开侧栏"
                     title="展开侧栏"
                     onClick={() =>
@@ -890,7 +968,8 @@ function App() {
                       )
                     }
                   >
-                    <PanelLeftOpen size={18} />
+                    <img className="sidebar-expand-logo" src={logo} alt="" />
+                    <PanelLeftOpen className="sidebar-expand-icon" size={18} />
                   </button>
                 )}
                 <div className="content-breadcrumb">
@@ -1003,6 +1082,15 @@ function App() {
                         <ArrowUpRight size={15} />
                       </button>
                     </form>
+                    <BrowserFavorites current={current} ready={status.ready && !busy} onOpen={openBrowserPage} />
+                    <BrowserDownloads downloads={browser.downloads} ready={status.ready && !busy} onStatus={notify} />
+                    {current?.kind === "editor" && <button className="icon-button" aria-label="恢复编辑器" title="单独重启编辑器" disabled={!status.ready || busy || recoveringEditor} onClick={async () => {
+                      if (!(await confirm({ title: "重启编辑器？", body: "请先保存文件。浏览器、终端和环境会继续运行。", confirm: "重启编辑器" }))) return;
+                      setRecoveringEditor(true);
+                      try { await api("/browser/editor-restart", { workspace: current.workspace || contentWorkspace }); notify("编辑器已恢复"); }
+                      catch (error) { notify(error.message); }
+                      finally { setRecoveringEditor(false); }
+                    }}><RefreshCw size={15} className={recoveringEditor ? "spin" : ""} /></button>}
                     <div className="clipboard-actions">
                       <button
                         className="icon-button"
@@ -1085,6 +1173,12 @@ function App() {
             </div>
           )}
           <main className="workspace">
+            {status.environment_update_required && !busy && (
+              <div className="environment-update-banner" role="status">
+                <span>{status.environment_update_error || "环境组件需要更新。请先保存编辑器中的文件。"}</span>
+                <button onClick={() => openSettings("project")}>查看并更新</button>
+              </div>
+            )}
             {(status.vm_running || terminal) && (
               <>
                 {status.ready ? (
@@ -1092,6 +1186,7 @@ function App() {
                     ref={remote}
                     visible={Boolean(showRemote && !settingsOpen)}
                     keyboard={status.keyboard}
+                    tabId={current?.id}
                     onStatus={notify}
                     onFallback={(text, message) =>
                       setTransfer({ text, message })
@@ -1317,6 +1412,7 @@ function App() {
             )}
           </main>
           <footer className="status-bar">
+            {sidebarCollapsed && <AppUpdateButton updates={appUpdates} />}
             <button onClick={() => setSafetyOpen(true)} title="网络与隔离检查">
               <EnvironmentShield
                 size={14}
@@ -1340,6 +1436,13 @@ function App() {
               {settings.timezone}
               {settings.auto_timezone ? " · 自动" : ""}
             </button>
+            <span className="status-divider" />
+            <NetworkLatency
+              key={`${proxy?.selected}:${proxy?.revision}:${running}:${busy}:${Boolean(connectionError)}`}
+              enabled={running && !busy && !connectionError}
+              revision={proxy?.revision}
+              selected={proxy?.selected}
+            />
             <span className="status-spacer" />
             <span className="status-feedback" role="status">
               {toast ||

@@ -703,3 +703,78 @@ code {
     transform: none;
   }
 }
+
+/* Shared README-led presentation across the three locale routes. */
+figure { margin: 0; }
+.lines { white-space: pre-line; }
+.language-switch { display: flex; justify-content: flex-end; gap: 22px; padding-bottom: 18px; font-size: 12px; color: var(--muted); }
+.language-switch [aria-current="page"] { color: var(--accent); text-decoration: underline; text-underline-offset: 5px; }
+.story-hero { display: grid; grid-template-columns: 1.1fr 1fr; align-items: center; gap: 65px; padding: 40px 0 80px; }
+.story-copy h1 { margin: 24px 0 18px; }
+.tagline { font-size: 23px; }
+.hero-intro { color: var(--muted); margin: 20px 0 28px; max-width: 34em; }
+.story-copy .requirements { display: block; margin-top: 16px; }
+.character { overflow: hidden; border-radius: 13px; border: 1px solid var(--line); }
+.character img { width: 100%; }
+.manifesto { border-top: 1px solid var(--line); padding-top: 60px; }
+.manifesto h2 { margin: 15px 0 24px; }
+.manifesto > p { max-width: 850px; }
+.small-note { font-size: 13px; color: var(--muted); margin-top: 20px; }
+.evidence { padding-top: 90px; padding-bottom: 90px; }
+.evidence h2 { margin-top: 16px; }
+.evidence .section-lead { max-width: 850px; }
+.evidence-grid { display: grid; grid-template-columns: 1fr 1fr; align-items: start; gap: 30px; margin-top: 35px; }
+.evidence-grid figure { background: #fff; border: 1px solid var(--line); border-radius: 13px; overflow: hidden; }
+.evidence-grid img { width: 100%; }
+.quick-start { max-width: 950px; padding-bottom: 65px; }
+.quick-start h2 { margin: 15px 0 22px; }
+.quick-start pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #faf8f4; border: 1px solid #dacebf; border-radius: 8px; padding: 24px; line-height: 1.8; margin: 25px 0; }
+.steps-title { font-size: 29px; }
+.update-note { margin-top: 0; }
+.community { display: grid; grid-template-columns: 1fr 320px; gap: 85px; align-items: center; padding-top: 90px; }
+.community h2 { margin: 16px 0 24px; }
+.community p { color: var(--muted); max-width: 42em; }
+.community-links { display: flex; gap: 30px; margin-top: 25px; }
+.community figure { border: 1px solid var(--line); border-radius: 13px; overflow: hidden; background: white; }
+.community figcaption { text-align: center; }
+@media (max-width: 900px) {
+  .story-hero { gap: 30px; }
+  .story-copy h1 { font-size: 42px; }
+  .community { gap: 35px; grid-template-columns: 1fr 260px; }
+  .nav nav { gap: 16px; }
+  .nav .brand { font-size: 21px; }
+}
+@media (max-width: 640px) {
+  .nav nav > a:not(.nav-download) { display: none; }
+  .nav .brand { font-size: 20px; }
+  .nav-download { max-width: 150px; text-align: center; }
+  .language-switch { justify-content: flex-start; gap: 24px; padding-bottom: 0; }
+  .story-hero { grid-template-columns: 1fr; padding-top: 35px; padding-bottom: 50px; gap: 35px; }
+  .story-copy h1 { font-size: clamp(32px, 8vw, 42px); }
+  .tagline { font-size: 20px; }
+  .character { max-width: 420px; }
+  .manifesto { padding-top: 45px; }
+  .evidence { padding-top: 60px; padding-bottom: 55px; }
+  .evidence-grid { grid-template-columns: 1fr; gap: 25px; }
+  .quick-start { padding-bottom: 45px; }
+  .quick-start pre { padding: 18px; font-size: 13px; }
+  .community { grid-template-columns: 1fr; gap: 30px; padding-top: 60px; }
+  .community figure { max-width: 300px; }
+  .community-links { flex-wrap: wrap; }
+}
+.language-switch { align-items: center; }
+.language-switch select { color: inherit; font: inherit; background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 9px 30px 9px 12px; min-width: 140px; }
+.language-switch select:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.key-features { max-width: 850px; padding-inline-start: 22px; line-height: 1.85; }
+.key-features li { margin-top: 12px; }
+.doc-links { list-style: none; padding: 0; margin: 0; }
+.doc-links li { padding: 20px 0; border-top: 1px solid var(--line); }
+.doc-links p { color: var(--muted); font-size: 14px; margin-top: 8px; }
+.license { padding-bottom: 60px; }
+.license h2 { font-size: 24px; margin-bottom: 20px; }
+.license p { max-width: 900px; white-space: pre-line; font-size: 14px; color: var(--muted); }
+[dir="rtl"] { letter-spacing: normal; }
+[dir="rtl"] .nav nav { margin-left: 0; margin-right: auto; }
+[dir="rtl"] footer > div { margin-left: 0; margin-right: auto; }
+[dir="rtl"] .quick-start pre { text-align: start; }
+[dir="rtl"] h1, [dir="rtl"] h2, [dir="rtl"] h3 { letter-spacing: normal; }

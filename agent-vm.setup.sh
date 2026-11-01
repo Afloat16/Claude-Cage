@@ -180,7 +180,11 @@ echo '[ -f "$HOME/.agent-vm.env" ] && { set -a; . "$HOME/.agent-vm.env"; set +a;
 # Always installed so users can `mise install ruby@latest`, etc., even when
 # they've opted out of preinstalled Node.
 echo "Installing mise..."
-curl -fsSL https://mise.run | sh
+if [[ "${CLAUDE_CAGE:-}" == "1" ]]; then
+  cage_install_tool mise
+else
+  curl -fsSL https://mise.run | sh
+fi
 echo 'eval "$(~/.local/bin/mise activate zsh)"' >> ~/.zshenv
 
 if [[ "$INSTALL_DOCKER" == "1" ]]; then
@@ -244,7 +248,7 @@ if [[ "$INSTALL_CLAUDE" == "1" ]]; then
   if [[ "${CLAUDE_CAGE:-}" == "1" ]]; then
     # Official npm distribution; lock the first cage release to a known version.
     # npm retries interrupted package transfers and verifies registry integrity.
-    npm install --prefix "$HOME/.local" --global @anthropic-ai/claude-code@2.1.314
+    cage_install_tool claude
   else
     curl -fsSL https://claude.ai/install.sh | bash
   fi
@@ -430,7 +434,11 @@ if [[ "$INSTALL_CODE_SERVER" == "1" ]]; then
   # The editor of `agent-vm code` (internal/cli/code.go). No password here: every VM
   # is a copy of this disk, so each one makes its own on first use.
   echo "Installing code-server..."
-  curl -fsSL https://code-server.dev/install.sh | sh
+  if [[ "${CLAUDE_CAGE:-}" == "1" ]]; then
+    cage_install_tool code-server
+  else
+    curl -fsSL https://code-server.dev/install.sh | sh
+  fi
   extensions=()
   [[ "$INSTALL_CODE_CLAUDE" == "1" ]] && extensions+=(--install-extension anthropic.claude-code)
   [[ "$INSTALL_CODE_OPENCODE" == "1" ]] && extensions+=(--install-extension sst-dev.opencode)

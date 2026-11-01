@@ -4,6 +4,8 @@ import { promisify } from "node:util";
 const runFile = promisify(execFile);
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import http from "node:http";
+import { auditBrowser } from "./browser-audit.mjs";
+import { DownloadManager } from "./browser-downloads.mjs";
 import { timingSafeEqual } from "node:crypto";
 
 const config = JSON.parse(
@@ -33,6 +35,9 @@ mkdirSync(downloadPath, { recursive: true });
 const flags = [
   "--user-data-dir=/home/cage-browser/profile",
   "--remote-debugging-pipe",
+  // The pipe manages tabs for a human-operated browser. Keep it private while
+  // preventing its presence alone from enabling Blink's automation marker.
+  "--disable-blink-features=AutomationControlled",
   "--kiosk",
   "--no-first-run",
   "--restore-last-session",
@@ -57,8 +62,21 @@ const events = new Set();
 const auditContexts = new Set();
 const pending = new Map(),
   targets = new Map(),
-  sessions = new Map(),
-  downloads = new Map();
+  sessions = new Map();
+const downloads = new DownloadManager({
+  directory: "/home/cage-browser",
+  changed: () => broadcastState(),
+  cancel: id => cdp("Browser.cancelDownload", { guid: id }),
+  save: async (id, name) => {
+    let output;
+    try {
+      output = (await runFile("/usr/bin/sudo", ["/usr/local/bin/cage-save-download", id, name], { maxBuffer: 16384 })).stdout;
+    } catch (error) {
+      output = error.stdout || '{"ok":false,"error":"下载保存未完成，请检查共享目录后重试。"}';
+    }
+    return JSON.parse(output);
+  },
+});
 function cdp(method, params = {}, sessionId, timeout = 4500) {
   return new Promise((resolve, reject) => {
     const id = ++sequence;
@@ -126,20 +144,8 @@ chrome.stdio[4].on("data", (chunk) => {
       }
     }
     if (event.method === "Browser.downloadWillBegin")
-      downloads.set(p.guid, p.suggestedFilename);
-    if (
-      event.method === "Browser.downloadProgress" &&
-      p.state === "completed"
-    ) {
-      const filename = downloads.get(p.guid);
-      downloads.delete(p.guid);
-      if (filename)
-        spawn(
-          "/usr/bin/sudo",
-          ["/usr/local/bin/cage-save-download", p.guid, filename],
-          { stdio: "ignore" },
-        );
-    }
+      downloads.begin(p.guid, p.suggestedFilename);
+    if (event.method === "Browser.downloadProgress") downloads.progress(p);
   }
 });
 chrome.on("exit", () => {
@@ -198,13 +204,13 @@ async function newTab(url = homeURL) {
   await activate(targetId, true);
   return { id: targetId };
 }
-async function editor(workspace = config.workspace) {
+async function editor(workspace = config.workspace, reload = false) {
   if (typeof workspace !== "string" || !workspace.startsWith("/")) throw new Error("Invalid workspace");
   const editorURL = `http://127.0.0.1:18080/?folder=${encodeURIComponent(workspace)}`;
   const existing = [...targets.values()].find((t) =>
     t.url === editorURL,
   );
-  if (existing) {
+  if (existing && !reload) {
     await activate(existing.targetId);
     return { id: existing.targetId };
   }
@@ -213,6 +219,7 @@ async function editor(workspace = config.workspace) {
     redirect: "manual",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({ password: config.editorPassword }),
+    signal: AbortSignal.timeout(5000),
   });
   const cookies = response.headers.getSetCookie().map((raw) => {
     const first = raw.split(";")[0],
@@ -228,7 +235,24 @@ async function editor(workspace = config.workspace) {
   });
   if (!cookies.length) throw new Error("Editor authentication is unavailable");
   await cdp("Storage.setCookies", { cookies });
+  if (existing) {
+    await activate(existing.targetId);
+    await cdp("Page.reload", {}, await session(existing.targetId));
+    return { id: existing.targetId };
+  }
   return newTab(editorURL);
+}
+async function restartEditor(workspace) {
+  await runFile("/usr/bin/sudo", ["/usr/bin/systemctl", "restart", "cage-editor.service"], { timeout: 18000, maxBuffer: 4096 });
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    try {
+      const response = await fetch("http://127.0.0.1:18080/healthz", { signal: AbortSignal.timeout(1000) });
+      if (response.ok) return editor(workspace || config.workspace, true);
+    } catch {}
+    await new Promise(resolve => setTimeout(resolve, 200));
+  }
+  throw new Error("编辑器尚未恢复，请稍后重试。");
 }
 async function tabState() {
   const { targetInfos } = await cdp("Target.getTargets");
@@ -268,6 +292,7 @@ function displayTitle(tab) {
 function publicState() {
   return {
     active: activeId,
+    downloads: downloads.snapshot(),
     tabs: [...targets.values()].map((t) => ({
       id: t.targetId,
       title: displayTitle(t),
@@ -335,53 +360,6 @@ function mutate(fn) {
   mutations = result.catch(() => {});
   return result;
 }
-// A hidden, disposable context avoids touching account tabs, browser cookies,
-// focus or the visible tab strip while reading Chromium's actual settings.
-async function auditBrowser(network, expectedTimezone) {
-  const { browserContextId } = await cdp("Target.createBrowserContext", { disposeOnDetach: true });
-  auditContexts.add(browserContextId);
-  try {
-    const { targetId } = await cdp("Target.createTarget", {
-      url: "about:blank", browserContextId, background: true, hidden: true,
-    });
-    const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
-    if (network) {
-      const navigation = await cdp("Page.navigate", { url: "http://198.18.0.254/" }, sessionId, 15000);
-      if (navigation.errorText) throw new Error("诊断页面无法连接");
-      let loaded = false;
-      const deadline = Date.now() + 3000;
-      while (Date.now() < deadline) {
-        try {
-          const state = await cdp("Runtime.evaluate", { expression: "location.hostname === '198.18.0.254' && document.readyState === 'complete'", returnByValue: true }, sessionId, 500);
-          if (state.result?.value === true) { loaded = true; break; }
-        } catch { /* A navigation may replace the initial execution context. */ }
-        await new Promise((resolve) => setTimeout(resolve, 25));
-      }
-      if (!loaded) throw new Error("诊断页面尚未就绪");
-    }
-    const expression = `(async () => {
-      const result = {timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        expected_timezone: new Intl.DateTimeFormat('en', {timeZone:${JSON.stringify(expectedTimezone)}}).resolvedOptions().timeZone,
-        language: navigator.language, languages: [...navigator.languages], platform: navigator.platform};
-      if (${network ? "true" : "false"}) {
-        if (location.hostname !== '198.18.0.254') throw new Error('diagnostic navigation incomplete');
-        try {
-          const response = await fetch('/egress', {cache:'no-store', credentials:'omit', signal:AbortSignal.timeout(14000)});
-          result.network = {status:response.status, ...await response.json()};
-        } catch { result.network = {status:0, error:'probe_unavailable'}; }
-      }
-      return result;
-    })()`;
-    const response = await cdp("Runtime.evaluate", { expression, awaitPromise: true, returnByValue: true }, sessionId, 16000);
-    if (response.exceptionDetails || !response.result?.value) throw new Error("浏览器诊断未完成");
-    return response.result.value;
-  } finally {
-    try {
-      await cdp("Target.disposeBrowserContext", { browserContextId });
-      auditContexts.delete(browserContextId);
-    } catch { /* Keep an unclosed diagnostic context out of the user tab list. */ }
-  }
-}
 
 const server = http.createServer(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
@@ -428,9 +406,13 @@ const server = http.createServer(async (req, res) => {
       if (text.length > 65536) throw new Error("Request too large");
     }
     const input = JSON.parse(text || "{}");
+    if (req.url === "/download-retry") {
+      res.end(JSON.stringify(downloads.retry(input.id)));
+      return;
+    }
     if (req.url === "/audit") {
       if (typeof input.timezone !== "string" || input.timezone.length > 128) throw new Error("诊断时区无效");
-      res.end(JSON.stringify(await auditBrowser(input.network === true, input.timezone)));
+      res.end(JSON.stringify(await auditBrowser(cdp, auditContexts, input.network === true, input.timezone)));
       return;
     }
     const result = await mutate(async () => {
@@ -451,9 +433,16 @@ const server = http.createServer(async (req, res) => {
         return resizeDisplay(input.width, input.height);
       if (req.url === "/new") return newTab(input.url || undefined);
       if (req.url === "/editor") return editor(input.workspace || config.workspace);
+      if (req.url === "/editor-restart") return restartEditor(input.workspace);
       const id = input.id || activeId;
       if (!targets.has(id)) throw new Error("Tab no longer exists");
       switch (req.url) {
+        case "/insert-text":
+          if (input.id !== activeId || typeof input.text !== "string" ||
+              !input.text || Buffer.byteLength(input.text, "utf8") > 8192)
+            throw new Error("Input target or text is invalid");
+          await cdp("Input.insertText", { text: input.text }, await session(id));
+          break;
         case "/activate":
           await activate(id);
           break;

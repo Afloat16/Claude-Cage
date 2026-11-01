@@ -5,6 +5,11 @@ const require = createRequire(import.meta.url);
 export async function createWorkbench({
   viewport = { width: 1280, height: 850 },
   recordVideo,
+  favoritesRequest,
+  mockWebSockets = true,
+  url,
+  nativeRequest,
+  startupFailure = false,
 } = {}) {
   const { chromium } = require(
     process.env.CAGE_PLAYWRIGHT_MODULE || "playwright",
@@ -73,20 +78,22 @@ export async function createWorkbench({
     sequence: 0,
   };
   await page.exposeFunction("chooseTestFolder", () => state.chosenFolder);
+  await page.exposeFunction("requestNativeForTest", async (body) => nativeRequest ? nativeRequest(body) : null);
   await page.addInitScript(() => {
     window.webkit = {
       messageHandlers: {
         cage: {
-          postMessage: async ({ action }) => {
+          postMessage: async (body) => {
+            const { action } = body;
             if (action === "chooseFolder") return window.chooseTestFolder();
             if (action === "clipboardRead") return "fixture clipboard";
-            return null;
+            return window.requestNativeForTest(body);
           },
         },
       },
     };
   });
-  await page.routeWebSocket("**/api/**", (socket) => {
+  if (mockWebSockets) await page.routeWebSocket("**/api/**", (socket) => {
     if (socket.url().includes("/terminals/")) {
       state.terminalConnections++;
       socket.send(
@@ -101,7 +108,12 @@ export async function createWorkbench({
     const path = new URL(request.url()).pathname.replace("/api", "");
     const body = request.postDataJSON();
     state.requests.push({ path, method: request.method(), body });
+    if (startupFailure && path === "/status") return route.fulfill({ status: 503, body: "测试：控制服务暂不可用" });
     let result = {};
+    if (path === "/favorites") {
+      if (favoritesRequest) return route.fulfill(await favoritesRequest(request));
+      return route.fulfill({ json: { items: [], folders: [] } });
+    }
     if (path === "/host/git") {
       if (request.method() === "POST") {
         if (!body?.confirm)
@@ -276,7 +288,7 @@ export async function createWorkbench({
       };
     return route.fulfill({ json: result });
   });
-  await page.goto(process.env.CAGE_UI_URL || "http://127.0.0.1:5198");
-  await page.getByRole("heading", { name: "先启动 Cage 环境" }).waitFor();
+  await page.goto(url || process.env.CAGE_UI_URL || "http://127.0.0.1:5198");
+  if (!startupFailure) await page.getByRole("heading", { name: "先启动 Cage 环境" }).waitFor();
   return { browser, context, page, state, errors };
 }

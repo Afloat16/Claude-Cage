@@ -1,11 +1,20 @@
-// Package version is agent-vm's semantic version.
+// Package version provides the application version and version comparisons.
 package version
 
-import "strings"
+import (
+	agentvm "github.com/sylvinus/agent-vm"
+	"strings"
+)
 
 // Version is set at build time (-ldflags -X); integrators gate on it with
 // `agent-vm version --min`.
-var Version = "0.3.0-dev"
+var Version string
+
+func init() {
+	if Version == "" {
+		Version = strings.TrimSpace(agentvm.CageVersion)
+	}
+}
 
 // AtLeast reports whether version have is want or later. The numbers before
 // any "-" compare first, anything but digits in a component dropped, a

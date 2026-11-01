@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/appupdate"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
@@ -69,6 +70,9 @@ func run() int {
 	if err != nil {
 		return fail(err)
 	}
+	if args[0] == "app-update" {
+		return appupdate.Run(path, args[1:], os.Stdout)
+	}
 	if args[0] == "serve" {
 		if err := workbench.Serve(path); err != nil {
 			return fail(err)
@@ -76,19 +80,66 @@ func run() int {
 		return 0
 	}
 	if args[0] == "desktop" {
-		address, err := workbench.Desktop(path)
+		options := workbench.DesktopOptions{}
+		returnJSON := false
+		for _, argument := range args[1:] {
+			switch argument {
+			case "--json":
+				returnJSON = true
+			case "--complete-update":
+				options.CompleteUpdate = true
+			case "--existing":
+				options.UseExisting = true
+			default:
+				return fail(fmt.Errorf("unknown desktop option: %s", argument))
+			}
+		}
+		entry, err := workbench.Desktop(path, options)
 		if err != nil {
+			if returnJSON {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
+				return 1
+			}
 			return fail(err)
 		}
 		// Native launchers consume this on a pipe, never in a shared log.
-		returnJSON := len(args) > 1 && args[1] == "--json"
 		if returnJSON {
-			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"url": address})
+			_ = json.NewEncoder(os.Stdout).Encode(entry)
 		} else {
-			if err := openWorkbench(address); err != nil {
+			if entry.URL == "" {
+				return fail(fmt.Errorf("%s", entry.Message))
+			}
+			if err := openWorkbench(entry.URL); err != nil {
 				return fail(err)
 			}
 			fmt.Println("Cage workbench opened.")
+		}
+		return 0
+	}
+	if args[0] == "prepare-update" {
+		stop, returnJSON := false, false
+		for _, argument := range args[1:] {
+			switch argument {
+			case "--stop":
+				stop = true
+			case "--json":
+				returnJSON = true
+			default:
+				return fail(fmt.Errorf("unknown prepare-update option: %s", argument))
+			}
+		}
+		result, err := workbench.PrepareUpdate(path, stop)
+		if err != nil {
+			if returnJSON {
+				_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
+				return 1
+			}
+			return fail(err)
+		}
+		if returnJSON {
+			_ = json.NewEncoder(os.Stdout).Encode(result)
+		} else if result.Status != "prepared" {
+			return fail(fmt.Errorf("%s", result.Message))
 		}
 		return 0
 	}

@@ -14,6 +14,8 @@ bash scripts/build-app.sh
 
 构建会下载并校验固定版本的 Mihomo，构建前端和嵌入式客机组件，再生成 `_output/Cage.app`。未指定签名身份的本地开发构建使用 ad-hoc 签名；不能将其视为可通过 Gatekeeper 的正式发行包。
 
+需要保留日常 App 时，指定独立输出且不使用 `--install`：`CAGE_BUILD_OUTPUT="$PWD/_output/validation/Cage.app" bash scripts/build-app.sh`。输出必须是绝对 `.app` 路径；此模式不清理其他副本。目标 App 或控制程序仍在运行时，构建会拒绝覆盖。开发构建也不能用于验证正式签名包的自动安装成功路径。
+
 安装到当前用户的 Applications 目录：
 
 ```sh
@@ -46,7 +48,9 @@ bash scripts/build-app.sh --install
 npm ci --prefix ui
 npm run --prefix ui lint
 npm test --prefix ui
-node --test internal/cage/clipboard.test.cjs
+node --test internal/cage/clipboard.test.cjs internal/cage/browser-audit.test.mjs internal/cage/browser-downloads.test.mjs
+uv run internal/cage/save-download.test.py
+uv run internal/cage/editor-migrate.test.py
 go test -race ./internal/workbench ./internal/cage ./internal/managedproxy
 go test ./internal/... ./cmd/...
 ```
@@ -59,6 +63,10 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
   github.com/lima-vm/lima/v2/pkg/networks/usernet
 ```
 
+修改浏览器启动或控制逻辑时，在 Linux 客机的独立 X 显示中运行 `DISPLAY=:183 node scripts/browser-controls-smoke.mjs`。该检查使用临时配置和真实控制器，验证人工浏览标记、标签与导航、重启后的页面及 Cookie 恢复，并检查未认证请求和跨来源请求仍被拒绝。
+
+修改更新或恢复界面时，运行 `node ui/scripts/recovery-ui-smoke.mjs`；修改画面可见性时，运行 `node ui/scripts/remote-visibility-smoke.mjs`。两者需要可用的 Playwright 和已启动的前端开发服务，可通过 `CAGE_UI_URL` 指定地址；测试使用隔离接口，后者还使用真实 RFB 握手与帧验证停止和恢复，不连接日常 VM。修改原生更新流程时运行 `bash scripts/test-app-updates.sh`，正式签名、公证及真实安装仍须单独验收。组件清单、固定工具安装器和网络续租回归已包含在上述 Go 包测试中，无需重复执行一套独立命令。
+
 修改上游源码时，保持 `patches/` 与 `third_party/` 一致，并按 `patches/README.md` 核对同步方式。UI 改动需要在实际 App 中验证状态、失败恢复和关键交互；编译通过不能证明登录、联网或用户操作已成功。
 
 建议使用独立测试配置和非敏感测试项目，避免将开发验证写入日常环境。启动前的 Git 保护检查属于主机状态：单独指定 Cage 配置目录不会隔离全局 Git 设置，测试修改路径时应使用隔离的测试用户目录。应用必须先解释影响，用户明确确认后才将 `safe.bareRepository` 设置为 `explicit`，并在复检通过后启动环境；读取状态不得修改 Git 配置。真实网络验证应区分代理连通、环境放行、浏览器访问、Claude 授权与模型请求，不能互相替代。
@@ -67,7 +75,7 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
 
 配置与状态默认在 `~/.claude-cage/`。`CLAUDE_CAGE_CONFIG` 可以指向另一份私有配置，其父目录拥有独立状态。配置文件权限为 `0600`；不要把该目录作为共享项目或提交到 Git。
 
-`environment.json` 固定记录环境的 VM 目录，`projects.json` 保存明确打开的共享目录，`workbench.json` 保存当前项目与偏好。选择项目不会改变 VM 身份。浏览器配置在客机的 `/home/cage-browser/profile`，Claude Code 的固定安装版本见 `agent-vm.setup.sh`。
+`environment.json` 固定记录环境的 VM 目录，`projects.json` 保存明确打开的共享目录，`workbench.json` 保存当前项目与偏好。选择项目不会改变 VM 身份。浏览器配置在客机的 `/home/cage-browser/profile`，受管工具的最低版本与包摘要见 `internal/cage/tool-versions.env`。替换 App、同步组件和升级工具是不同操作，契约见[工作台设计](docs/design/workbench.md#持久环境的组件与工具版本)。
 
 ```sh
 bash scripts/fetch-proxy-core.sh

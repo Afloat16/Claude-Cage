@@ -183,13 +183,15 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 		editorWorkspace = input.Workspace
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"editor"}`)), Header: http.Header{}}, nil
 	})}
-	w = request(s, "POST", "/api/browser/editor", s.origin, string(body), true)
-	if w.Code != 200 || editorWorkspace != a || s.workspace() != b {
-		t.Fatalf("editor changed the selected project or ignored its directory: %s", w.Body.String())
+	for _, action := range []string{"editor", "editor-restart"} {
+		w = request(s, "POST", "/api/browser/"+action, s.origin, string(body), true)
+		if w.Code != 200 || editorWorkspace != a || s.workspace() != b {
+			t.Fatalf("%s changed the selected project or ignored its directory: %s", action, w.Body.String())
+		}
 	}
 	for _, path := range []string{t.TempDir(), s.profile} {
 		body, _ = json.Marshal(map[string]string{"workspace": path})
-		for _, endpoint := range []string{"/api/terminals", "/api/browser/editor"} {
+		for _, endpoint := range []string{"/api/terminals", "/api/browser/editor", "/api/browser/editor-restart"} {
 			w = request(s, "POST", endpoint, s.origin, string(body), true)
 			if w.Code != 400 {
 				t.Fatalf("unopened directory accepted by %s: %d", endpoint, w.Code)

@@ -3,6 +3,22 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 if [[ "$(uname -s)" != Darwin ]]; then echo 'Cage.app must be built on macOS.' >&2; exit 1; fi
 case "${1:-}" in ''|--install) ;; *) echo 'Usage: scripts/build-app.sh [--install]' >&2; exit 2 ;; esac
+app_destination="${CAGE_BUILD_OUTPUT:-$PWD/_output/Cage.app}"
+if [[ "$app_destination" != /*.app ]]; then echo 'CAGE_BUILD_OUTPUT must be an absolute .app path.' >&2; exit 2; fi
+check_destination() {
+  local target="$1"
+  [[ ! -e "$target" ]] && return 0
+  if [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$target/Contents/Info.plist" 2>/dev/null)" != io.github.lee-xeo.claude-cage ]]; then
+    echo 'Build destination is not a Cage application.' >&2; exit 1
+  fi
+  local running_pids
+  running_pids="$(/usr/sbin/lsof -t "$target/Contents/MacOS/Cage" "$target/Contents/Resources/cage" 2>/dev/null || true)"
+  if [[ -n "$running_pids" ]]; then
+    echo 'Cage is running from this destination. Quit it, or choose a separate CAGE_BUILD_OUTPUT.' >&2; exit 1
+  fi
+}
+check_destination "$app_destination"
+if [[ "${1:-}" == --install ]]; then check_destination "$HOME/Applications/Cage.app"; fi
 version="$(tr -d '\n\r' < VERSION)"
 if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then echo 'Invalid VERSION.' >&2; exit 1; fi
 short_version="${version%%-*}"
@@ -16,14 +32,16 @@ export CGO_CFLAGS="${CGO_CFLAGS:-} -mmacosx-version-min=14.0"
 export CGO_LDFLAGS="${CGO_LDFLAGS:-} -mmacosx-version-min=14.0"
 bash scripts/fetch-proxy-core.sh
 make cage VERSION="$version"
-bundle="$PWD/_output/Cage.app"
-# Do not leave stale signed resources from a previous build in the bundle.
-rm -rf "$bundle"
+build_stage="$(mktemp -d "$PWD/_output/app-build.XXXXXX")"
+install_stage=''
+trap 'rm -rf "$build_stage"; if [[ -n "$install_stage" ]]; then rm -rf "$install_stage"; fi' EXIT
+bundle="$build_stage/Cage.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit desktop/Cage.swift -o "$bundle/Contents/MacOS/Cage"
+swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security desktop/Cage.swift desktop/Updates.swift -o "$bundle/Contents/MacOS/Cage"
+swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
 cp _output/bin/cage "$bundle/Contents/Resources/cage"
 cp _output/proxy-core/mihomo "$bundle/Contents/Resources/mihomo"
-for executable in "$bundle/Contents/MacOS/Cage" "$bundle/Contents/Resources/cage" "$bundle/Contents/Resources/mihomo"; do
+for executable in "$bundle/Contents/MacOS/Cage" "$bundle/Contents/Resources/CageUpdateInstaller" "$bundle/Contents/Resources/cage" "$bundle/Contents/Resources/mihomo"; do
   minimum="$(otool -l "$executable" | awk '$1 == "minos" {print $2}')"
   if [[ -z "$minimum" ]] || ! awk -v version="$minimum" 'BEGIN {split(version,v,"."); exit !(v[1] < 14 || (v[1] == 14 && v[2] == 0 && v[3]+0 == 0))}'; then
     printf 'Unsupported deployment target %s in %s (expected macOS 14.0 or earlier).\n' "$minimum" "$executable" >&2
@@ -57,12 +75,36 @@ sign=(codesign --force --sign "$identity")
 if [[ "$identity" != - ]]; then sign+=(--timestamp --options runtime); fi
 "${sign[@]}" --entitlements third_party/lima/vz.entitlements "$bundle/Contents/Resources/cage"
 "${sign[@]}" "$bundle/Contents/Resources/mihomo"
+"${sign[@]}" "$bundle/Contents/Resources/CageUpdateInstaller"
 "${sign[@]}" "$bundle/Contents/MacOS/Cage"
 "${sign[@]}" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
+# Keep the working App until the replacement has passed signature verification.
+check_destination "$app_destination"
+mkdir -p "$(dirname "$app_destination")"
+if [[ -e "$app_destination" ]]; then mv "$app_destination" "$build_stage/previous.app"; fi
+if ! mv "$bundle" "$app_destination"; then
+  if [[ -d "$build_stage/previous.app" ]]; then mv "$build_stage/previous.app" "$app_destination"; fi
+  exit 1
+fi
+bundle="$app_destination"
 printf 'Built: %s\n' "$bundle"
 if [[ "${1:-}" == "--install" ]]; then
   mkdir -p "$HOME/Applications"
-  ditto "$bundle" "$HOME/Applications/Cage.app"
+  install_stage="$(mktemp -d "$HOME/Applications/.Cage-install.XXXXXX")"
+  ditto "$bundle" "$install_stage/Cage.app"
+  codesign --verify --deep --strict --verbose=2 "$install_stage/Cage.app"
+  check_destination "$HOME/Applications/Cage.app"
+  if [[ -e "$HOME/Applications/Cage.app" ]]; then mv "$HOME/Applications/Cage.app" "$install_stage/previous.app"; fi
+  if ! mv "$install_stage/Cage.app" "$HOME/Applications/Cage.app"; then
+    if [[ -d "$install_stage/previous.app" ]]; then mv "$install_stage/previous.app" "$HOME/Applications/Cage.app"; fi
+    exit 1
+  fi
   printf 'Installed: %s/Applications/Cage.app\n' "$HOME"
+  node scripts/cleanup-apps.mjs --keep "$bundle" --keep "$HOME/Applications/Cage.app" \
+    --root "$PWD/_output" --root "$HOME/Applications" --root /Applications
+else
+  if [[ -z "${CAGE_BUILD_OUTPUT:-}" ]]; then
+    node scripts/cleanup-apps.mjs --keep "$bundle" --root "$PWD/_output"
+  fi
 fi

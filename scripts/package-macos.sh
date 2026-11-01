@@ -74,4 +74,5 @@ curl --fail --location --retry 2 --connect-timeout 15 --max-time 180 \
 mv "$release/$core_source.part" "$release/$core_source"
 tar -tzf "$release/$core_source" > /dev/null
 (cd "$release" && shasum -a 256 "$artifact" "$core_source" > SHA256SUMS)
+node scripts/cleanup-apps.mjs --keep "$bundle" --root "$PWD/_output"
 printf 'Verified release artifacts:\n%s/%s\n%s/%s\n%s/SHA256SUMS\n' "$release" "$artifact" "$release" "$core_source" "$release"

@@ -25,7 +25,7 @@ Claude Cage est une machine virtuelle Linux légère qui combine un terminal Lin
 
 **L'interface principale de Cage :**
 
-! [Établi et terminal Alpha 2 montrant le projet de démonstration hello-cage](www/public/workbench.jpg)
+! [Établi et terminal Cage montrant le projet de démonstration hello-cage](www/public/workbench.jpg)
 
 ## Ce que vous pouvez faire avec Cage
 
@@ -54,9 +54,9 @@ La version initiale prend en charge **Mac Apple Silicon (puces de la série M), 
 
 Le programme d'installation comprend le workbench et le noyau du proxy réseau. Une utilisation quotidienne ne nécessite pas l'installation de Go, Node.js, Docker ou Clash. Le premier lancement nécessite toujours une connexion Internet pour télécharger l’image Linux et les outils de développement. Cage ne fournit ni service proxy réseau ni compte Claude.
 
-Version actuelle : `0.2.0-alpha.2`. Le code source, le site Web et les versions sont publics. Reportez-vous aux notes de chaque version pour la signature du programme d'installation, la notarisation Apple et la portée de la validation. L'installation sur une machine propre, la compatibilité sur les Mac physiques exécutant macOS 14, l'autorisation réelle du compte Claude et les demandes de modèle nécessitent toujours une validation complète.
+Version actuelle : `0.1.0-alpha.1`. Le code source, le site Web et les versions sont publics. Reportez-vous aux notes de chaque version pour la signature du programme d'installation, la notarisation Apple et la portée de la validation. L'installation sur une machine propre, la compatibilité sur les Mac physiques exécutant macOS 14, l'autorisation réelle du compte Claude et les demandes de modèle nécessitent toujours une validation complète.
 
-Les versions avec prise en charge des mises à jour intégrées à l'application affichent un contrôle de mise à jour dans le coin inférieur gauche. Lorsqu'une mise à jour est disponible, l'info-bulle de la flèche vers le bas indique « Télécharger la mise à jour ». En cliquant dessus, vous téléchargez, vérifiez, installez et redémarrez l'application. Enregistrez et arrêtez d'abord les tâches en cours d'exécution. Les mises à jour sont téléchargées via le proxy réseau sélectionné, sans recours à une connexion directe. L'installation automatique nécessite une signature du même éditeur et une vérification Apple. Les utilisateurs d'Alpha 1 doivent d'abord installer Alpha 2 manuellement ; les versions ultérieures peuvent utiliser des mises à jour intégrées à l'application. Pour plus de détails, voir [Mettre à niveau et désinstaller](docs/getting-started.md#升级与卸载).
+Les versions avec prise en charge des mises à jour intégrées à l'application affichent un contrôle de mise à jour dans le coin inférieur gauche. Lorsqu'une mise à jour est disponible, l'info-bulle de la flèche vers le bas indique « Télécharger la mise à jour ». En cliquant dessus, vous téléchargez, vérifiez, installez et redémarrez l'application. Enregistrez et arrêtez d'abord les tâches en cours d'exécution. Les mises à jour sont téléchargées via le proxy réseau sélectionné, sans recours à une connexion directe. L'installation automatique nécessite une signature du même éditeur et une vérification Apple. Les versions ultérieures peuvent utiliser des mises à jour intégrées à l'application. Pour plus de détails, voir [Mettre à niveau et désinstaller](docs/getting-started.md#升级与卸载).
 
 ## Commencez en trois étapes
 

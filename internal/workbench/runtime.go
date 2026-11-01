@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -68,16 +67,26 @@ func (s *Server) attach() error {
 	}
 	ctx, cancel := controlContext()
 	defer cancel()
-	b, err := s.guest(ctx, `sudo cat /etc/claude-cage/browser-control.json; printf '\n'; cat "$HOME/.config/claude-cage/browser-password"`)
+	b, err := s.guest(ctx, guestConnectionSnapshot)
 	if err != nil {
 		return errors.New("环境尚未准备好")
 	}
-	lines := bytes.SplitN(bytes.TrimSpace(b), []byte("\n"), 2)
-	var credentials guestCredentials
-	if len(lines) != 2 || json.Unmarshal(lines[0], &credentials) != nil || credentials.Token == "" {
-		return errors.New("浏览器控制服务尚未安装")
+	credentials, manifest, err := parseGuestConnection(b)
+	s.mu.Lock()
+	s.guestManifest = manifest
+	s.guestUpdateRequired = errors.Is(err, errGuestUpdateRequired)
+	s.guestUpdateError = ""
+	if err != nil {
+		s.ready = false
+		s.guestUpdateError = err.Error()
 	}
-	credentials.VNCPassword = strings.TrimSpace(string(lines[1]))
+	s.mu.Unlock()
+	if err != nil {
+		if errors.Is(err, errGuestUpdateRequired) {
+			_ = s.closeProxyGate("环境组件需要更新，外网保持关闭")
+		}
+		return err
+	}
 	if _, err = s.guestAPI(ctx, credentials.Token, "GET", "/health", nil); err != nil {
 		return err
 	}
@@ -198,7 +207,11 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 		}
 	}
 
-	if err := s.attach(); err == nil {
+	attachErr := s.attach()
+	if errors.Is(attachErr, errGuestUpdateRequired) {
+		return s.synchronizeEnvironment()
+	}
+	if attachErr == nil {
 		client, gateErr := s.gateClient()
 		if gateErr == nil {
 			state, e := client.Status(context.Background())
@@ -322,6 +335,9 @@ func (s *Server) stopEnvironment() (returned error) {
 	}
 	s.ready = false
 	s.credentials = guestCredentials{}
+	s.guestManifest = nil
+	s.guestUpdateRequired = false
+	s.guestUpdateError = ""
 	s.safety.Error = ""
 	s.mu.Unlock()
 	for _, t := range sessions {
@@ -348,6 +364,10 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	v.Config.ProxyURL, v.Config.ProxyRevision = old.ProxyURL, old.ProxyRevision
 	s.mu.Lock()
 	oldPrefs := s.preferences
+	resumeVersion := s.safety.pauseVersion
+	if s.activeJobID != "" {
+		resumeVersion = s.activePauseVersion
+	}
 	wasReady := vmAlive(s.profile, s.environmentDir())
 	s.mu.Unlock()
 	changed := old != v.Config || oldPrefs.AutoTimezone != v.Preferences.AutoTimezone || oldPrefs.AutoLanguage != v.Preferences.AutoLanguage
@@ -375,9 +395,9 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 		}
 	}
 	if changed {
-		s.mu.Lock()
-		s.networkPaused = false
-		s.mu.Unlock()
+		if err := s.resumeNetworkIntentAt(resumeVersion); err != nil {
+			return err
+		}
 		if s.operationContext().Err() != nil {
 			return s.operationContext().Err()
 		}
@@ -441,6 +461,11 @@ func (s *Server) guestAPI(ctx context.Context, token, method, path string, body 
 		auditClient.Timeout = 20 * time.Second
 		client = &auditClient
 	}
+	if path == "/editor-restart" {
+		recoveryClient := *client
+		recoveryClient.Timeout = 30 * time.Second
+		client = &recoveryClient
+	}
 	req, _ := http.NewRequestWithContext(ctx, method, "http://127.0.0.1:18500"+path, bytes.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+token)
 	if body != nil {
@@ -465,7 +490,7 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		action = "tabs"
 	}
-	allowed := map[string]bool{"tabs": true, "new": true, "activate": true, "close": true, "navigate": true, "back": true, "forward": true, "reload": true, "editor": true, "resize": true}
+	allowed := map[string]bool{"tabs": true, "new": true, "activate": true, "close": true, "navigate": true, "back": true, "forward": true, "reload": true, "editor": true, "editor-restart": true, "download-retry": true, "resize": true, "insert-text": true}
 	if !allowed[action] {
 		http.NotFound(w, r)
 		return
@@ -485,8 +510,13 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 			Width     int    `json:"width,omitempty"`
 			Height    int    `json:"height,omitempty"`
 			Workspace string `json:"workspace,omitempty"`
+			Text      string `json:"text,omitempty"`
 		}
 		if !readJSON(w, r, &input) {
+			return
+		}
+		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {
+			http.Error(w, "输入文字或目标标签无效", http.StatusBadRequest)
 			return
 		}
 		if action == "new" && input.URL == "" {
@@ -494,7 +524,7 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 			input.URL = browserHomeURL(s.preferences)
 			s.mu.Unlock()
 		}
-		if action == "editor" {
+		if action == "editor" || action == "editor-restart" {
 			if !s.op.TryLock() {
 				http.Error(w, "环境正在执行其他操作", 409)
 				return

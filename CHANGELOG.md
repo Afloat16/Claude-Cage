@@ -1,4 +1,6 @@
-# Changelog
+# Upstream agent-vm changelog
+
+The entries below retain the upstream agent-vm version history. Cage release notes and validation scope are published in [Cage Releases](https://github.com/Lee-xeo/Claude-Cage/releases); Cage uses its own `VERSION` and macOS packaging workflow. These upstream version numbers and platform artifacts do not describe Cage desktop releases.
 
 ## 0.3.1
 

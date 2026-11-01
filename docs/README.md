@@ -9,6 +9,7 @@
 | 安装、配置代理、打开第一个项目 | [开始使用](getting-started.md) |
 | 查看快捷键、文件保存、关闭与退出行为 | [日常使用](getting-started.md#日常使用) |
 | 升级应用、更新环境工具或卸载 | [升级与卸载](getting-started.md#升级与卸载) |
+| 查看首个内测版本的能力与验收范围 | [0.1.0-alpha.1 发行说明](releases/0.1.0-alpha.1.md) |
 | 排查下载、启动、联网与授权问题 | [常见问题与恢复](troubleshooting.md) |
 | 报告隔离或凭据安全问题 | [安全报告](../SECURITY.md) |
 

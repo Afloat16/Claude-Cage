@@ -48,9 +48,11 @@ if not p.exists():
     p.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile('/etc/claude-cage/editor-theme.json', p)
 PYEDITOR
-# Start editor independently of this SSH session; credentials belong to the shared Cage VM.
-if ! curl --noproxy '*' -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1; then
-  nohup code-server --bind-addr 127.0.0.1:18080 --config "$HOME/.config/claude-cage/code-server.yaml" --disable-telemetry --disable-update-check --disable-workspace-trust --disable-proxy "$PWD" > "$HOME/.config/claude-cage/editor.log" 2>&1 </dev/null &
+# Systemd owns the editor independently of the SSH session and restarts crashes.
+(umask 077; printf '%s' "$PWD" > "$HOME/.config/claude-cage/editor-workspace")
+if ! systemctl is-active --quiet cage-editor.service; then
+  sudo /usr/local/bin/cage-editor-migrate
+  sudo systemctl start cage-editor.service
 fi
 for i in $(seq 1 30); do
   if curl --noproxy '*' -fsS http://127.0.0.1:18080/healthz >/dev/null 2>&1 && curl --noproxy '*' -fsS http://127.0.0.1:16080/vnc.html >/dev/null 2>&1; then

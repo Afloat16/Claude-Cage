@@ -6,7 +6,7 @@ import { readClipboard, writeClipboard, nativeAvailable } from "./api";
 export function installRemoteInput(
   rfb,
   container,
-  { mode, onStatus, onFallback, isActive },
+  { mode, onStatus, onFallback, isActive, insertText },
 ) {
   const listeners = [],
     handled = new Set(),
@@ -16,12 +16,17 @@ export function installRemoteInput(
     copyRequested = false,
     copyTimer,
     pending = 0,
+    composing = false,
     disposed = false;
   const target = document.createElement("textarea");
-  target.setAttribute("aria-label", "远程粘贴接收区");
-  target.style.cssText =
-    "position:fixed;left:-10000px;top:0;width:1px;height:1px";
-  document.body.append(target);
+  target.setAttribute("aria-label", "Cage 网页输入");
+  target.setAttribute("autocomplete", "off");
+  target.setAttribute("autocapitalize", "off");
+  target.spellcheck = false;
+  target.className = "remote-text-input";
+  target.style.cssText = "position:fixed;left:0;top:0";
+  container.append(target);
+  rfb.cageSetKeyboardTarget(target);
   const on = (object, type, fn, options) => {
     object.addEventListener(type, fn, options);
     listeners.push(() => object.removeEventListener(type, fn, options));
@@ -30,6 +35,51 @@ export function installRemoteInput(
     isActive() &&
     (container.contains(document.activeElement) ||
       document.activeElement === target);
+  const position = (x, y) => {
+    if (composing) return;
+    target.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 280))}px`;
+    target.style.top = `${Math.max(0, Math.min(y, window.innerHeight - 36))}px`;
+  };
+  const bounds = container.getBoundingClientRect();
+  position(bounds.left + 12, bounds.top + 12);
+  on(
+    container,
+    "pointerdown",
+    (event) => position(event.clientX, event.clientY),
+    true,
+  );
+  const commit = (text) => {
+    if (disposed || !isActive() || !text) return;
+    // X0tigervnc cannot map arbitrary Unicode to its finite X11 keycode pool.
+    // The browser inserts committed text directly, without clipboard mutation.
+    insertText(text).catch(() => {
+      if (!disposed) onStatus("文字输入未完成，请重新连接画面后重试");
+    });
+  };
+  const resetComposition = () => {
+    composing = false;
+    target.value = "";
+  };
+  on(target, "compositionstart", () => {
+    composing = true;
+  });
+  on(target, "compositionend", (event) => {
+    if (composing) commit(event.data || "");
+    resetComposition();
+  });
+  on(target, "input", (event) => {
+    if (composing || event.isComposing) return;
+    // WebKit may deliver the final input after compositionend. That text has
+    // already been sent. Input without composition covers emoji and dictation.
+    if (
+      !["insertFromComposition", "insertCompositionText"].includes(
+        event.inputType,
+      )
+    )
+      commit(target.value);
+    target.value = "";
+  });
+  on(target, "blur", resetComposition);
   const say = (text) => {
     if (!disposed) onStatus(text);
   };
@@ -96,6 +146,17 @@ export function installRemoteInput(
     "keydown",
     (event) => {
       if (!focused()) return;
+      if (
+        composing ||
+        event.isComposing ||
+        event.keyCode === 229 ||
+        ["Process", "Dead"].includes(event.key)
+      ) {
+        // Leave the default action to the host IME; noVNC must not cancel it
+        // or send candidate navigation/confirmation keys into the guest.
+        event.stopImmediatePropagation();
+        return;
+      }
       const code = getKeycode(event),
         mapping = mode() === "mac",
         malformedCommandLetter =
@@ -181,6 +242,8 @@ export function installRemoteInput(
     "keyup",
     (event) => {
       const code = getKeycode(event);
+      // noVNC ignores releases for keys it never sent. Let keyup through so a
+      // modifier pressed before composition can still be released normally.
       physical.delete(code);
       if (remote.has(code)) {
         rfb.sendKey(remote.get(code), code, false);
@@ -215,6 +278,7 @@ export function installRemoteInput(
     paste,
     text: () => lastText,
     edit(action) {
+      if (composing) return false;
       if (action === "copy") copy();
       else if (action === "cut") copy("x");
       else if (action === "paste") void readAndPaste();
@@ -235,6 +299,7 @@ export function installRemoteInput(
       clearTimeout(copyTimer);
       release();
       listeners.forEach((remove) => remove());
+      rfb.cageSetKeyboardTarget(null);
       target.remove();
     },
   };

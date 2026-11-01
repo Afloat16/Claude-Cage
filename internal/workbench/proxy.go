@@ -12,6 +12,12 @@ import (
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
+var (
+	validateProxyCore = managedproxy.Validate
+	startProxyCore    = managedproxy.Start
+	fetchProxySource  = managedproxy.Fetch
+)
+
 type proxyInput struct {
 	ID           string `json:"id"`
 	Name         string `json:"name"`
@@ -94,7 +100,10 @@ func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.launch(w, "proxy", func() error { return s.changeProxy(action, input) })
+	s.mu.Lock()
+	pauseVersion := s.safety.pauseVersion
+	s.mu.Unlock()
+	s.launch(w, "proxy", func() error { return s.changeProxy(action, input, &pauseVersion) })
 }
 func (s *Server) subscriptionClient(host bool) (*http.Client, error) {
 	if host {
@@ -118,7 +127,7 @@ func (s *Server) subscriptionClient(host bool) (*http.Client, error) {
 		return nil
 	}}, nil
 }
-func (s *Server) changeProxy(action string, in proxyInput) error {
+func (s *Server) changeProxy(action string, in proxyInput, resumeVersion *uint64) error {
 	p, err := managedproxy.Load(s.profile)
 	if err != nil {
 		return err
@@ -147,7 +156,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 			}
 			p.Port = in.Port
 		}
-		return s.activateProxy(p, cfg)
+		return s.applyProxy(p, cfg, resumeVersion)
 	}
 	index := -1
 	for i, src := range p.Sources {
@@ -202,7 +211,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 				return e
 			}
 			defer client.CloseIdleConnections()
-			data, usage, err = managedproxy.Fetch(ctx, client, in.URL)
+			data, usage, err = fetchProxySource(ctx, client, in.URL)
 			if err != nil {
 				if index >= 0 {
 					p.Sources[index].Error = err.Error()
@@ -223,7 +232,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 		if _, ok := candidate.Find(candidate.Selected); !ok {
 			candidate.Selected = candidate.Sources[0].Nodes[0].ID
 		}
-		if err = managedproxy.Validate(ctx, s.profile, candidate); err != nil {
+		if err = validateProxyCore(ctx, s.profile, candidate); err != nil {
 			s.proxySourceFailure(in.ID, err)
 			return err
 		}
@@ -241,7 +250,7 @@ func (s *Server) changeProxy(action string, in proxyInput) error {
 			}
 			return p.Save(s.profile)
 		}
-		return s.activateProxy(p, cfg)
+		return s.applyProxy(p, cfg, resumeVersion)
 	}
 	return p.Save(s.profile)
 }
@@ -271,17 +280,19 @@ func (s *Server) closeProxyGate(reason string) error {
 }
 
 func (s *Server) activateProxy(p managedproxy.Store, old cage.Config) (returned error) {
-	return s.applyProxy(p, old, true)
+	// The explicit start operation already requested networking. A pause made
+	// after that request must survive any core recovery within the start.
+	return s.applyProxy(p, old, nil)
 }
 
-func (s *Server) applyProxy(p managedproxy.Store, old cage.Config, resume bool) (returned error) {
+func (s *Server) applyProxy(p managedproxy.Store, old cage.Config, resumeVersion *uint64) (returned error) {
 	ctx := s.operationContext()
 	previous, err := managedproxy.Load(s.profile)
 	if err != nil {
 		return err
 	}
 	s.setMessage("正在验证节点配置…")
-	if err := managedproxy.Validate(ctx, s.profile, p); err != nil {
+	if err := validateProxyCore(ctx, s.profile, p); err != nil {
 		return err
 	}
 	// Changing the endpoint requires an environment restart; node-only switches
@@ -316,14 +327,18 @@ func (s *Server) applyProxy(p managedproxy.Store, old cage.Config, resume bool) 
 	if err := writePrivate(s.configPath, cfg); err != nil {
 		return err
 	}
-	if err := managedproxy.Start(ctx, s.profile, p); err != nil {
+	if err := startProxyCore(ctx, s.profile, p); err != nil {
 		return err
 	}
 	committed = true
-	s.mu.Lock()
-	if resume {
-		s.networkPaused = false
+	if resumeVersion != nil {
+		if err := s.resumeNetworkIntentAt(*resumeVersion); err != nil {
+			return err
+		}
 	}
+	s.mu.Lock()
+	// Only a user request may resume networking, and a later pause wins even
+	// when it arrived while subscription download or core startup was pending.
 	paused := s.networkPaused
 	s.networkError = ""
 	s.location = nil
@@ -444,7 +459,7 @@ func (s *Server) refreshProxySubscriptions() {
 	for _, src := range p.Sources {
 		if src.URL != "" && src.Interval > 0 && time.Since(src.Updated) >= time.Duration(src.Interval)*time.Hour && time.Since(src.Attempted) > 15*time.Minute {
 			// Automatic refresh never opts into a host-network fallback.
-			s.launch(&discardResponse{}, "proxy-update", func() error { return s.changeProxy("refresh", proxyInput{ID: src.ID}) })
+			s.launch(&discardResponse{}, "proxy-update", func() error { return s.changeProxy("refresh", proxyInput{ID: src.ID}, nil) })
 			return
 		}
 	}

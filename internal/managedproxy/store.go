@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ import (
 
 const Group = "CAGE"
 const MaxImport = 8 << 20
+const maxStoreSize = 32 << 20
 
 type Node struct {
 	ID     string         `json:"id"`
@@ -59,14 +61,19 @@ func Socket(profile string) string {
 }
 func Load(profile string) (Store, error) {
 	var s Store
-	b, err := os.ReadFile(filepath.Join(Dir(profile), "sources.json"))
+	f, err := os.Open(filepath.Join(Dir(profile), "sources.json"))
 	if os.IsNotExist(err) {
 		return Store{Version: 1, Port: 17896, Auth: Token(), Sources: []Source{}}, nil
 	}
 	if err != nil {
 		return s, err
 	}
-	if len(b) > 32<<20 || json.Unmarshal(b, &s) != nil || s.Version != 1 || s.Port < 1024 || s.Port > 65535 || len(s.Auth) != 48 {
+	defer f.Close()
+	b, err := io.ReadAll(io.LimitReader(f, maxStoreSize+1))
+	if err != nil {
+		return s, err
+	}
+	if len(b) > maxStoreSize || json.Unmarshal(b, &s) != nil || s.Version != 1 || s.Port < 1024 || s.Port > 65535 || len(s.Auth) != 48 {
 		return s, errors.New("Cage 代理配置无效，请恢复私有配置备份")
 	}
 	return s, nil
@@ -98,6 +105,9 @@ func (s Store) Save(profile string) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
+	}
+	if len(b) > maxStoreSize {
+		return errors.New("代理来源配置总大小超过 32 MiB，请减少来源或节点；原配置已保留")
 	}
 	return Write(filepath.Join(Dir(profile), "sources.json"), b)
 }

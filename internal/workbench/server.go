@@ -30,19 +30,28 @@ var assets embed.FS
 const cookieName = "cage_session"
 
 type controlFile struct {
-	Port  int    `json:"port"`
-	Token string `json:"token"`
-	PID   int    `json:"pid"`
+	Port       int                `json:"port"`
+	Token      string             `json:"token"`
+	PID        int                `json:"pid"`
+	Controller ControllerIdentity `json:"controller"`
 }
 type Job struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind"`
-	Running bool   `json:"running"`
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
-	Log     string `json:"log,omitempty"`
+	pauseVersion uint64
+	ID           string `json:"id"`
+	Kind         string `json:"kind"`
+	Running      bool   `json:"running"`
+	Message      string `json:"message"`
+	Error        string `json:"error,omitempty"`
+	Log          string `json:"log,omitempty"`
 }
 type Server struct {
+	identity                                         ControllerIdentity
+	guestManifest                                    *cage.GuestManifest
+	guestUpdateRequired                              bool
+	guestUpdateError                                 string
+	closing                                          bool
+	shutdown                                         func()
+	favoritesMu                                      sync.Mutex
 	terminalSequence                                 int
 	tickets                                          map[string]time.Time
 	guestClient                                      *http.Client
@@ -68,6 +77,7 @@ type Server struct {
 	jobCancel                                        context.CancelFunc
 	activeContext                                    context.Context
 	activeJobID                                      string
+	activePauseVersion                               uint64
 }
 
 func randomToken() string {
@@ -110,11 +120,18 @@ func Serve(configPath string) error {
 	}
 	defer listener.Close()
 	s := &Server{profile: profile, configPath: configPath, exe: exe, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: "mac"}, terminals: map[string]*terminalSession{}}
+	s.identity, err = currentController()
+	if err != nil {
+		return err
+	}
 	if b, e := os.ReadFile(filepath.Join(profile, "workbench.json")); e == nil {
 		_ = json.Unmarshal(b, &s.preferences)
 	}
 	if err = s.prepareEnvironment(); err != nil {
 		return err
+	}
+	if intentErr := s.restoreNetworkIntent(); intentErr != nil {
+		s.networkError = intentErr.Error()
 	}
 	if s.preferences.Keyboard == "" {
 		s.preferences.Keyboard = "mac"
@@ -124,34 +141,44 @@ func Serve(configPath string) error {
 			return e
 		}
 	}
-	if err = writePrivate(filepath.Join(profile, "control.json"), controlFile{port, s.token, os.Getpid()}); err != nil {
+	if err = writePrivate(filepath.Join(profile, "control.json"), controlFile{Port: port, Token: s.token, PID: os.Getpid(), Controller: s.identity}); err != nil {
 		return err
 	}
 	// A previously running VM cannot keep an unmanaged endpoint online.
 	if cfg, e := loadConfig(configPath); e != nil || cfg.RequireManagedProxy(profile) != nil {
 		_ = s.closeProxyGate("尚未配置有效节点，外网保持关闭")
 	}
+	if s.networkPaused {
+		_ = s.closeProxyGate("网络保持暂停，请手动恢复后再联网")
+	}
 	go s.monitor()
 	go s.monitorNetwork()
 	server := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
-	return server.Serve(listener)
+	shutdownDone := make(chan struct{})
+	s.shutdown = func() {
+		defer close(shutdownDone)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+		_ = server.Close()
+	}
+	err = server.Serve(listener)
+	if errors.Is(err, http.ErrServerClosed) {
+		<-shutdownDone
+		return nil
+	}
+	return err
 }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]bool{"ready": true}) })
 	mux.HandleFunc("POST /api/launch", func(w http.ResponseWriter, r *http.Request) {
-		var v struct {
-			Token string `json:"token"`
-		}
-		if !readJSON(w, r, &v) {
+		if !s.launcherAuthenticated(w, r) {
 			return
 		}
-		if !equalSecret(v.Token, s.token) {
-			http.Error(w, "Launcher refused", 401)
-			return
-		}
-		jsonReply(w, map[string]string{"url": s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket()})
+		jsonReply(w, launchResponse{URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket(), Controller: s.identity})
 	})
+	mux.HandleFunc("POST /api/handoff", s.handoff)
 	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			Token string `json:"token"`
@@ -168,9 +195,14 @@ func (s *Server) handler() http.Handler {
 	})
 	mux.HandleFunc("GET /api/status", s.status)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
+	mux.HandleFunc("POST /api/environment/tools", s.updateEnvironmentTools)
 	mux.HandleFunc("GET /api/host/git", s.hostGit)
 	mux.HandleFunc("POST /api/host/git", s.enableHostGit)
 	mux.HandleFunc("GET /api/appearance", s.getAppearance)
+	mux.HandleFunc("GET /api/favorites", s.getFavorites)
+	mux.HandleFunc("POST /api/favorites", s.mutateFavorites)
 	mux.HandleFunc("POST /api/appearance", s.saveAppearance)
 	mux.HandleFunc("GET /api/appearance/codex", s.codexAppearance)
 	mux.HandleFunc("POST /api/settings/probe", s.probe)
@@ -222,12 +254,19 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 		}
-		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/session" && r.URL.Path != "/api/launch" {
+		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/session" && r.URL.Path != "/api/launch" && r.URL.Path != "/api/handoff" {
 			c, e := r.Cookie(s.cookieName())
 			if e != nil || !equalSecret(c.Value, s.session) {
 				http.Error(w, "请从 Cage 应用重新打开工作台", 401)
 				return
 			}
+		}
+		s.mu.Lock()
+		closing := s.closing
+		s.mu.Unlock()
+		if closing {
+			http.Error(w, "后台正在更新，请重新打开 Cage。", http.StatusServiceUnavailable)
+			return
 		}
 		mux.ServeHTTP(w, r)
 	})
@@ -264,6 +303,11 @@ func requestError(w http.ResponseWriter, err error) {
 func (s *Server) busy() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.job.Running }
 func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		http.Error(w, "后台正在更新，请重新打开 Cage。", http.StatusServiceUnavailable)
+		return
+	}
 	if s.job.Running {
 		if kind == "stop" && s.job.Kind == "stop" {
 			job := s.job
@@ -280,12 +324,17 @@ func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 			s.jobCancel()
 		}
 	}
+	if kind == "start" || kind == "safety" || kind == "restore" {
+		if err := s.saveNetworkIntentLocked(false); err != nil {
+			s.mu.Unlock()
+			_ = s.closeProxyGate("网络恢复意图无法保存，外网保持关闭")
+			requestError(w, err)
+			return
+		}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.jobCancel = cancel
-	if kind == "start" || kind == "safety" || kind == "restore" {
-		s.networkPaused = false
-	}
-	s.job = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…"}
+	s.job = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…", pauseVersion: s.safety.pauseVersion}
 	if s.monitorCancel != nil {
 		s.monitorCancel()
 	}
@@ -301,11 +350,13 @@ func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 			return
 		}
 		s.activeContext, s.activeJobID = ctx, job.ID
+		s.activePauseVersion = job.pauseVersion
 		s.mu.Unlock()
 		err := fn()
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.activeContext, s.activeJobID = nil, ""
+		s.activePauseVersion = 0
 		if s.job.ID != job.ID {
 			return
 		}
@@ -348,7 +399,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
-	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": s.projectError, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety})
+	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": s.projectError, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
 }
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	c, err := loadConfig(s.configPath)
