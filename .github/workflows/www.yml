@@ -1,19 +1,52 @@
-name: Website checks
+name: Website and public releases
 on:
   push:
-    paths: ['www/**', '.github/workflows/www.yml']
+    branches: [main]
+    paths: ['www/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   pull_request:
-    paths: ['www/**', '.github/workflows/www.yml']
+    paths: ['www/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
+  release:
+    types: [published, edited]
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Optional public release tag to download and verify before deployment'
+        required: false
+        type: string
 permissions:
   contents: read
+concurrency:
+  group: website-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
+  verify-release:
+    if: (github.event_name == 'release' && !github.event.release.draft) || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      # Tags can predate this workflow. The verification tools live on main.
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Download public assets and verify SHA-256
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: node www/scripts/sync-release.mjs --tag "$RELEASE_TAG" --output "$RUNNER_TEMP/release.json" --archive-directory "$RUNNER_TEMP/release"
+      - name: Verify the shipped macOS application
+        run: bash scripts/verify-macos-release.sh "$RUNNER_TEMP/release"
   build:
+    needs: verify-release
+    if: always() && !cancelled() && (needs.verify-release.result == 'success' || needs.verify-release.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event_name == 'release' && 'main' || github.ref }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -21,11 +54,29 @@ jobs:
           cache: npm
           cache-dependency-path: www/package-lock.json
       - run: npm ci --prefix www
+      - run: node --test www/scripts/sync-release.test.mjs
+      - name: Resolve the public download version
+        run: node www/scripts/sync-release.mjs
       - run: npm run --prefix www check
       - run: npm run --prefix www build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-pages-artifact@v4
         with:
-          name: cage-website
           path: www/dist
-# Publication is separate from CI while the project is private.
-# GitHub Pages must not silently expose a private preview.
+  deploy:
+    needs: build
+    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'release')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
