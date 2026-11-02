@@ -25,7 +25,7 @@ DISM /Online /Enable-Feature /FeatureName:HypervisorPlatform /All
 
 ## 安装并开始工作
 
-1. 下载对应版本的 `Cage-<版本>-windows-amd64-setup.exe`，核对同批的 `SHA256SUMS`。开发包名为 `Cage-<版本>-windows-amd64-setup-unsigned.exe`，明确标识未签名状态。
+1. 在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Windows，核对对应发行条目的 `SHA256SUMS`。签名安装包名为 `Cage-<版本>-windows-amd64-setup.exe`；当前公开预览包名为 `Cage-<版本>-windows-amd64-setup-unsigned.exe`，主页标明“预览版 · 未签名”。未签名包可能触发未知发布者提示，需手动安装和更新。
 2. 运行安装程序，选择安装位置。安装器随附 .NET 桌面运行组件、WebView2 安装程序、QEMU、OpenSSH 客户端和代理核心，无需另装 Go、Node.js 或 Clash。
 3. 从开始菜单启动 Cage，按[开始使用](getting-started.md#2-导入并选择代理)导入并选择代理。首次启动下载 Linux 镜像及开发工具，通过网络检查后即可使用。
 

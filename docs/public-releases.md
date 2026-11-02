@@ -8,24 +8,25 @@
 
 ## 发布安装包
 
-`VERSION` 表示正在构建的应用版本；主页下载入口只指向附件完整的公开 Release。发布新版本时，先完成相关测试、提交源码并推送对应的 `v<版本>` 标签，再按平台发行文档生成已签名且通过公证的 macOS DMG，以及完成签名和实机验收的 Windows 安装器。
+`VERSION` 表示正在构建的应用版本；主页按平台展示可下载的公开附件。发布新版本时，先完成相关测试、提交源码并推送对应的 `v<版本>` 标签，再按平台发行文档生成已签名且通过公证的 macOS DMG、完成签名和实机验收的 Windows 安装器，以及通过发行验收的 Linux DEB。
 
-以 macOS 为主的公开 Release 包含：
+三平台的安装包命名为：
 
 - `Cage-<版本>-macos-arm64.dmg`。
-- 与安装包中代理核心版本一致的 `mihomo-v<版本>-source.tar.gz`。
-- `SHA256SUMS`，摘要在最终签名和公证票据附加后生成。
+- `Cage-<版本>-windows-amd64-setup.exe`。
+- `Cage-<版本>-linux-amd64.deb`。
 
-同批发布 Windows 时，增加 `Cage-<版本>-windows-amd64-setup.exe`、该构建的 QEMU 主程序源码和包含随附库/固件的完整对应源码归档。两个平台共用一份 `SHA256SUMS`；不要用一个平台的清单覆盖另一个平台的清单。未签名开发包不得作为正式平台附件。
+各平台随附与代理核心版本一致的 `mihomo-v<版本>-source.tar.gz`。Windows 还须附带该构建的 QEMU 主程序源码和包含随附库/固件的完整对应源码归档。三平台共用一份 `SHA256SUMS`，摘要在最终签名和公证票据附加后生成；不要用一个平台的清单覆盖另一个平台的清单。未签名开发包不得作为正式平台附件。
 
-Linux 附件为 `Cage-<版本>-linux-amd64.deb`，同批附带固定版本的 Mihomo 对应源码。Linux 用户通过系统包管理器手动安装，应用不自动替换系统文件。发布说明必须区分云端容器测试与真实 Linux/KVM 桌面验收；未完成的项目不得列为通过。合并工具也接受 `_output/releases/<版本>/linux` 目录，并去除相同内容的重复源码附件。
+Linux 用户通过系统包管理器手动安装，应用不自动替换系统文件。发布说明必须区分云端容器测试与真实 Linux/KVM 桌面验收；未完成的项目不得列为通过。合并工具接受各平台目录，并去除相同内容的重复源码附件。
 
 使用本地合并工具核对平台目录中的摘要并生成统一发布目录：
 
 ```sh
 node scripts/prepare-release-assets.mjs \
   --output _output/publish-vVERSION \
-  _output/releases/VERSION _output/releases/VERSION/windows
+  _output/releases/VERSION _output/releases/VERSION/windows \
+  _output/releases/VERSION/linux
 ```
 
 把 `VERSION` 替换为实际版本。输出目录必须不存在；工具拒绝摘要错误、不同内容的同名文件和开发安装器，相同源码附件只保留一份。该工具只准备文件，签名、公证与实机检查仍由对应平台流程完成。
@@ -63,7 +64,11 @@ gh workflow run www.yml --repo Lee-xeo/Claude-Cage --ref main
 
 需要同时重验某个公开安装包时，在命令后增加 `-f release_tag=v0.1.0-alpha.1`，替换为实际版本。
 
-主页默认选择具有完整 macOS 资产的公开 Release。同一 Release 的 Windows 正式安装器及有效摘要存在时，下载区同时提供 Windows 10/11 x64 入口；未签名或缺失附件不显示。Windows-only Release 仍可被 Windows 应用更新器选择，但不会成为主页的默认发布版本。
+主页的“下载应用”打开 macOS、Windows、Linux 平台选择。默认版本来自具有完整 macOS 资产的公开 Release；同一版本的 Windows 正式安装器或 Linux DEB 具有有效摘要时，同时提供对应下载。缺少公开安装包的平台仍显示系统要求，并链接安装与构建说明。
+
+缺少同版本 Windows 或 Linux 安装包时，同步脚本还会检查公开的 `desktop-preview-<版本>` 预发行条目。该条目必须包含同版本 Windows 未签名安装器、Linux DEB、Mihomo 与 QEMU 主程序源码，以及有效的 `SHA256SUMS`。Windows 入口显示“预览版 · 未签名”，需手动安装和更新。该入口不改变应用内更新规则；签名限制、系统兼容性与验收范围须在发行说明中写明。
+
+用户明确授权公开未签名预览后，维护者可手动触发 `platform-preview.yml`，提供成功的三平台 CI run ID 并启用 `unsigned_windows`。工作流从该次 CI 取得原始产物、核对源码版本和摘要，在草稿中上传并核对 GitHub digest 后公开。随后调用官网工作流，匿名下载三平台安装包、核对摘要，并验证 macOS 签名与公证，成功后部署官网。现有 macOS Release 附件保留，普通推送不会触发预览包发布。
 
 主页构建从公开 Release 刷新下载链接，避免源码版本领先安装包时出现失效下载。图片、样式、404 返回链接与兼容重定向均使用 `/Claude-Cage/` 子路径。
 

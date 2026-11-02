@@ -26,7 +26,7 @@ Cage 日常以普通用户运行。不要用 `sudo cage-desktop` 启动工作台
 
 ## 安装并开始工作
 
-从对应 Release 下载 `Cage-<版本>-linux-amd64.deb` 与 `SHA256SUMS`，核对该文件的 SHA-256 后安装：
+在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Linux。从对应 Release 下载 `Cage-<版本>-linux-amd64.deb` 与 `SHA256SUMS`，核对该文件的 SHA-256 后安装。尚无公开安装包时，平台入口会指向本页，可按下文[维护者构建与验收](#维护者构建与验收)构建：
 
 ```sh
 sudo apt install ./Cage-<版本>-linux-amd64.deb
