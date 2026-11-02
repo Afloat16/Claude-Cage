@@ -11,10 +11,10 @@ export async function createWorkbench({
   nativeRequest,
   startupFailure = false,
 } = {}) {
-  const { chromium } = require(
+  const engines = require(
     process.env.CAGE_PLAYWRIGHT_MODULE || "playwright",
   );
-  const browser = await chromium.launch({ headless: true });
+  const browser = await engines[process.env.CAGE_TEST_BROWSER || "chromium"].launch({ headless: true, executablePath: process.env.CAGE_TEST_BROWSER_PATH });
   const context = await browser.newContext({ viewport, recordVideo });
   const page = await context.newPage();
   const errors = [];
@@ -50,6 +50,9 @@ export async function createWorkbench({
     saves: [],
     requests: [],
     terminalConnections: 0,
+    account: { exists: true, unlocked: true, username: "林间工作室", avatar: "" },
+    accountPassword: "fixture-password",
+    failAccountSave: false,
     settings: {
       workspace: "/Users/shihao/.claude-cage-workspace",
       browser_home_url: "https://www.bing.com/",
@@ -107,7 +110,41 @@ export async function createWorkbench({
     const request = route.request();
     const path = new URL(request.url()).pathname.replace("/api", "");
     const body = request.postDataJSON();
-    state.requests.push({ path, method: request.method(), body });
+    state.requests.push({ path, method: request.method(), body: path.startsWith("/account") ? undefined : body });
+    const accountView = () => ({ ...state.account, background_running: state.status.vm_running });
+    if (path === "/account") return route.fulfill({ json: accountView() });
+    if (path.startsWith("/account/")) {
+      const action = path.split("/").at(-1);
+      if (!["create", "unlock"].includes(action) && !state.account.unlocked) return route.fulfill({ status: 423, body: "请先解锁 Cage" });
+      if (action === "create") {
+        if (state.account.exists || !body.username?.trim() || body.password?.length < 8 || body.password !== body.confirm_password) return route.fulfill({ status: 400, body: "账户信息无效" });
+        Object.assign(state.account, { exists: true, unlocked: true, username: body.username.trim(), avatar: body.avatar || "" });
+        state.accountPassword = body.password;
+      } else if (action === "unlock") {
+        if (body.password !== state.accountPassword) return route.fulfill({ status: 400, body: "密码不正确" });
+        state.account.unlocked = true;
+        state.account.require_authentication = false;
+      } else if (action === "profile") {
+        if (state.failAccountSave) return route.fulfill({ status: 400, body: "资料未能保存，请重试" });
+        Object.assign(state.account, { username: body.username.trim(), avatar: body.avatar });
+      } else if (action === "password") {
+        if (body.old_password !== state.accountPassword) return route.fulfill({ status: 400, body: "密码不正确" });
+        if (body.password?.length < 8 || body.password !== body.confirm_password) return route.fulfill({ status: 400, body: "新密码无效" });
+        state.accountPassword = body.password;
+      } else if (action === "lock") { state.account.unlocked = false; state.account.require_authentication = true; }
+      else if (action === "suspend") state.account.unlocked = false;
+      else if (action === "logout") {
+        Object.assign(state.status, { ready: false, vm_running: false });
+        state.account.unlocked = false;
+        state.account.devices = {};
+        state.account.require_authentication = true;
+        state.terminals = [];
+        state.status.job = { id: "account-logout", kind: "stop", running: false };
+        return route.fulfill({ json: state.status.job });
+      }
+      return route.fulfill({ json: accountView() });
+    }
+    if (!state.account.unlocked && !["/session", "/launch", "/appearance"].includes(path)) return route.fulfill({ status: 423, body: "Cage 已锁定，请先登录" });
     if (startupFailure && path === "/status") return route.fulfill({ status: 503, body: "测试：控制服务暂不可用" });
     let result = {};
     if (path === "/favorites") {

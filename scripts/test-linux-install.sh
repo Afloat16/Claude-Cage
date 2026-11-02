@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+[[ -f /.dockerenv && $(id -u) == 0 ]] || { echo 'Run this destructive package test as root in a disposable Docker container.' >&2; exit 2; }
+[[ $# == 1 && -f "$1" ]] || { echo 'Usage: test-linux-install.sh /path/to/Cage-linux-amd64.deb' >&2; exit 2; }
+package=$(realpath "$1")
+test_user=cage-package-test
+id "$test_user" >/dev/null 2>&1 || useradd -m -s /bin/bash "$test_user"
+test_home=$(getent passwd "$test_user" | cut -d: -f6)
+report_dir="$test_home/reports"
+profile="$test_home/upgrade-guard/config.json"
+cleanup() {
+  if [[ -x /usr/bin/claude-cage && -f "${profile%/*}/control.json" ]]; then
+    runuser -u "$test_user" -- env CLAUDE_CAGE_CONFIG="$profile" /usr/bin/claude-cage prepare-update --json >/dev/null || true
+  fi
+}
+trap cleanup EXIT
+install -d -m 700 -o "$test_user" -g "$test_user" "$report_dir" "$test_home/.claude-cage" "$test_home/.claude-cage-workspace"
+runuser -u "$test_user" -- sh -c 'printf "keep-profile\n" > "$1/.claude-cage/install-test-marker"; printf "keep-project\n" > "$1/.claude-cage-workspace/install-test-marker"' sh "$test_home"
+export DEBIAN_FRONTEND=noninteractive
+apt-get install --reinstall -y "$package"
+runuser -u "$test_user" -- /usr/lib/claude-cage/cage-desktop --self-test
+runuser -u "$test_user" -- xvfb-run -a dbus-run-session -- node "$PWD/desktop/linux/test-smoke.mjs" /usr/lib/claude-cage/cage-desktop "$report_dir/first-install.json"
+# Keep a real control service alive and confirm that preinst refuses replacement.
+runuser -u "$test_user" -- env CLAUDE_CAGE_CONFIG="$profile" /usr/bin/claude-cage desktop --json > /dev/null
+if dpkg -i "$package" > "$report_dir/running-upgrade.log" 2>&1; then
+  echo 'FAIL: installer replaced a running Cage backend.' >&2
+  exit 1
+fi
+grep -q 'Cage is running' "$report_dir/running-upgrade.log"
+if dpkg --remove claude-cage > "$report_dir/running-remove.log" 2>&1; then
+  echo 'FAIL: uninstaller removed a running Cage backend.' >&2
+  exit 1
+fi
+grep -q 'Cage is running' "$report_dir/running-remove.log"
+runuser -u "$test_user" -- env CLAUDE_CAGE_CONFIG="$profile" /usr/bin/claude-cage prepare-update --json > "$report_dir/guard-stop.json"
+dpkg -i "$package"
+runuser -u "$test_user" -- xvfb-run -a dbus-run-session -- node "$PWD/desktop/linux/test-smoke.mjs" /usr/lib/claude-cage/cage-desktop "$report_dir/after-reinstall.json"
+dpkg --remove claude-cage
+[[ ! -e /usr/bin/cage-desktop && ! -e /usr/lib/claude-cage/cage ]] || { echo 'Uninstall left installed executables.' >&2; exit 1; }
+[[ $(cat "$test_home/.claude-cage/install-test-marker") == keep-profile ]]
+[[ $(cat "$test_home/.claude-cage-workspace/install-test-marker") == keep-project ]]
+printf '{"success":true,"install":true,"nativeWorkbench":true,"runningUpgradeRefused":true,"runningRemovalRefused":true,"reinstall":true,"uninstallPreservedData":true}\n' > "$report_dir/install.json"
+printf 'PASS: package install, native workbench, running-update refusal, reinstall and data-preserving removal. Reports: %s\n' "$report_dir"

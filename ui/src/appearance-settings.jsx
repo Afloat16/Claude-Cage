@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Check,
   ChevronDown,
@@ -7,13 +7,31 @@ import {
   Monitor,
   Moon,
   Sun,
+  Upload,
+  RotateCcw,
+  CircleCheck,
+  TriangleAlert,
+  CircleX,
 } from "lucide-react";
-import { api } from "./api";
+import { api, native, nativeAvailable } from "./api";
 import { useAppearance } from "./appearance";
 import {
-  mix,
+  colorGroups,
+  colorTokens,
+  terminalColorGroups,
+  terminalTheme,
+  customThemeLimit,
+  themeFileLimit,
+  parseThemeDocument,
+  themeDocument,
+  validateThemeName,
+  sameTheme,
   presets,
   presetNames,
+  presetInfo,
+  presetGroups,
+  themeCatalog,
+  applyThemePreset,
   systemUIFont,
   systemCodeFont,
   themeVariables,
@@ -53,12 +71,73 @@ function FontSizeInput({ label, value, min, onChange }) {
     </div>
   );
 }
+function ColorField({ label, value, onChange, onReset }) {
+  const [text, setText] = useState(value);
+  useEffect(() => setText(value), [value]);
+  const invalid = !/^#[0-9a-fA-F]{6}$/.test(text);
+  const commit = () => {
+    if (!invalid && text !== value) onChange(text.toLowerCase());
+  };
+  return (
+    <div className="theme-color-field">
+      <span>{label.replace(/^(浅色|深色)主题(终端)?/, "")}</span>
+      <div className="theme-color-value">
+        <input
+          type="color"
+          aria-label={label + "取色"}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <input
+          type="text"
+          aria-label={label}
+          aria-invalid={invalid}
+          value={text}
+          maxLength={7}
+          spellCheck={false}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={commit}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commit();
+            }
+            if (e.key === "Escape") {
+              e.stopPropagation();
+              setText(value);
+            }
+          }}
+        />
+        {onReset && (
+          <button
+            className="icon-button"
+            aria-label={label + "恢复自动"}
+            title="恢复自动颜色"
+            onClick={onReset}
+          >
+            <RotateCcw size={13} />
+          </button>
+        )}
+      </div>
+      {invalid && (
+        <small className="theme-color-error">请输入 # 加六位十六进制颜色</small>
+      )}
+    </div>
+  );
+}
 function ThemeCard({ variant, value, active, onChange }) {
   const [advanced, setAdvanced] = useState(false);
   const label = variant === "light" ? "浅色主题" : "深色主题";
   const options = presets[variant];
-  const patch = (delta) => onChange({ ...value, ...delta });
+  const patch = (delta) => onChange({ ...value, preset: "custom", ...delta });
   const vars = themeVariables(value, variant);
+  const terminal = terminalTheme(value, variant);
+  const setColor = (field, key, color) => {
+    const next = { ...value[field] };
+    if (color === undefined) delete next[key];
+    else next[key] = color;
+    patch({ [field]: next });
+  };
   return (
     <section
       className={`appearance-theme-card ${active ? "current" : ""}`}
@@ -71,16 +150,22 @@ function ThemeCard({ variant, value, active, onChange }) {
           aria-label={label + "预设"}
           value={value.preset}
           onChange={(e) =>
-            patch({ ...options[e.target.value], preset: e.target.value })
+            onChange(applyThemePreset(value, variant, e.target.value))
           }
         >
-          {Object.keys(options).map((key) => (
-            <option key={key} value={key}>
-              {presetNames[key]}
-            </option>
+          {presetGroups.map((group) => (
+            <optgroup key={group} label={group}>
+              {themeCatalog
+                .filter((item) => item.group === group && options[item.id])
+                .map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name}
+                  </option>
+                ))}
+            </optgroup>
           ))}
           {!options[value.preset] && (
-            <option value={value.preset}>
+            <option value={value.preset} disabled>
               {presetNames[value.preset] || "自定义"}
             </option>
           )}
@@ -91,38 +176,58 @@ function ThemeCard({ variant, value, active, onChange }) {
         aria-hidden="true"
         style={{ ...vars, background: value.surface, color: value.ink }}
       >
-        <div
-          className="mini-sidebar"
-          style={{ background: mix(value.surface, value.ink, 0.055) }}
-        >
+        <div className="mini-sidebar" style={{ background: vars["--sidebar"] }}>
           <i />
           <i />
           <i />
         </div>
         <div className="mini-content">
-          <span style={{ background: value.ink }} />
+          <span style={{ background: vars["--strong"] }} />
           <span />
-          <div style={{ borderColor: vars["--line"] }}>
+          <div
+            style={{ borderColor: vars["--line"], background: vars["--input"] }}
+          >
             <i />
             <b style={{ background: value.accent }} />
           </div>
         </div>
       </div>
-      <div className="theme-colors">
+      <div className="theme-preset-summary">
+        <p>
+          {presetInfo[value.preset]?.description ||
+            "自定义配色，可另存为主题以便下次使用。"}
+        </p>
+        <div
+          className="theme-status-preview"
+          aria-label={label + "状态配色预览"}
+          style={{ background: value.surface }}
+        >
+          <span style={{ color: vars["--success"] }}>
+            <CircleCheck size={13} />
+            成功
+          </span>
+          <span style={{ color: vars["--warning"] }}>
+            <TriangleAlert size={13} />
+            警告
+          </span>
+          <span style={{ color: vars["--danger"] }}>
+            <CircleX size={13} />
+            错误
+          </span>
+        </div>
+      </div>
+      <div className="theme-base-colors">
         {[
           ["accent", "强调色"],
           ["surface", "背景"],
           ["ink", "文字"],
         ].map(([key, name]) => (
-          <label key={key}>
-            <input
-              type="color"
-              aria-label={label + name}
-              value={value[key]}
-              onChange={(e) => patch({ [key]: e.target.value })}
-            />
-            <span>{name}</span>
-          </label>
+          <ColorField
+            key={key}
+            label={label + name}
+            value={value[key]}
+            onChange={(color) => patch({ [key]: color })}
+          />
         ))}
       </div>
       <button
@@ -135,6 +240,68 @@ function ThemeCard({ variant, value, active, onChange }) {
       </button>
       {advanced && (
         <div className="theme-options">
+          <p className="theme-options-hint">
+            未单独设置的颜色随基础配色自动调整。
+          </p>
+          {colorGroups.map((group) => (
+            <details className="theme-color-group" key={group.label}>
+              <summary>{group.label}</summary>
+              {group.entries.map(([key, name]) => (
+                <ColorField
+                  key={key}
+                  label={label + name}
+                  value={vars[colorTokens[key]]}
+                  onChange={(color) => setColor("colors", key, color)}
+                  onReset={
+                    value.colors?.[key]
+                      ? () => setColor("colors", key)
+                      : undefined
+                  }
+                />
+              ))}
+            </details>
+          ))}
+          {terminalColorGroups.map((group) => (
+            <details className="theme-color-group" key={group.label}>
+              <summary>{group.label}</summary>
+              {group.entries.map(([key, name]) => (
+                <ColorField
+                  key={key}
+                  label={label + "终端" + name}
+                  value={terminal[key]}
+                  onChange={(color) => setColor("terminal", key, color)}
+                  onReset={
+                    value.terminal?.[key]
+                      ? () => setColor("terminal", key)
+                      : undefined
+                  }
+                />
+              ))}
+            </details>
+          ))}
+          <div
+            className="theme-terminal-preview"
+            style={{
+              background: terminal.background,
+              color: terminal.foreground,
+            }}
+            aria-label={label + "终端预览"}
+          >
+            <span style={{ color: terminal.green }}>~/cage</span> ${" "}
+            <span style={{ color: terminal.blue }}>echo</span> hello
+            <i style={{ background: terminal.cursor }} />
+          </div>
+          <button
+            className="theme-reset-colors"
+            disabled={
+              !Object.keys(value.colors || {}).length &&
+              !Object.keys(value.terminal || {}).length
+            }
+            onClick={() => patch({ colors: {}, terminal: {} })}
+          >
+            <RotateCcw size={13} />
+            恢复全部自动颜色
+          </button>
           <label>
             对比度 <output>{value.contrast}</output>
             <input
@@ -185,12 +352,252 @@ function ThemeCard({ variant, value, active, onChange }) {
     </section>
   );
 }
+function ThemeLibrary({ appearance, update, saving, onError }) {
+  const themes = appearance.customThemes;
+  const matching = themes.find((item) => sameTheme(item, appearance));
+  const [selectedId, setSelectedId] = useState(matching?.id || "");
+  const [name, setName] = useState(matching?.name || "");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+  const input = useRef(null);
+  const selected = themes.find((item) => item.id === selectedId);
+  const current = selected || matching;
+  const dirty = current && !sameTheme(current, appearance);
+  const run = async (task) => {
+    setBusy(true);
+    setNotice("");
+    onError("");
+    try {
+      await task();
+    } catch (e) {
+      onError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const apply = (item) => {
+    setSelectedId(item.id);
+    setName(item.name);
+    setNotice("");
+    onError("");
+    void update((previous) => ({
+      ...previous,
+      lightTheme: structuredClone(item.lightTheme),
+      darkTheme: structuredClone(item.darkTheme),
+    }));
+  };
+  const save = (replace) =>
+    run(async () => {
+      const title = validateThemeName(name);
+      if (!replace && themes.length >= customThemeLimit)
+        throw new Error("最多保存 50 个自定义主题，请先删除不需要的主题");
+      const document = themeDocument(title, appearance);
+      const item = {
+        id: replace ? current.id : crypto.randomUUID(),
+        name: title,
+        lightTheme: document.lightTheme,
+        darkTheme: document.darkTheme,
+      };
+      if (
+        await update((previous) => ({
+          ...previous,
+          customThemes: replace
+            ? previous.customThemes.map((old) =>
+                old.id === item.id ? item : old,
+              )
+            : [...previous.customThemes, item],
+        }))
+      ) {
+        setSelectedId(item.id);
+        setName(title);
+        setNotice("主题已保存");
+      }
+    });
+  const importText = async (text) => {
+    const document = parseThemeDocument(text);
+    if (themes.length >= customThemeLimit)
+      throw new Error("最多保存 50 个自定义主题，请先删除不需要的主题");
+    const item = {
+      id: crypto.randomUUID(),
+      name: document.name,
+      lightTheme: document.lightTheme,
+      darkTheme: document.darkTheme,
+    };
+    if (
+      await update((previous) => ({
+        ...previous,
+        lightTheme: item.lightTheme,
+        darkTheme: item.darkTheme,
+        customThemes: [...previous.customThemes, item],
+      }))
+    ) {
+      setSelectedId(item.id);
+      setName(item.name);
+      setNotice("主题已导入并应用");
+    }
+  };
+  const importFile = () => {
+    if (!nativeAvailable()) {
+      input.current.click();
+      return;
+    }
+    void run(async () => {
+      const text = await native("importTheme");
+      if (text) await importText(text);
+    });
+  };
+  const exportFile = () =>
+    run(async () => {
+      const title = name.trim() || matching?.name || "我的主题";
+      const text =
+        JSON.stringify(themeDocument(title, appearance), null, 2) + "\n";
+      const filename =
+        title
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+          .replace(/[. ]+$/, "")
+          .slice(0, 80) + ".cage-theme.json";
+      if (nativeAvailable()) {
+        if (await native("exportTheme", { text, filename }))
+          setNotice("主题已导出");
+      } else {
+        const url = URL.createObjectURL(
+          new Blob([text], { type: "application/json" }),
+        );
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.append(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setNotice("已开始下载主题文件");
+      }
+    });
+  return (
+    <section className="theme-library" aria-label="我的主题">
+      <div className="theme-library-heading">
+        <div>
+          <h4>我的主题</h4>
+          <p>保存浅色、深色两套配色与字体，随时切换或分享。</p>
+        </div>
+        <div className="theme-file-actions">
+          <button disabled={busy || saving} onClick={importFile}>
+            <Upload size={14} />
+            导入主题
+          </button>
+          <button disabled={busy} onClick={exportFile}>
+            <Download size={14} />
+            导出主题
+          </button>
+        </div>
+      </div>
+      <input
+        ref={input}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        aria-label="选择主题文件"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file)
+            void run(async () => {
+              if (file.size > themeFileLimit)
+                throw new Error("主题文件不能超过 256 KB");
+              await importText(await file.text());
+            });
+        }}
+      />
+      <div className="theme-library-fields">
+        <select
+          aria-label="已保存的主题"
+          value={current?.id || ""}
+          disabled={busy || saving}
+          onChange={(e) => {
+            const item = themes.find((theme) => theme.id === e.target.value);
+            if (item) apply(item);
+          }}
+        >
+          <option value="" disabled>
+            {themes.length ? "选择已保存的主题" : "尚无自定义主题"}
+          </option>
+          {themes.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}
+              {item.id === current?.id && dirty ? " · 已修改" : ""}
+            </option>
+          ))}
+        </select>
+        <input
+          aria-label="主题名称"
+          placeholder="为当前配色命名"
+          value={name}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button
+          disabled={busy || saving || !name.trim()}
+          onClick={() => save(false)}
+        >
+          另存为主题
+        </button>
+      </div>
+      {current && (
+        <div className="theme-library-manage">
+          <span>
+            {dirty ? "当前配色有未存入主题的修改" : "当前配色与已保存主题一致"}
+          </span>
+          {dirty && (
+            <button disabled={busy || saving} onClick={() => apply(current)}>
+              恢复已保存配色
+            </button>
+          )}
+          <button
+            disabled={busy || saving || !name.trim()}
+            onClick={() => save(true)}
+          >
+            更新此主题
+          </button>
+          <button
+            disabled={busy || saving}
+            onClick={() =>
+              run(async () => {
+                if (!confirm(`删除主题“${current.name}”？当前配色会保留。`))
+                  return;
+                if (
+                  await update((previous) => ({
+                    ...previous,
+                    customThemes: previous.customThemes.filter(
+                      (item) => item.id !== current.id,
+                    ),
+                  }))
+                ) {
+                  setSelectedId("");
+                  setName("");
+                  setNotice("主题已删除，当前配色已保留");
+                }
+              })
+            }
+          >
+            删除
+          </button>
+        </div>
+      )}
+      {notice && (
+        <p className="theme-library-notice" role="status">
+          {notice}
+        </p>
+      )}
+    </section>
+  );
+}
 export function AppearanceSettings() {
   const { appearance, theme, variant, loading, saving, error, update, retry } =
     useAppearance();
   const [syncing, setSyncing] = useState(false),
     [syncError, setSyncError] = useState(""),
-    [synced, setSynced] = useState(false);
+    [synced, setSynced] = useState(false),
+    [themeError, setThemeError] = useState("");
   const patch = (delta) => update((previous) => ({ ...previous, ...delta }));
   const sync = async () => {
     setSyncing(true);
@@ -198,8 +605,13 @@ export function AppearanceSettings() {
     setSynced(false);
     try {
       const value = await api("/appearance/codex");
-      await update(value);
-      setSynced(true);
+      if (
+        await update((previous) => ({
+          ...value,
+          customThemes: previous.customThemes,
+        }))
+      )
+        setSynced(true);
     } catch (e) {
       setSyncError(e.message);
     } finally {
@@ -234,6 +646,18 @@ export function AppearanceSettings() {
             ))}
           </div>
         </SettingRow>
+        <ThemeLibrary
+          key={String(loading)}
+          appearance={appearance}
+          update={update}
+          saving={saving}
+          onError={setThemeError}
+        />
+        {themeError && (
+          <div className="error-message" role="alert">
+            {themeError}
+          </div>
+        )}
         <div className="theme-card-grid">
           {["light", "dark"].map((key) => (
             <ThemeCard

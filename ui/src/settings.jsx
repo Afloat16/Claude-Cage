@@ -1,3 +1,4 @@
+import { shortcut, usesControl } from "./platform.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Globe2,
@@ -10,6 +11,7 @@ import {
   ArrowLeft,
   SlidersHorizontal,
   Palette,
+  UserRound,
 } from "lucide-react";
 import { api } from "./api";
 import { AppearanceSettings } from "./appearance-settings";
@@ -17,7 +19,9 @@ import { ProxySettings } from "./proxy-settings";
 import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
 import { EnvironmentVersions } from "./environment-versions";
+import { AccountSettings } from "./account";
 const sections = [
+  ["account", "账户", UserRound],
   ["keyboard", "通用", SlidersHorizontal],
   ["appearance", "外观", Palette],
   ["network", "网络与代理", Globe2],
@@ -33,10 +37,12 @@ export function SettingsPanel({
   onConfirm,
   initialSection = "keyboard",
 }) {
+  const [accountDirty, setAccountDirty] = useState(false);
   const [draft, setDraft] = useState({ ...current }),
     [section, setSection] = useState(initialSection),
     [probe, setProbe] = useState(null),
     [probing, setProbing] = useState(false),
+    [probeFailed, setProbeFailed] = useState(false),
     [error, setError] = useState(""),
     [jobId, setJobId] = useState(""),
     [submitting, setSubmitting] = useState(false);
@@ -77,7 +83,7 @@ export function SettingsPanel({
       return;
     }
     if (
-      !changed ||
+      (!changed && !accountDirty) ||
       (await onConfirm({
         title: "放弃尚未保存的修改？",
         body: "当前环境不会改变。关闭后会丢弃这次表单修改。",
@@ -98,6 +104,7 @@ export function SettingsPanel({
   }, [status.job]);
   const check = async () => {
     setProbing(true);
+    setProbeFailed(false);
     setError("");
     try {
       const result = await api("/settings/probe", draft);
@@ -112,6 +119,7 @@ export function SettingsPanel({
         }));
     } catch (e) {
       setError(e.message);
+      setProbeFailed(true);
     } finally {
       setProbing(false);
     }
@@ -192,7 +200,10 @@ export function SettingsPanel({
               key={id}
               className={section === id ? "selected" : ""}
               aria-current={section === id ? "page" : undefined}
-              onClick={() => setSection(id)}
+              onClick={async () => {
+                if (id !== section && accountDirty && !(await onConfirm({ title: "放弃尚未保存的账户修改？", body: "已保存的账户资料和密码保持不变。", confirm: "放弃修改" }))) return;
+                setSection(id);
+              }}
             >
               <Icon size={17} />
               {label}
@@ -203,6 +214,7 @@ export function SettingsPanel({
       <div className="settings-main">
         <div className="settings-content" ref={contentRef}>
           {section === "appearance" && <AppearanceSettings />}
+          {section === "account" && <AccountSettings busy={busy} onDirty={setAccountDirty} />}
           <fieldset className="settings-fields" disabled={busy}>
             {section === "network" && (
               <>
@@ -276,6 +288,11 @@ export function SettingsPanel({
                   <h3>时区与语言</h3>
                   <p>这些设置作用于 Cage 内的系统、CLI 和浏览器。</p>
                 </div>
+                {!draft.auto_timezone && !draft.auto_language && (
+                  <p className="field-help">
+                    时区和语言将使用下方手动选择的值。静态 IP 或不限制地区时无需位置查询；国家、城市限制仍须检测出口所在地。
+                  </p>
+                )}
                 <label className="toggle-row">
                   <span>
                     <strong>跟随出口 IP 的时区</strong>
@@ -442,6 +459,21 @@ export function SettingsPanel({
                   打开浏览器或新建网页时访问此网址。使用完整的 HTTP 或 HTTPS
                   网址；保存后生效，无需重启环境。
                 </p>
+                <label>
+                  Claude 终端启动命令
+                  <input
+                    value={draft.claude_terminal_command ?? "claude"}
+                    onChange={(e) => update("claude_terminal_command", e.target.value)}
+                    placeholder="claude"
+                    maxLength={4096}
+                    spellCheck="false"
+                    autoComplete="off"
+                  />
+                </label>
+                <p className="field-help">
+                  选择“新建 Claude 终端”后，在所选项目中运行此命令，例如 claude --continue。
+                  留空使用 claude；保存后仅影响新建的 Claude 终端，退出 Claude 后可继续使用 shell。
+                </p>
                 <h4>键盘习惯</h4>
                 <div className="choice-list">
                   {[
@@ -475,7 +507,7 @@ export function SettingsPanel({
                   ))}
                 </div>
                 <p className="field-help">
-                  终端使用 ⌘C / ⌘V 复制粘贴；Ctrl+C 始终用于中断命令。
+                  终端使用 {usesControl ? "Ctrl+Shift+C / Ctrl+Shift+V" : "⌘C / ⌘V"} 复制粘贴；Ctrl+C 始终用于中断命令。
                 </p>
                 <h4>工作台快捷键</h4>
                 <div className="shortcut-list">
@@ -490,7 +522,7 @@ export function SettingsPanel({
                   ].map(([label, key]) => (
                     <div key={label}>
                       <span>{label}</span>
-                      <kbd>{key}</kbd>
+                      <kbd>{shortcut(key)}</kbd>
                     </div>
                   ))}
                 </div>
@@ -559,10 +591,28 @@ export function SettingsPanel({
           {error && (
             <div role="alert" className="error-message">
               {error}
+              {probeFailed && (draft.auto_timezone || draft.auto_language) && (
+                <button
+                  className="text-button"
+                  disabled={busy}
+                  onClick={() => {
+                    setDraft((previous) => ({
+                      ...previous,
+                      auto_timezone: false,
+                      auto_language: false,
+                    }));
+                    setProbeFailed(false);
+                    setError("");
+                    setSection("region");
+                  }}
+                >
+                  手动设置时区和语言
+                </button>
+              )}
             </div>
           )}
         </div>
-        {(section !== "appearance" || changed) && (
+        {((section !== "appearance" && section !== "account") || changed) && (
           <footer className="settings-footer">
             {" "}
             <>

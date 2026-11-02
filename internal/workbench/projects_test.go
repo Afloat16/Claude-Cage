@@ -146,6 +146,70 @@ func TestProjectListComesFromSavedDirectories(t *testing.T) {
 	}
 }
 
+func TestRestoreProjectSharesReportsTheFailedDirectoryAndReason(t *testing.T) {
+	s := testServer(t)
+	connected, _ := filepath.EvalSymlinks(t.TempDir())
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.EvalSymlinks(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Dir(executable)
+	s.preferences.Workspace = connected
+	s.projectShares = map[string]*projectShare{connected: {done: make(chan struct{})}}
+	for _, path := range []string{blocked, connected} {
+		if err := s.rememberSharedProject(path); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s.restoreProjectShares()
+	w := request(s, "GET", "/api/status", "", "", true)
+	var status struct {
+		ProjectError  string              `json:"project_error"`
+		ProjectErrors []projectShareError `json:"project_errors"`
+	}
+	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &status) != nil {
+		t.Fatalf("cannot read project status: %s", w.Body.String())
+	}
+	if status.ProjectError == "" || len(status.ProjectErrors) != 1 || status.ProjectErrors[0].Path != blocked || !strings.Contains(status.ProjectErrors[0].Message, "正在运行的工作台程序") {
+		t.Fatalf("failure did not identify the blocked project and executable protection: %+v", status)
+	}
+	if s.projectShares[connected] == nil {
+		t.Fatal("one failed directory disconnected a healthy project")
+	}
+}
+
+func TestProjectReconnectClearsOnlyItsOwnWarning(t *testing.T) {
+	s := testServer(t)
+	connected, _ := filepath.EvalSymlinks(t.TempDir())
+	parent, _ := filepath.EvalSymlinks(t.TempDir())
+	missing := filepath.Join(parent, "missing")
+	s.projectErrors = []projectShareError{
+		{Path: connected, Message: "previous connection failed"},
+		{Path: missing, Message: "directory unavailable"},
+	}
+	s.projectShares = map[string]*projectShare{connected: {done: make(chan struct{})}}
+	if err := s.ensureProjectShare(missing); err == nil || len(s.projectErrors) != 2 {
+		t.Fatal("a failed reconnect cleared a warning")
+	}
+	if err := s.ensureProjectShare(connected); err != nil {
+		t.Fatal(err)
+	}
+	if len(s.projectErrors) != 1 || s.projectErrors[0].Path != missing {
+		t.Fatalf("reconnect did not preserve the other directory's warning: %+v", s.projectErrors)
+	}
+	if err := os.Mkdir(missing, 0700); err != nil {
+		t.Fatal(err)
+	}
+	s.projectShares[missing] = &projectShare{done: make(chan struct{})}
+	if err := s.ensureProjectShare(missing); err != nil || len(s.projectErrors) != 0 {
+		t.Fatalf("successful reconnect left a stale warning: %v, %+v", err, s.projectErrors)
+	}
+}
+
 func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T) {
 	s := testServer(t)
 	a, _ := filepath.EvalSymlinks(t.TempDir())
@@ -169,7 +233,7 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 	}
 	session := s.terminals[terminal.ID]
 	defer session.close()
-	if script := session.cmd.Args[len(session.cmd.Args)-1]; !strings.HasPrefix(script, "cd "+shellescape.Quote(a)+" &&") {
+	if script := session.cmd.Args[len(session.cmd.Args)-1]; !strings.HasPrefix(script, "cd "+shellescape.Quote(guestPath(a))+" &&") {
 		t.Fatalf("terminal command opened a different directory: %s", script)
 	}
 	var editorWorkspace string
@@ -185,7 +249,7 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 	})}
 	for _, action := range []string{"editor", "editor-restart"} {
 		w = request(s, "POST", "/api/browser/"+action, s.origin, string(body), true)
-		if w.Code != 200 || editorWorkspace != a || s.workspace() != b {
+		if w.Code != 200 || editorWorkspace != guestPath(a) || s.workspace() != b {
 			t.Fatalf("%s changed the selected project or ignored its directory: %s", action, w.Body.String())
 		}
 	}

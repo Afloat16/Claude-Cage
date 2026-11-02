@@ -57,6 +57,7 @@ export function AppUpdateButton({ updates }) {
     ? Math.min(100, Math.floor((state.receivedBytes || 0) / state.totalBytes * 100))
     : null;
   const label = state.phase === "available" ? "下载更新"
+    : state.phase === "manual" ? "查看更新方式"
     : state.phase === "ready" ? "安装更新并重启"
     : state.phase === "downloading" ? `正在下载更新${percent === null ? "" : ` ${percent}%`}`
     : state.phase === "verifying" || state.phase === "downloaded" ? "正在校验更新"
@@ -97,7 +98,7 @@ export function AppUpdateButton({ updates }) {
             {state.phase === "ready" && <p>更新已下载。保存工作后可继续安装，项目与登录状态会保留。</p>}
             <div className="modal-actions">
               {state.phase === "downloading" && <button onClick={() => run("cancel")}>取消下载</button>}
-              {!busy && (
+              {!busy && state.phase !== "manual" && (
                 <button onClick={() => run("check")}>重新检查</button>
               )}
               {!busy && (downloadable || (state.phase === "failed" && state.latestVersion)) && (

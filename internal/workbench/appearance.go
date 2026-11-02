@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/pelletier/go-toml/v2"
 )
@@ -17,23 +18,32 @@ type AppearanceFonts struct {
 	Code string `json:"code" toml:"code"`
 }
 type AppearanceTheme struct {
-	Preset        string          `json:"preset"`
-	Accent        string          `json:"accent" toml:"accent"`
-	Surface       string          `json:"surface" toml:"surface"`
-	Ink           string          `json:"ink" toml:"ink"`
-	Contrast      int             `json:"contrast" toml:"contrast"`
-	OpaqueWindows bool            `json:"opaqueWindows" toml:"opaqueWindows"`
-	Fonts         AppearanceFonts `json:"fonts" toml:"fonts"`
+	Preset        string            `json:"preset"`
+	Accent        string            `json:"accent" toml:"accent"`
+	Surface       string            `json:"surface" toml:"surface"`
+	Ink           string            `json:"ink" toml:"ink"`
+	Contrast      int               `json:"contrast" toml:"contrast"`
+	OpaqueWindows bool              `json:"opaqueWindows" toml:"opaqueWindows"`
+	Fonts         AppearanceFonts   `json:"fonts" toml:"fonts"`
+	Colors        map[string]string `json:"colors,omitempty"`
+	Terminal      map[string]string `json:"terminal,omitempty"`
+}
+type SavedAppearanceTheme struct {
+	ID    string          `json:"id"`
+	Name  string          `json:"name"`
+	Light AppearanceTheme `json:"lightTheme"`
+	Dark  AppearanceTheme `json:"darkTheme"`
 }
 type Appearance struct {
-	Mode           string          `json:"mode"`
-	Light          AppearanceTheme `json:"lightTheme"`
-	Dark           AppearanceTheme `json:"darkTheme"`
-	UIFontSize     int             `json:"uiFontSize"`
-	CodeFontSize   int             `json:"codeFontSize"`
-	PointerCursors bool            `json:"pointerCursors"`
-	FontSmoothing  bool            `json:"fontSmoothing"`
-	ReducedMotion  string          `json:"reducedMotion"`
+	CustomThemes   []SavedAppearanceTheme `json:"customThemes,omitempty"`
+	Mode           string                 `json:"mode"`
+	Light          AppearanceTheme        `json:"lightTheme"`
+	Dark           AppearanceTheme        `json:"darkTheme"`
+	UIFontSize     int                    `json:"uiFontSize"`
+	CodeFontSize   int                    `json:"codeFontSize"`
+	PointerCursors bool                   `json:"pointerCursors"`
+	FontSmoothing  bool                   `json:"fontSmoothing"`
+	ReducedMotion  string                 `json:"reducedMotion"`
 }
 
 func defaultAppearance() Appearance {
@@ -50,20 +60,68 @@ func (a Appearance) validate() error {
 	if a.ReducedMotion != "system" && a.ReducedMotion != "on" && a.ReducedMotion != "off" {
 		return errors.New("减少动态效果选项无效")
 	}
-	color := regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
-	for _, theme := range []AppearanceTheme{a.Light, a.Dark} {
-		if !color.MatchString(theme.Accent) || !color.MatchString(theme.Surface) || !color.MatchString(theme.Ink) {
-			return errors.New("颜色须为六位十六进制值，例如 #fdf6e3")
+	if err := validateAppearanceTheme(a.Light); err != nil {
+		return err
+	}
+	if err := validateAppearanceTheme(a.Dark); err != nil {
+		return err
+	}
+	if len(a.CustomThemes) > 50 {
+		return errors.New("最多保存 50 个自定义主题，请先删除不需要的主题")
+	}
+	ids := make(map[string]bool)
+	for _, saved := range a.CustomThemes {
+		if !regexp.MustCompile(`^[a-zA-Z0-9_-]{1,80}$`).MatchString(saved.ID) || ids[saved.ID] {
+			return errors.New("自定义主题标识无效或重复")
 		}
-		if theme.Contrast < 0 || theme.Contrast > 100 {
-			return errors.New("对比度范围为 0–100")
+		ids[saved.ID] = true
+		if strings.TrimSpace(saved.Name) == "" || utf8.RuneCountInString(saved.Name) > 80 {
+			return errors.New("请输入 1–80 个字符的主题名称")
 		}
-		if len(theme.Preset) > 80 {
-			return errors.New("主题名称过长")
+		if err := validateAppearanceTheme(saved.Light); err != nil {
+			return err
 		}
-		for _, font := range []string{theme.Fonts.UI, theme.Fonts.Code} {
-			if len(font) > 200 || strings.ContainsAny(font, ";{}<>\r\n") {
-				return errors.New("字体名称无效")
+		if err := validateAppearanceTheme(saved.Dark); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var appearanceColorKeys = strings.Fields("sidebar sidebarInk toolbar toolbarInk chrome chromeDark strong muted line input button buttonInk accentInk link focus hover selected selection success warning danger inactive")
+var terminalColorKeys = strings.Fields("background foreground cursor cursorAccent selectionBackground black red green yellow blue magenta cyan white brightBlack brightRed brightGreen brightYellow brightBlue brightMagenta brightCyan brightWhite")
+var appearanceColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func validateAppearanceTheme(theme AppearanceTheme) error {
+	if !appearanceColor.MatchString(theme.Accent) || !appearanceColor.MatchString(theme.Surface) || !appearanceColor.MatchString(theme.Ink) {
+		return errors.New("颜色须为六位十六进制值，例如 #fdf6e3")
+	}
+	if theme.Contrast < 0 || theme.Contrast > 100 {
+		return errors.New("对比度范围为 0–100")
+	}
+	if utf8.RuneCountInString(theme.Preset) > 80 {
+		return errors.New("主题名称过长")
+	}
+	for _, font := range []string{theme.Fonts.UI, theme.Fonts.Code} {
+		if utf8.RuneCountInString(font) > 200 || strings.ContainsAny(font, ";{}<>\r\n") {
+			return errors.New("字体名称无效")
+		}
+	}
+	for field, colors := range map[string]map[string]string{"colors": theme.Colors, "terminal": theme.Terminal} {
+		allowed := appearanceColorKeys
+		if field == "terminal" {
+			allowed = terminalColorKeys
+		}
+		for key, value := range colors {
+			found := false
+			for _, candidate := range allowed {
+				if key == candidate {
+					found = true
+					break
+				}
+			}
+			if !found || !appearanceColor.MatchString(value) {
+				return errors.New("元素颜色无效或包含不支持的颜色项目")
 			}
 		}
 	}
@@ -89,7 +147,7 @@ func (s *Server) getAppearance(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) saveAppearance(w http.ResponseWriter, r *http.Request) {
 	var a Appearance
-	if !readJSON(w, r, &a) {
+	if !readJSON(w, r, &a, 512<<10) {
 		return
 	}
 	if err := a.validate(); err != nil {

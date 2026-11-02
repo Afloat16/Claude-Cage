@@ -45,7 +45,12 @@ func (p *projectShare) close() {
 
 // Called under the lifecycle lock. Each SFTP server is rooted in exactly the
 // directory the user opened; switching projects keeps existing mounts alive.
-func (s *Server) ensureProjectShare(path string) error {
+func (s *Server) ensureProjectShare(path string) (returned error) {
+	defer func() {
+		if returned == nil {
+			s.clearProjectError(path)
+		}
+	}()
 	path, err := validateWorkspace(path, s.profile)
 	if err != nil {
 		return err
@@ -66,7 +71,7 @@ func (s *Server) ensureProjectShare(path string) error {
 	}
 	ctx, cancel := context.WithTimeout(s.operationContext(), 15*time.Second)
 	defer cancel()
-	quoted := shellescape.Quote(path)
+	quoted := shellescape.Quote(guestPath(path))
 	// Stale FUSE mounts can remain after a control-service restart. Only reconnect
 	// this explicitly authorized path, without changing other projects' mounts.
 	if _, err = s.guest(ctx, "if mountpoint -q "+quoted+"; then fusermount3 -uz "+quoted+"; fi; sudo mkdir -p "+quoted+" && sudo chown \"$(id -u):$(id -g)\" "+quoted); err != nil {
@@ -85,7 +90,7 @@ func (s *Server) ensureProjectShare(path string) error {
 	if err = probe.Close(); err != nil {
 		return err
 	}
-	script := "exec sshfs " + shellescape.Quote(":"+path) + " " + quoted + " -o slave,allow_other,cache=no,nodev,nosuid"
+	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o slave,allow_other,cache=no,nodev,nosuid"
 	cmd := s.sshCommand(context.Background(), "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
 	output, err := cmd.StdoutPipe()
 	if err != nil {
@@ -107,7 +112,7 @@ func (s *Server) ensureProjectShare(path string) error {
 		close(share.done)
 	}()
 	for {
-		if _, err = s.guest(ctx, "mountpoint -q "+quoted+" && test \"$(cat "+shellescape.Quote(probe.Name())+")\" = "+shellescape.Quote(challenge)); err == nil {
+		if _, err = s.guest(ctx, "mountpoint -q "+quoted+" && test \"$(cat "+shellescape.Quote(guestPath(probe.Name()))+")\" = "+shellescape.Quote(challenge)); err == nil {
 			break
 		}
 		select {
@@ -131,6 +136,22 @@ func (s *Server) ensureProjectShare(path string) error {
 
 type sharedProjects struct {
 	Paths []string `json:"paths"`
+}
+
+type projectShareError struct {
+	Path    string `json:"path"`
+	Message string `json:"message"`
+}
+
+func (s *Server) clearProjectError(path string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for i, failure := range s.projectErrors {
+		if failure.Path == path {
+			s.projectErrors = append(s.projectErrors[:i], s.projectErrors[i+1:]...)
+			return
+		}
+	}
 }
 
 // The saved directory grants are the project list. Include the default and
@@ -208,19 +229,16 @@ func (s *Server) restoreProjectShares() {
 			saved.Paths = append(saved.Paths, current)
 		}
 	}
-	var failures []error
+	var failures []projectShareError
 	for _, path := range saved.Paths {
 		if err := s.ensureProjectShare(path); err != nil {
-			failures = append(failures, err)
+			failures = append(failures, projectShareError{Path: path, Message: err.Error()})
 		} else if err := s.rememberSharedProject(path); err != nil {
-			failures = append(failures, err)
+			failures = append(failures, projectShareError{Path: path, Message: "项目已连接，但未能保存项目记录：" + err.Error()})
 		}
 	}
 	s.mu.Lock()
-	s.projectError = ""
-	if len(failures) > 0 {
-		s.projectError = "部分项目文件夹未能恢复连接，请重新打开对应项目。环境和浏览器可继续使用。"
-	}
+	s.projectErrors = failures
 	s.mu.Unlock()
 }
 func (s *Server) closeProjectShares() {

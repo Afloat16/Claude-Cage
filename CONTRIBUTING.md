@@ -1,6 +1,6 @@
 # 参与开发
 
-Cage 的主要开发环境是 Apple Silicon macOS 14+。用户安装预构建 App 即可使用；本页面向需要修改工作台、控制服务或虚拟机底座的贡献者。
+Cage 的桌面开发目标为 Apple Silicon macOS 14+、Windows 10 22H2/11 x64 和 Debian/Ubuntu Linux x86_64。平台构建工具、安装器和验收范围见 [Windows 指南](docs/windows.md#维护者构建与验收)与 [Linux 指南](docs/linux.md#维护者构建与验收)。用户安装预构建 App 即可使用；本页面向需要修改工作台、控制服务或虚拟机底座的贡献者。
 
 ## 从源码构建
 
@@ -30,7 +30,7 @@ bash scripts/build-app.sh --install
 
 | 目录 | 职责 |
 |---|---|
-| `desktop/` | Swift 原生 Mac 窗口、菜单和系统集成 |
+| `desktop/` | Swift macOS 窗口；`desktop/windows/` 为 WinForms/WebView2 窗口；`desktop/linux/` 为 GTK/WebKitGTK 窗口 |
 | `ui/` | React 工作台、代理管理、设置和网络状态 |
 | `internal/workbench/` | 工作台控制接口、任务、终端和设置 |
 | `internal/cage/` | 强制代理、网络门槛和客机服务 |
@@ -39,6 +39,10 @@ bash scripts/build-app.sh --install
 | `www/` | 项目主页 |
 
 修改前阅读对应的[工作台设计](docs/design/workbench.md)、[网络检查设计](docs/design/network-checks.md)或[内置代理设计](docs/design/managed-proxy.md)。调整接口、数据归属或安全边界时，同时更新设计与用户说明。
+
+## 自动检查与发布
+
+日常推送会运行三平台检查并生成测试包，版本号保持不变。只有用户明确要求发版时，才运行独立的发布入口；配置和失败恢复见 [CI/CD 指南](docs/ci-cd.md)。
 
 ## 验证改动
 
@@ -62,6 +66,8 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
   github.com/lima-vm/lima/v2/pkg/hostagent/dns \
   github.com/lima-vm/lima/v2/pkg/networks/usernet
 ```
+
+修改外观或主题管理时，执行 `node ui/scripts/appearance-smoke.mjs`、`node ui/scripts/theme-smoke.mjs` 和 `node ui/scripts/builtin-theme-smoke.mjs`，并运行 `go test -race ./internal/workbench -run 'Test(CodexAppearance|Appearance)'`。浏览器脚本需要可用的 Playwright 和前端开发服务，可通过 `CAGE_PLAYWRIGHT_MODULE`、`CAGE_UI_URL` 指定；使用隔离控制接口，不接入日常 VM。原生文件窗口还须在实际 App 中验证导入、导出与取消。
 
 修改浏览器启动或控制逻辑时，在 Linux 客机的独立 X 显示中运行 `DISPLAY=:183 node scripts/browser-controls-smoke.mjs`。该检查使用临时配置和真实控制器，验证人工浏览标记、标签与导航、重启后的页面及 Cookie 恢复，并检查未认证请求和跨来源请求仍被拒绝。
 
@@ -88,7 +94,7 @@ make cage
 
 `cage access`、独立 VNC 和编辑器端口仅供诊断，输出可能包含访问凭据，不要直接上传。普通用户通过 App 或 `cage desktop` 自动建立会话，无需输入内部访问密码。
 
-代理节点统一通过 Cage 内的订阅、本地 YAML 或手动节点入口配置。运行时只使用 App 随附核心。来源、运行配置和日志位于私有配置的 `proxy/` 子目录，通过独立用户 launchd 任务运行；来源与凭据文件权限为 `0600`。`config.json` 中的代理端点和版本由节点管理器生成，通用设置及恢复操作不能覆盖。
+代理节点统一通过 Cage 内的订阅、本地 YAML 或手动节点入口配置。运行时只使用 App 随附核心。来源、运行配置和日志位于私有配置的 `proxy/` 子目录；macOS 通过独立用户 launchd 任务运行，Linux 通过普通用户后台进程运行。来源与凭据文件权限为 `0600`。`config.json` 中的代理端点和版本由节点管理器生成，通用设置及恢复操作不能覆盖。
 
 ## 提交改进
 

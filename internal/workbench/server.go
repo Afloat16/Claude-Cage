@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 	"io"
 	"io/fs"
@@ -20,7 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 )
 
@@ -37,6 +37,7 @@ type controlFile struct {
 }
 type Job struct {
 	pauseVersion uint64
+	lockAccount  bool
 	ID           string `json:"id"`
 	Kind         string `json:"kind"`
 	Running      bool   `json:"running"`
@@ -45,6 +46,7 @@ type Job struct {
 	Log          string `json:"log,omitempty"`
 }
 type Server struct {
+	account                                          *localAccount
 	identity                                         ControllerIdentity
 	guestManifest                                    *cage.GuestManifest
 	guestUpdateRequired                              bool
@@ -65,8 +67,9 @@ type Server struct {
 	networkError                                     string
 	credentials                                      guestCredentials
 	terminals                                        map[string]*terminalSession
+	audioClients                                     int
 	projectShares                                    map[string]*projectShare
-	projectError                                     string
+	projectErrors                                    []projectShareError
 	safety                                           safetyState
 	locations                                        map[string]Location
 	monitorCancel                                    context.CancelFunc
@@ -92,7 +95,7 @@ func equalSecret(a, b string) bool {
 }
 func Serve(configPath string) error {
 	profile := filepath.Dir(configPath)
-	if err := os.MkdirAll(profile, 0700); err != nil {
+	if err := host.EnsurePrivateDir(profile); err != nil {
 		return err
 	}
 	lock, err := os.OpenFile(filepath.Join(profile, "control.lock"), os.O_CREATE|os.O_RDWR, 0600)
@@ -100,7 +103,7 @@ func Serve(configPath string) error {
 		return err
 	}
 	defer lock.Close()
-	if err = syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+	if err = lockController(lock); err != nil {
 		return errors.New("此配置已有工作台服务正在运行")
 	}
 	exe, err := os.Executable()
@@ -119,7 +122,12 @@ func Serve(configPath string) error {
 		return err
 	}
 	defer listener.Close()
-	s := &Server{profile: profile, configPath: configPath, exe: exe, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: "mac"}, terminals: map[string]*terminalSession{}}
+	s := &Server{profile: profile, configPath: configPath, exe: exe, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard()}, terminals: map[string]*terminalSession{}}
+	s.account, err = loadLocalAccount(profile)
+	if err != nil {
+		return err
+	}
+	defer s.account.lock()
 	s.identity, err = currentController()
 	if err != nil {
 		return err
@@ -134,7 +142,7 @@ func Serve(configPath string) error {
 		s.networkError = intentErr.Error()
 	}
 	if s.preferences.Keyboard == "" {
-		s.preferences.Keyboard = "mac"
+		s.preferences.Keyboard = defaultKeyboard()
 	}
 	if _, e := os.Stat(configPath); os.IsNotExist(e) {
 		if e = writePrivate(configPath, defaultConfig()); e != nil {
@@ -194,6 +202,8 @@ func (s *Server) handler() http.Handler {
 		jsonReply(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/account", s.accountStatus)
+	mux.HandleFunc("POST /api/account/{action}", s.accountAction)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
 	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
@@ -221,6 +231,11 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/browser/tabs", s.browser)
 	mux.HandleFunc("GET /api/browser/events", s.browserEvents)
 	mux.HandleFunc("POST /api/browser/{action}", s.browser)
+	mux.HandleFunc("POST /api/input/image", s.imageInput)
+	mux.HandleFunc("POST /api/browser/files/uploads/{id}", s.browserUpload)
+	mux.HandleFunc("GET /api/browser/files/downloads/{id}", s.browserDownload)
+	mux.HandleFunc("GET /api/browser/files/downloads/{id}/{action}", s.browserDownload)
+	mux.HandleFunc("GET /api/browser/files/saved", s.savedBrowserDownloads)
 	mux.HandleFunc("GET /api/vnc-credentials", func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -231,7 +246,13 @@ func (s *Server) handler() http.Handler {
 		jsonReply(w, map[string]string{"password": s.credentials.VNCPassword})
 	})
 	mux.HandleFunc("GET /api/vnc", s.vnc)
+	mux.HandleFunc("GET /api/claude-desktop", s.claudeDesktopStatus)
+	mux.HandleFunc("GET /api/claude-desktop/vnc-credentials", s.claudeDesktopCredentials)
+	mux.HandleFunc("GET /api/claude-desktop/vnc", s.claudeDesktopVNC)
+	mux.HandleFunc("POST /api/claude-desktop/resize", s.claudeDesktopResize)
+	mux.HandleFunc("POST /api/claude-desktop/{action}", s.claudeDesktopAction)
 	mux.HandleFunc("GET /api/terminals", s.listTerminals)
+	mux.HandleFunc("GET /api/audio", s.audio)
 	mux.HandleFunc("POST /api/terminals", s.newTerminal)
 	mux.HandleFunc("DELETE /api/terminals/{id}", s.closeTerminal)
 	mux.HandleFunc("GET /api/terminals/{id}/stream", s.terminalStream)
@@ -268,6 +289,19 @@ func (s *Server) handler() http.Handler {
 			http.Error(w, "后台正在更新，请重新打开 Cage。", http.StatusServiceUnavailable)
 			return
 		}
+		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
+		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff"
+		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
+			epoch, unlocked := s.account.access()
+			if !unlocked {
+				http.Error(w, "Cage 已锁定，请先登录", http.StatusLocked)
+				return
+			}
+			ctx, cancel := context.WithCancel(r.Context())
+			stop := context.AfterFunc(epoch, cancel)
+			defer func() { stop(); cancel() }()
+			r = r.WithContext(ctx)
+		}
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -302,6 +336,10 @@ func requestError(w http.ResponseWriter, err error) {
 }
 func (s *Server) busy() bool { s.mu.Lock(); defer s.mu.Unlock(); return s.job.Running }
 func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
+	lockAccount := kind == "logout"
+	if lockAccount {
+		kind = "stop"
+	}
 	s.mu.Lock()
 	if s.closing {
 		s.mu.Unlock()
@@ -310,6 +348,7 @@ func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 	}
 	if s.job.Running {
 		if kind == "stop" && s.job.Kind == "stop" {
+			s.job.lockAccount = s.job.lockAccount || lockAccount
 			job := s.job
 			s.mu.Unlock()
 			jsonReply(w, job)
@@ -334,7 +373,7 @@ func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	s.jobCancel = cancel
-	s.job = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…", pauseVersion: s.safety.pauseVersion}
+	s.job = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…", pauseVersion: s.safety.pauseVersion, lockAccount: lockAccount}
 	if s.monitorCancel != nil {
 		s.monitorCancel()
 	}
@@ -362,6 +401,9 @@ func (s *Server) launch(w http.ResponseWriter, kind string, fn func() error) {
 		}
 		s.jobCancel = nil
 		s.job.Running = false
+		if err == nil && s.job.lockAccount {
+			err = s.account.lockAccess(true)
+		}
 		if errors.Is(err, context.Canceled) {
 			s.job.Message = "已取消"
 		} else if err != nil {
@@ -399,7 +441,11 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
-	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": s.projectError, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
+	projectError := ""
+	if len(s.projectErrors) > 0 {
+		projectError = "部分项目文件夹尚未连接，环境和浏览器可继续使用。"
+	}
+	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": projectError, "project_errors": s.projectErrors, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.job, "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
 }
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	c, err := loadConfig(s.configPath)
@@ -490,6 +536,10 @@ func (s *Server) start(w http.ResponseWriter, r *http.Request) {
 	})
 }
 func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
+	s.requestStop(w, false)
+}
+
+func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
 	for _, name := range []string{vmname.Name(s.environmentDir()), "base-building"} {
 		if owner := cage.InstanceJobID(filepath.Join(s.profile, "state"), name); owner != "" {
 			_ = cage.RequestJobStop(s.profile, owner)
@@ -505,7 +555,11 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 		_ = cage.RequestJobStop(s.profile, jobID)
 	}
 	_ = s.pauseNetworkNow("正在停止环境")
-	s.launch(w, "stop", s.stopEnvironment)
+	kind := "stop"
+	if logout {
+		kind = "logout"
+	}
+	s.launch(w, kind, s.stopEnvironment)
 }
 
 // Short-lived contexts for guest controls are separate from VM lifecycle jobs.

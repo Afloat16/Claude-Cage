@@ -53,6 +53,10 @@ type startEnv struct {
 
 func newStartEnv(t *testing.T, answers ...string) *startEnv {
 	t.Helper()
+	// These tests use a fake VM; the host running them need not have KVM.
+	savedPrereqs := skipPrereqs
+	skipPrereqs = true
+	t.Cleanup(func() { skipPrereqs = savedPrereqs })
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("no git")
 	}

@@ -47,7 +47,7 @@ export function EnvironmentVersions({ status, onConfirm }) {
         {data?.components?.update_required && <button className="primary" disabled={busy || !status.vm_running} onClick={() => update(false)}>更新环境组件</button>}
         <button disabled={busy || !data?.tools_update_allowed} onClick={() => update(true)}>更新环境工具</button>
       </div>
-      <p className="field-help">组件更新保留虚拟磁盘与终端。工具更新需先启动环境、同步组件并通过网络检查；手动暂停外网时不会自动恢复连接。</p>
+      <p className="field-help">组件更新保留虚拟磁盘与终端。工具更新需先启动环境并同步组件，依赖通过已选代理下载；无需放行业务网络，也不会自动恢复已暂停的外网。</p>
     </section>
   );
 }

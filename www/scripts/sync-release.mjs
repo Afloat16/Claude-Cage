@@ -39,7 +39,15 @@ export function releaseAssets(release) {
     }
   }
   if (assets[1].size > 64 * 1024) throw new Error('Checksum file is too large');
-  return { version, archive: assets[0], checksums: assets[1], source };
+  // Windows is an optional download on the same release. An incomplete or
+  // unsigned Windows upload must not displace a valid macOS release.
+  const windowsAssets = release.assets.filter(asset => asset.name === `Cage-${version}-windows-amd64-setup.exe`);
+  const candidate = windowsAssets.length === 1 ? windowsAssets[0] : undefined;
+  const windows = candidate && candidate.state === 'uploaded' && Number.isSafeInteger(candidate.size) &&
+    candidate.size > 0 && candidate.size <= 512 * 1024 * 1024 &&
+    candidate.browser_download_url === `${repoURL}/releases/download/${release.tag_name}/${candidate.name}`
+    ? candidate : undefined;
+  return { version, archive: assets[0], checksums: assets[1], source, windows };
 }
 
 export function checksumFor(text, asset) {
@@ -49,6 +57,22 @@ export function checksumFor(text, asset) {
   const digest = entries[0][0].toLowerCase();
   if (asset.digest && asset.digest.toLowerCase() !== `sha256:${digest}`) throw new Error(`GitHub digest disagrees with SHA256SUMS for ${asset.name}`);
   return digest;
+}
+
+export function releaseMetadata(release, text) {
+  const { version, archive, source, windows } = releaseAssets(release);
+  checksumFor(text, archive);
+  checksumFor(text, source);
+  const metadata = { version, releaseURL: `${repoURL}/releases/tag/v${version}`, downloadURL: archive.browser_download_url };
+  if (windows) {
+    try {
+      checksumFor(text, windows);
+      metadata.windowsDownloadURL = windows.browser_download_url;
+    } catch {
+      // Keep the existing macOS entry until the Windows checksum is complete.
+    }
+  }
+  return metadata;
 }
 
 async function download(asset, digest, directory) {
@@ -97,6 +121,7 @@ async function main() {
   if (Buffer.byteLength(text) !== checksums.size) throw new Error('Checksum file size differs from GitHub metadata');
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
+  const metadata = releaseMetadata(release, text);
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);
@@ -104,7 +129,7 @@ async function main() {
   }
   const output = resolve(values.output);
   await mkdir(dirname(output), { recursive: true });
-  await writeFile(output, `${JSON.stringify({ version, releaseURL: `${repoURL}/releases/tag/v${version}`, downloadURL: archive.browser_download_url }, null, 2)}\n`);
+  await writeFile(output, `${JSON.stringify(metadata, null, 2)}\n`);
   console.log(`Website download: Cage ${version}`);
 }
 

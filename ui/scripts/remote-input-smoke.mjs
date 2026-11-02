@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const { chromium } = require(
   process.env.CAGE_PLAYWRIGHT_MODULE || "playwright",
 );
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CAGE_TEST_BROWSER_PATH });
 const page = await browser.newPage();
 const errors = [];
 page.on("pageerror", (error) => errors.push(error.message));

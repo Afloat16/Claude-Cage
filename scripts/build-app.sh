@@ -14,7 +14,7 @@ check_destination() {
   local running_pids
   running_pids="$(/usr/sbin/lsof -t "$target/Contents/MacOS/Cage" "$target/Contents/Resources/cage" 2>/dev/null || true)"
   if [[ -n "$running_pids" ]]; then
-    echo 'Cage is running from this destination. Quit it, or choose a separate CAGE_BUILD_OUTPUT.' >&2; exit 1
+    echo 'Cage is running from this destination. Quit it before replacing the App.' >&2; exit 1
   fi
 }
 check_destination "$app_destination"
@@ -37,7 +37,7 @@ install_stage=''
 trap 'rm -rf "$build_stage"; if [[ -n "$install_stage" ]]; then rm -rf "$install_stage"; fi' EXIT
 bundle="$build_stage/Cage.app"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
-swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security desktop/Cage.swift desktop/Updates.swift -o "$bundle/Contents/MacOS/Cage"
+swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication desktop/Cage.swift desktop/Updates.swift desktop/AccountDevice.swift -o "$bundle/Contents/MacOS/Cage"
 swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
 cp _output/bin/cage "$bundle/Contents/Resources/cage"
 cp _output/proxy-core/mihomo "$bundle/Contents/Resources/mihomo"
@@ -74,10 +74,18 @@ PLIST
 sign=(codesign --force --sign "$identity")
 if [[ "$identity" != - ]]; then sign+=(--timestamp --options runtime); fi
 "${sign[@]}" --entitlements third_party/lima/vz.entitlements "$bundle/Contents/Resources/cage"
+account_signing=("${sign[@]}")
+if [[ -n "${CAGE_PROVISIONING_PROFILE:-}" ]]; then
+  [[ "$identity" != - ]] || { echo 'Biometric provisioning requires a Developer ID signature.' >&2; exit 1; }
+  signing_team="$(codesign -dv --verbose=4 "$bundle/Contents/Resources/cage" 2>&1 | sed -n 's/^TeamIdentifier=//p')"
+  bash scripts/prepare-account-signing.sh "$CAGE_PROVISIONING_PROFILE" "$signing_team" "$build_stage/account.entitlements"
+  cp "$CAGE_PROVISIONING_PROFILE" "$bundle/Contents/embedded.provisionprofile"
+  account_signing+=(--entitlements "$build_stage/account.entitlements")
+fi
 "${sign[@]}" "$bundle/Contents/Resources/mihomo"
 "${sign[@]}" "$bundle/Contents/Resources/CageUpdateInstaller"
-"${sign[@]}" "$bundle/Contents/MacOS/Cage"
-"${sign[@]}" "$bundle"
+"${account_signing[@]}" "$bundle/Contents/MacOS/Cage"
+"${account_signing[@]}" "$bundle"
 codesign --verify --deep --strict --verbose=2 "$bundle"
 # Keep the working App until the replacement has passed signature verification.
 check_destination "$app_destination"
@@ -101,8 +109,12 @@ if [[ "${1:-}" == "--install" ]]; then
     exit 1
   fi
   printf 'Installed: %s/Applications/Cage.app\n' "$HOME"
-  node scripts/cleanup-apps.mjs --keep "$bundle" --keep "$HOME/Applications/Cage.app" \
-    --root "$PWD/_output" --root "$HOME/Applications" --root /Applications
+  # An installed build has one launchable copy. Remove the staging build too,
+  # along with historical validation copies, after the installed App verifies.
+  codesign --verify --deep --strict --verbose=2 "$HOME/Applications/Cage.app"
+  node scripts/cleanup-apps.mjs --keep "$HOME/Applications/Cage.app" \
+    --root "$bundle" --root "$PWD/_output" --root "$HOME/Applications" \
+    --root /Applications --root "$HOME/.claude-cage-validation"
 else
   if [[ -z "${CAGE_BUILD_OUTPUT:-}" ]]; then
     node scripts/cleanup-apps.mjs --keep "$bundle" --root "$PWD/_output"

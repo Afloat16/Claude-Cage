@@ -7,23 +7,28 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"os"
 	"os/exec"
 	"sync"
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/creack/pty"
 	"github.com/gorilla/websocket"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
+
+type terminalPTY interface {
+	io.ReadWriteCloser
+	Resize(cols, rows uint16) error
+	Wait() error
+	Kill() error
+}
 
 type terminalSession struct {
 	mu        sync.Mutex
 	id, title string
 	workspace string
 	cmd       *exec.Cmd
-	file      *os.File
+	file      terminalPTY
 	history   []byte
 	closed    bool
 	clients   map[chan []byte]bool
@@ -38,10 +43,8 @@ func (t *terminalSession) close() {
 	t.mu.Lock()
 	if !t.closed {
 		t.closed = true
+		_ = t.file.Kill()
 		_ = t.file.Close()
-		if t.cmd.Process != nil {
-			_ = t.cmd.Process.Kill()
-		}
 	}
 	t.mu.Unlock()
 }
@@ -70,7 +73,7 @@ func (t *terminalSession) read() {
 			break
 		}
 	}
-	_ = t.cmd.Wait()
+	_ = t.file.Wait()
 	t.mu.Lock()
 	t.closed = true
 	for ch := range t.clients {
@@ -108,8 +111,13 @@ func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	var input struct {
 		Workspace string `json:"workspace"`
+		Kind      string `json:"kind"`
 	}
 	if !readJSON(w, r, &input) {
+		return
+	}
+	if input.Kind != "" && input.Kind != "shell" && input.Kind != "claude" {
+		http.Error(w, "终端类型无效", http.StatusBadRequest)
 		return
 	}
 	workspace, err := s.projectWorkspace(input.Workspace)
@@ -122,9 +130,12 @@ func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := vmname.Name(s.environmentDir())
-	script := "cd " + shellescape.Quote(workspace) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 bash -l"
+	s.mu.Lock()
+	command := claudeTerminalCommand(s.preferences)
+	s.mu.Unlock()
+	script := terminalScript(guestPath(workspace), input.Kind, command)
 	cmd := s.sshCommand(context.Background(), "-tt", "lima-"+name, "--", script)
-	file, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: 100, Rows: 30})
+	file, err := startTerminal(cmd, 100, 30)
 	if err != nil {
 		http.Error(w, "无法创建终端连接", 500)
 		return
@@ -134,11 +145,24 @@ func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
 	number := s.terminalSequence
 	s.mu.Unlock()
 	t := &terminalSession{workspace: workspace, id: randomToken()[:16], title: fmt.Sprintf("终端 %d", number), cmd: cmd, file: file, clients: map[chan []byte]bool{}}
+	if input.Kind == "claude" {
+		t.title = fmt.Sprintf("Claude %d", number)
+	}
 	s.mu.Lock()
 	s.terminals[t.id] = t
 	s.mu.Unlock()
 	go t.read()
 	jsonReply(w, t.summary())
+}
+
+// The saved command is interpreted only by the guest's interactive shell.
+// Reconnecting a viewer never executes it again; exiting Claude leaves a shell.
+func terminalScript(workspace, kind, command string) string {
+	prefix := "cd " + shellescape.Quote(workspace) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 "
+	if kind != "claude" {
+		return prefix + "bash -l"
+	}
+	return prefix + "CAGE_TERMINAL_COMMAND=" + shellescape.Quote(command) + " bash -lic " + shellescape.Quote("eval \"$CAGE_TERMINAL_COMMAND\"; unset CAGE_TERMINAL_COMMAND; exec bash -il")
 }
 func (s *Server) closeTerminal(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
@@ -152,7 +176,11 @@ func (s *Server) closeTerminal(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
 	up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == s.origin }, ReadBufferSize: 16384, WriteBufferSize: 16384}
-	return up.Upgrade(w, r, nil)
+	ws, err := up.Upgrade(w, r, nil)
+	if err == nil {
+		context.AfterFunc(r.Context(), func() { _ = ws.Close() })
+	}
+	return ws, err
 }
 func (s *Server) terminalStream(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
@@ -215,7 +243,7 @@ func (s *Server) terminalStream(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.WriteString(t.file, v.Data)
 		case "resize":
 			if v.Cols > 1 && v.Cols < 600 && v.Rows > 1 && v.Rows < 400 {
-				_ = pty.Setsize(t.file, &pty.Winsize{Cols: v.Cols, Rows: v.Rows})
+				_ = t.file.Resize(v.Cols, v.Rows)
 			}
 		}
 	}
@@ -241,6 +269,10 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer remote.Close()
+	s.streamVNC(w, r, remote, remote)
+}
+
+func (s *Server) streamVNC(w http.ResponseWriter, r *http.Request, reader io.Reader, writer io.Writer) {
 	ws, e := s.upgrade(w, r)
 	if e != nil {
 		return
@@ -251,7 +283,7 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		defer ws.Close()
 		b := make([]byte, 64<<10)
 		for {
-			n, e := remote.Read(b)
+			n, e := reader.Read(b)
 			if n > 0 {
 				_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if ws.WriteMessage(websocket.BinaryMessage, b[:n]) != nil {
@@ -269,7 +301,7 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if kind == websocket.BinaryMessage {
-			if _, e = remote.Write(b); e != nil {
+			if _, e = writer.Write(b); e != nil {
 				return
 			}
 		}

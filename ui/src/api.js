@@ -40,12 +40,48 @@ export async function api(path, body, method) {
     await renewSession();
     response = await fetch("/api" + path, options);
   }
+  if (response.status === 423) window.dispatchEvent(new Event("cage-account-locked"));
   if (!response.ok) throw await responseError(response);
   return response.json();
+}
+export async function uploadFile(path, file, { signal, onProgress } = {}) {
+  const send = () => new Promise((resolve, reject) => {
+    if (signal?.aborted) { reject(new DOMException("上传已取消", "AbortError")); return; }
+    const request = new XMLHttpRequest();
+    const abort = () => request.abort();
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    request.open("POST", "/api" + path);
+    request.setRequestHeader("Content-Type", "application/octet-stream");
+    request.upload.onprogress = event => onProgress?.(event.loaded, event.total || file.size);
+    request.onerror = () => { cleanup(); reject(new Error("文件传递中断，请重试")); };
+    request.onabort = () => { cleanup(); reject(new DOMException("上传已取消", "AbortError")); };
+    request.onload = () => {
+      cleanup();
+      if (request.status === 423) window.dispatchEvent(new Event("cage-account-locked"));
+      if (request.status !== 200) {
+        const error = new Error(request.responseText.trim() || "文件传递未完成");
+        error.status = request.status; reject(error); return;
+      }
+      try { resolve(JSON.parse(request.responseText)); }
+      catch { reject(new Error("文件传递响应无效")); }
+    };
+    signal?.addEventListener("abort", abort, { once: true });
+    request.send(file);
+  });
+  try { return await send(); }
+  catch (error) {
+    if (error.status !== 401 || !nativeAvailable() || signal?.aborted) throw error;
+    await renewSession();
+    return send();
+  }
 }
 export const nativeAvailable = () =>
   Boolean(window.webkit?.messageHandlers?.cage);
 export async function native(action, extra = {}) {
+  if (action === "quitNow") {
+    try { await api("/account/suspend", {}); }
+    catch (error) { if (error.status !== 423) throw error; }
+  }
   return window.webkit.messageHandlers.cage.postMessage({ action, ...extra });
 }
 export const readClipboard = () =>

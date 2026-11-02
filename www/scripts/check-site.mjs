@@ -13,6 +13,7 @@ const codes = [...menu.matchAll(/\]\(README(?:\.([\w-]+))?\.md\)/g)].map(m => m[
 assert.equal(codes[0], 'zh');
 assert.ok(!codes.includes('en'));
 const dist = path.join(root,'www/dist');
+const published = JSON.parse(fs.readFileSync(path.join(root, 'www/src/data/release.json'), 'utf8'));
 for (const code of codes) {
   const html = fs.readFileSync(path.join(dist,code === 'zh' ? '' : code,'index.html'),'utf8');
   const options = [...html.matchAll(/<option\b[^>]*value="([^"]+)"/g)].map(m=>m[1]);
@@ -26,6 +27,9 @@ for (const code of codes) {
     assert.ok(fs.existsSync(target), `${code}: broken local asset or link ${match[1]}`);
   }
   assert.ok(!html.includes('/Users/'), `${code}: local developer path leaked`);
+  assert.ok(html.includes(`href="${published.downloadURL}"`), `${code}: macOS download is missing`);
+  const windowsLinks = [...html.matchAll(/href="([^"]*windows-amd64-setup[^"]*)"/g)].map(match => match[1]);
+  assert.deepEqual(windowsLinks, published.windowsDownloadURL ? [published.windowsDownloadURL, published.windowsDownloadURL] : [], `${code}: Windows download must match the verified optional release metadata`);
 }
 assert.ok(!fs.existsSync(path.join(dist,'en/index.html')), 'Old English page still present');
 console.log(`Verified ${codes.length} README languages, dropdowns, directions and local assets.`);

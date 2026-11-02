@@ -34,7 +34,7 @@ function inUse(bundle) {
   }
 }
 
-export async function cleanupApps({ keep, roots }) {
+export async function cleanupApps({ keep, roots, onInUse = () => {} }) {
   if (!keep.length)
     throw new Error("At least one verified Cage.app must be kept.");
   const retained = new Set();
@@ -55,7 +55,11 @@ export async function cleanupApps({ keep, roots }) {
     const canonical = await realpath(directory);
     if (retained.has(canonical)) return;
     if (directory.endsWith(".app")) {
-      if (isCage(directory) && !inUse(directory)) {
+      if (isCage(directory)) {
+        if (inUse(directory)) {
+          onInUse(directory);
+          return;
+        }
         await rm(directory, { recursive: true });
         removed.push(directory);
       }
@@ -84,6 +88,9 @@ if (
     (flag === "--keep" ? keep : roots).push(value);
   }
   if (!roots.length) throw new Error("At least one cleanup root is required.");
-  for (const bundle of await cleanupApps({ keep, roots }))
+  for (const bundle of await cleanupApps({
+    keep, roots,
+    onInUse: (bundle) => console.error(`Old Cage App is still running; quit it and rerun cleanup: ${bundle}`),
+  }))
     console.log(`Removed old App: ${bundle}`);
 }

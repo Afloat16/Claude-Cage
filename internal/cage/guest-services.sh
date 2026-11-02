@@ -3,23 +3,10 @@
 if systemctl is-active --quiet cage-webvnc; then
   sudo systemctl stop cage-webvnc
 fi
-if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null; then
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils
+if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null; then
+  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0
 fi
 sudo install -d -m 0755 /etc/claude-cage /usr/local/lib
-sudo tee /usr/local/bin/cage-open >/dev/null <<'SCRIPT'
-#!/bin/sh
-set -eu
-case "${1:-}" in http://*|https://*|about:blank) ;; *) echo 'Only HTTP(S) browser URLs are accepted.' >&2; exit 2;; esac
-exec sudo -u cage-browser /usr/bin/node --input-type=module - "$1" <<'NODE'
-import {readFileSync} from 'node:fs';
-const {token}=JSON.parse(readFileSync('/etc/claude-cage/browser-control.json','utf8'));
-const response=await fetch('http://127.0.0.1:18500/new',{method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({url:process.argv[2]})});
-if(!response.ok)process.exit(1);
-NODE
-SCRIPT
-sudo chmod 0755 /usr/local/bin/cage-open
-sudo ln -sf /usr/local/bin/cage-open /usr/local/bin/xdg-open
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu

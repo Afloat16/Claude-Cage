@@ -51,7 +51,7 @@ all: agent-vm
 
 # Claude Cage ships a separate entry point with a mandatory proxy profile.
 cage: cage-ui assets
-	$(GO_BUILD) -o _output/bin/cage ./cmd/cage
+	$(GO_BUILD) -o _output/bin/cage$(EXE) ./cmd/cage
 ifeq ($(GOOS),darwin)
 	codesign -f --entitlements third_party/lima/vz.entitlements -s - _output/bin/cage
 endif
@@ -59,6 +59,22 @@ endif
 cage-ui:
 	npm --prefix ui ci --no-audit --no-fund
 	npm run --prefix ui build
+
+.PHONY: cage cage-ui cage-windows package-windows cage-linux package-linux check-linux
+cage-linux:
+	bash scripts/build-linux.sh
+
+package-linux:
+	bash scripts/package-linux.sh
+
+check-linux:
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GO) vet -tags $(TAGS) . ./cmd/... ./internal/...
+
+cage-windows:
+	pwsh -NoProfile -File scripts/build-windows.ps1
+
+package-windows:
+	pwsh -NoProfile -File scripts/package-windows.ps1
 
 agent-vm: assets
 	$(GO_BUILD) -o _output/bin/agent-vm$(EXE) ./cmd/agent-vm

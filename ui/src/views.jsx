@@ -1,3 +1,4 @@
+import { terminalModifier } from "./platform.mjs";
 import React, {
   useEffect,
   useRef,
@@ -10,14 +11,15 @@ import { terminalTheme, systemCodeFont } from "./appearance-state.mjs";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import RFB from "../.generated/novnc/core/rfb.js";
-import { api, readClipboard, writeClipboard } from "./api";
+import { api, writeClipboard, nativeAvailable } from "./api";
+import { readClipboardContent, imagePayload, transferFiles, hasFiles, sendImage } from "./image-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export const RemoteView = forwardRef(function RemoteView(
-  { visible, keyboard, tabId, onStatus, onFallback },
+  { visible, keyboard, tabId, onStatus, onFallback, desktop = false },
   ref,
 ) {
   const windowVisible = useWindowVisibility();
@@ -59,12 +61,13 @@ export const RemoteView = forwardRef(function RemoteView(
         Math.min(1000 * 2 ** failures.current++, 5000),
       );
     };
-    api("/vnc-credentials")
+    const desktopPrefix = desktop ? "/claude-desktop" : "";
+    api(`${desktopPrefix}/vnc-credentials`)
       .then(({ password }) => {
         if (disposed) return;
         client = new RFB(
           box.current,
-          `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/vnc`,
+          `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api${desktopPrefix}/vnc`,
           { credentials: { password } },
         );
         rfb.current = client;
@@ -83,9 +86,9 @@ export const RemoteView = forwardRef(function RemoteView(
               if (disposed) return;
               const { width, height } = box.current.getBoundingClientRect();
               if (width >= 320 && height >= 240)
-                api("/browser/resize", {
-                  width: Math.min(8192, Math.floor(width * 2)),
-                  height: Math.min(8192, Math.floor(height * 2)),
+                api(desktop ? "/claude-desktop/resize" : "/browser/resize", {
+                  width: Math.min(desktop ? 4096 : 8192, Math.floor(width * 2)),
+                  height: Math.min(desktop ? 4096 : 8192, Math.floor(height * 2)),
                 }).catch(() =>
                   current.current.onStatus("画面尺寸未能调整，请重新连接画面"),
                 );
@@ -95,7 +98,17 @@ export const RemoteView = forwardRef(function RemoteView(
           resizeObserver.observe(box.current);
           resize();
           input.current = installRemoteInput(client, box.current, {
+            pasteContent: (content) => {
+              const id = current.current.tabId;
+              const valid = () => !disposed && current.current.visible && current.current.tabId === id;
+              return client.cagePasteContent(content,
+                (payload) => {
+                  if (!valid()) throw new Error("输入目标已切换，请重新粘贴图片");
+                  return sendImage(payload, desktop ? "desktop" : "browser", id);
+                }, valid);
+            },
             insertText: (text) => {
+              if (desktop) return client.cagePasteText(text);
               const id = current.current.tabId;
               return client.cageRunInput(() => {
                 if (disposed || !current.current.visible || current.current.tabId !== id)
@@ -133,7 +146,7 @@ export const RemoteView = forwardRef(function RemoteView(
       client?.disconnect();
       rfb.current = null;
     };
-  }, [attempt, screenVisible]);
+  }, [attempt, screenVisible, desktop]);
   useEffect(() => {
     if (screenVisible && connection === "connected") {
       const t = setTimeout(() => rfb.current?.focus(), 80);
@@ -175,6 +188,14 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   useEffect(() => {
+    let disposed = false, emittingPaste = false, inputChain = Promise.resolve();
+    const enqueue = (action) => {
+      const result = inputChain.then(action);
+      inputChain = result;
+      const reset = () => { if (inputChain === result) inputChain = Promise.resolve(); };
+      result.then(reset, reset);
+      return result;
+    };
     const terminal = new Terminal({
       fontFamily: theme.fonts.code || systemCodeFont,
       fontSize: appearance.codeFontSize,
@@ -215,10 +236,55 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
     };
     ws.onmessage = (event) => terminal.write(new Uint8Array(event.data));
     ws.onclose = () => setConnected(false);
+    const send = (data) => {
+      if (disposed || ws.readyState !== WebSocket.OPEN) throw new Error("终端已断开，请重新连接后重试");
+      ws.send(JSON.stringify({ type: "input", data }));
+    };
     terminal.onData((data) => {
-      if (ws.readyState === WebSocket.OPEN)
-        ws.send(JSON.stringify({ type: "input", data }));
+      if (emittingPaste) send(data);
+      else void enqueue(() => send(data)).catch(() => {});
     });
+    const receive = (content) => {
+      // Attach rejection immediately, even while another image is in flight.
+      const ready = Promise.resolve(content).then(value => ({ value }), error => ({ error }));
+      onStatus("正在传递剪贴板内容…");
+      void enqueue(async () => {
+        const { value, error } = await ready;
+        if (error) throw error;
+        if (disposed || !visibleRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
+        let text = value.text || "";
+        if (value.png) {
+          const result = await sendImage(value, "terminal", session.id);
+          text = `'${result.path}' `;
+        }
+        if (disposed || !visibleRef.current) throw new Error("终端已切换，请回到原终端重新粘贴");
+        // Honor xterm's bracketed-paste mode without enqueuing behind this job.
+        emittingPaste = true;
+        try { terminal.paste(text); } finally { emittingPaste = false; }
+        onStatus(value.png ? "图片已保存到 Cage，路径已插入终端" : "已粘贴");
+      }).catch((error) => { if (!disposed) onStatus(error.message); });
+    };
+    const host = box.current;
+    const onPaste = (event) => {
+      if (!visibleRef.current) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const files = transferFiles(event.clipboardData);
+      if (files.length) files.forEach(file => receive(imagePayload(file)));
+      else if (event.clipboardData?.types.includes("text/plain")) receive({ text: event.clipboardData.getData("text/plain") });
+    };
+    const onDragOver = (event) => {
+      if (!visibleRef.current || !hasFiles(event.dataTransfer)) return;
+      event.preventDefault(); event.dataTransfer.dropEffect = "copy";
+    };
+    const onDrop = (event) => {
+      if (!visibleRef.current || !hasFiles(event.dataTransfer)) return;
+      event.preventDefault(); event.stopPropagation();
+      transferFiles(event.dataTransfer).forEach(file => receive(imagePayload(file)));
+      terminal.focus();
+    };
+    host.addEventListener("paste", onPaste, true);
+    host.addEventListener("dragover", onDragOver);
+    host.addEventListener("drop", onDrop);
     onControls?.({
       edit(action) {
         if (!box.current?.contains(document.activeElement)) return false;
@@ -230,9 +296,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
           return true;
         }
         if (action === "paste") {
-          void readClipboard()
-            .then((text) => terminal.paste(text))
-            .catch(() => onStatus("无法读取本机剪贴板"));
+          receive(readClipboardContent());
           return true;
         }
         if (action === "selectAll") {
@@ -243,7 +307,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       },
     });
     terminal.attachCustomKeyEventHandler((event) => {
-      if (!event.metaKey || event.type !== "keydown") return true;
+      if (!terminalModifier(event) || event.type !== "keydown") return true;
       const key = event.key.toLowerCase();
       if (key === "c") {
         event.preventDefault();
@@ -254,10 +318,9 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
         return false;
       }
       if (key === "v") {
+        if (!nativeAvailable()) return true;
         event.preventDefault();
-        readClipboard()
-          .then((text) => terminal.paste(text))
-          .catch(() => onStatus("请使用浏览器的粘贴菜单"));
+        receive(readClipboardContent());
         return false;
       }
       if (key === "a") {
@@ -274,12 +337,16 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
         resize();
         return false;
       }
-      return !event.metaKey;
+      return !terminalModifier(event);
     });
     const observer = new ResizeObserver(resize);
     observer.observe(box.current);
     resize();
     return () => {
+      disposed = true;
+      host.removeEventListener("paste", onPaste, true);
+      host.removeEventListener("dragover", onDragOver);
+      host.removeEventListener("drop", onDrop);
       onControls?.(null);
       observer.disconnect();
       ws.close();

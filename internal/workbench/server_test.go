@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,7 +36,12 @@ func testServer(t *testing.T) *Server {
 	if e := writePrivate(path, c); e != nil {
 		t.Fatal(e)
 	}
-	return &Server{profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}, terminals: map[string]*terminalSession{}}
+	// Non-account tests exercise an already unlocked workbench. Account tests
+	// replace this in-memory fixture with the real persisted account store.
+	account := &localAccount{path: filepath.Join(profile, "account.json"), record: &accountRecord{Version: 1, Username: "Test"}}
+	account.setKey(make([]byte, 32))
+	t.Cleanup(account.lock)
+	return &Server{account: account, profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}, terminals: map[string]*terminalSession{}}
 }
 func request(s *Server, method, path, origin, body string, auth bool) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, s.origin+path, strings.NewReader(body))
@@ -175,8 +181,7 @@ func TestKeyboardPreferenceDoesNotRestartOrChangeNetwork(t *testing.T) {
 	if saved.Keyboard != "native" {
 		t.Fatal("preference not persisted")
 	}
-	st, _ := os.Stat(s.configPath)
-	if st.Mode().Perm() != 0600 {
+	if host.CheckPrivateFile(s.configPath) != nil {
 		t.Fatal("profile permissions")
 	}
 }
@@ -223,7 +228,7 @@ func TestRestoreCannotReplaceManagedEndpoint(t *testing.T) {
 }
 
 func TestSSHIsolationOverridesLocalClientSettings(t *testing.T) {
-	if _, err := os.Stat("/usr/bin/ssh"); err != nil {
+	if _, err := os.Stat(sshExecutable()); err != nil {
 		t.Skip("OpenSSH is required")
 	}
 	s := testServer(t)

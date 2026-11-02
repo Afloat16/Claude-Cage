@@ -185,4 +185,11 @@ export class DownloadManager {
   snapshot() {
     return [...this.records.values()].reverse().map(({ sourceReady, ...record }) => record);
   }
+
+  sourceFile(id) {
+    const record = this.records.get(id);
+    if (!record?.sourceReady || record.state === "downloading" || record.state === "saving" || !this.sourceExists(id))
+      throw new Error("下载源文件不可用或尚未完成");
+    return join(this.directory, "Downloads", id);
+  }
 }

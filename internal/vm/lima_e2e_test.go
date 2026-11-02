@@ -43,7 +43,11 @@ func TestLimaBoot(t *testing.T) {
 		SSHFS: &SSHFS{SFTPDriver: "builtin", Cache: &off, ReadonlyNames: []string{".git", ".hg"}}}}
 	rev := ReverseSSHFS
 	name := "agent-vm-e2e-00000000"
-	if err := l.Create(ctx, name, "template:debian-13", Settings{CPUs: 1, MemoryGiB: 2, DiskGiB: 10, Mounts: &mounts, MountType: &rev, NoContainerd: true}, io.Discard); err != nil {
+	template := strings.TrimSpace(os.Getenv("AGENT_VM_E2E_TEMPLATE"))
+	if template == "" {
+		template = "template:debian-13"
+	}
+	if err := l.Create(ctx, name, template, Settings{CPUs: 1, MemoryGiB: 2, DiskGiB: 10, Mounts: &mounts, MountType: &rev, NoContainerd: true}, io.Discard); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = l.Delete(context.Background(), name) })

@@ -1,0 +1,52 @@
+name: Three-platform checks and test packages
+on:
+  push:
+    branches: ['**', '!codex/release/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: cage-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  workflow-checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Version consistency and release safety tests
+        run: |
+          node scripts/check-version.mjs
+          node --test scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs
+      - name: Validate workflow syntax
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -color
+  macos:
+    needs: workflow-checks
+    uses: ./.github/workflows/macos-build.yml
+    with:
+      ref: ${{ github.sha }}
+      release: false
+      artifact_name: cage-macos-arm64-test
+  windows:
+    needs: workflow-checks
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ github.sha }}
+      release: false
+      artifact_name: cage-windows-amd64-test
+  linux:
+    needs: workflow-checks
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ github.sha }}
+      release: false
+      artifact_name: cage-linux-amd64-test

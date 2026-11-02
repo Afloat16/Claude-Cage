@@ -1,0 +1,137 @@
+name: Publish Cage after an explicit release request
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increment (prerelease continues the alpha/beta sequence)
+        required: true
+        default: prerelease
+        type: choice
+        options: [prerelease, patch, minor, major]
+permissions:
+  contents: read
+concurrency:
+  group: cage-explicit-release
+  cancel-in-progress: false
+jobs:
+  readiness:
+    if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: cage-release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Check release configuration before creating a candidate
+        env:
+          CAGE_MACOS_P12_BASE64: ${{ secrets.CAGE_MACOS_P12_BASE64 }}
+          CAGE_MACOS_P12_PASSWORD: ${{ secrets.CAGE_MACOS_P12_PASSWORD }}
+          CAGE_MACOS_SIGNING_IDENTITY: ${{ secrets.CAGE_MACOS_SIGNING_IDENTITY }}
+          CAGE_MACOS_NOTARY_KEY_BASE64: ${{ secrets.CAGE_MACOS_NOTARY_KEY_BASE64 }}
+          CAGE_MACOS_NOTARY_KEY_ID: ${{ secrets.CAGE_MACOS_NOTARY_KEY_ID }}
+          CAGE_MACOS_NOTARY_ISSUER_ID: ${{ secrets.CAGE_MACOS_NOTARY_ISSUER_ID }}
+          CAGE_WINDOWS_PFX_BASE64: ${{ secrets.CAGE_WINDOWS_PFX_BASE64 }}
+          CAGE_WINDOWS_PFX_PASSWORD: ${{ secrets.CAGE_WINDOWS_PFX_PASSWORD }}
+          CAGE_WINDOWS_QEMU_SOURCE_URL: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_URL }}
+          CAGE_WINDOWS_QEMU_SOURCE_SHA256: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_SHA256 }}
+        run: node scripts/check-release-readiness.mjs
+      - name: Validate versions and release behavior
+        run: |
+          node scripts/check-version.mjs
+          node --test scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs
+  prepare:
+    needs: readiness
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+      commit_sha: ${{ steps.candidate.outputs.commit_sha }}
+      source_sha: ${{ steps.candidate.outputs.source_sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Prepare or reuse this run's version-only candidate
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/release-control.mjs prepare
+  macos:
+    needs: prepare
+    uses: ./.github/workflows/macos-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit_sha }}
+      release: true
+      artifact_name: release-macos
+  windows:
+    needs: prepare
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit_sha }}
+      release: true
+      artifact_name: release-windows
+  linux:
+    needs: prepare
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ needs.prepare.outputs.commit_sha }}
+      release: true
+      artifact_name: release-linux
+  publish:
+    needs: [prepare, macos, windows, linux]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      url: ${{ steps.release.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-macos
+          path: _output/release-artifacts/macos
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-windows
+          path: _output/release-artifacts/windows
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-linux
+          path: _output/release-artifacts/linux
+      - name: Verify all platforms, promote atomically, then publish complete assets
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+          RELEASE_COMMIT_SHA: ${{ needs.prepare.outputs.commit_sha }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: node scripts/release-control.mjs publish
+  website:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/www.yml
+    with:
+      release_tag: ${{ needs.publish.outputs.tag }}

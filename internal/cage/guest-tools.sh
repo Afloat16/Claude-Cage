@@ -39,7 +39,7 @@ cage_install_tool() (
   curl --proto '=https' --tlsv1.2 --fail --location --retry 3 --connect-timeout 15 --max-time 600 "$url" -o "$stage/$artifact"
   printf '%s  %s\n' "$checksum" "$stage/$artifact" | sha256sum --check --status || { echo 'Tool checksum mismatch; installation refused.' >&2; exit 1; }
   if [ "$tool" = code-server ]; then
-    sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$stage/$artifact" </dev/null
+    sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends "$stage/$artifact" </dev/null
   else
     tar -xzf "$stage/$artifact" -C "$stage"
     mkdir -p "$HOME/.local/bin"

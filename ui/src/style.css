@@ -530,6 +530,10 @@ button.large {
 .browser-download-item { padding: 12px 0; border-bottom: 1px solid var(--border, #dedede); overflow-wrap: anywhere; }
 .browser-download-item p { margin: 5px 0; font-size: 12px; color: var(--muted); }
 .browser-download-item .download-path { user-select: text; }
+.download-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0; }
+.browser-upload-body { display: flex; flex-direction: column; gap: 14px; }
+.browser-upload-body label { display: flex; flex-direction: column; gap: 8px; }
+.browser-upload-body input, .browser-upload-body progress { width: 100%; }
 .environment-versions { margin-top: 28px; }
 .environment-versions .setting-summary-row { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; }
 .environment-versions .setting-summary-row strong { margin: 0; }
@@ -639,7 +643,7 @@ button.large {
   padding-left: 10px;
 }
 .connection-banner {
-  background: #dc322f0d;
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
   color: var(--danger);
   font-size: 0.8571rem;
   text-align: center;
@@ -1043,7 +1047,7 @@ button.large {
 }
 .error-message {
   border: 1px solid var(--line);
-  background: #dc322f0d;
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
   color: var(--danger);
   padding: 11px 12px;
   border-radius: 7px;
@@ -1414,14 +1418,14 @@ svg {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #a3a3a3;
+  background: var(--inactive);
   flex: none;
 }
 .status-dot.open {
   background: var(--success);
 }
 .status-dot.checking {
-  background: #af7a22;
+  background: var(--warning);
   animation: pulse 1.4s infinite;
 }
 .content-heading {
@@ -1512,9 +1516,13 @@ svg {
   padding-bottom: 48px;
   animation: surface-enter 200ms ease-out;
 }
-.welcome-symbol {
-  color: var(--strong);
-  margin-bottom: 16px;
+.welcome-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  border-radius: 16px;
+  margin: 0 auto 24px;
 }
 .welcome h1 {
   font-size: 2.2857rem;
@@ -1625,7 +1633,7 @@ svg {
   font-size: 0.9286rem;
 }
 .start-error {
-  background: #c43d3d08;
+  background: color-mix(in srgb, var(--danger) 3%, transparent);
   border-left: 2px solid var(--danger);
   text-align: left;
   padding: 12px 16px;
@@ -1633,6 +1641,21 @@ svg {
   font-size: 0.9286rem;
   line-height: 1.7;
   overflow-wrap: anywhere;
+}
+.project-connection-errors {
+  list-style: none;
+  padding: 0;
+  margin: 14px 0 0;
+}
+.project-connection-errors li + li {
+  border-top: 1px solid var(--line);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+.project-error-path {
+  display: block;
+  color: var(--muted);
+  font-size: 0.7857rem;
 }
 .start-error strong {
   color: var(--danger);
@@ -2152,4 +2175,11 @@ svg {
 .sidebar-expand:hover .sidebar-expand-icon,
 .sidebar-expand:focus-visible .sidebar-expand-icon {
   display: block;
+}
+
+.audio-controls { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+.audio-controls input[type="range"] { width: 64px; height: 18px; padding: 0; border: 0; accent-color: var(--accent); cursor: pointer; }
+.audio-controls input:disabled { opacity: .4; cursor: default; }
+@media (max-width: 1000px) {
+  .audio-controls input[type="range"] { width: 44px; }
 }

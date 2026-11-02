@@ -61,49 +61,54 @@ func grantedToolUpdateServer(t *testing.T) (*Server, *cage.EgressGate) {
 }
 
 func TestToolUpdateLeaseHonorsPauseStopAndConfigurationAtRenewal(t *testing.T) {
-	for _, condition := range []string{"allowed", "paused", "stop", "configuration-changed"} {
-		t.Run(condition, func(t *testing.T) {
-			s, gate := grantedToolUpdateServer(t)
-			client, err := s.gateClient()
-			if err != nil {
-				t.Fatal(err)
-			}
-			before := gate.Status()
-			switch condition {
-			case "paused":
-				if err := s.pauseNetworkNow("test user pause"); err != nil {
-					t.Fatal(err)
-				}
-			case "stop":
-				s.job = Job{ID: "stop", Kind: "stop", Running: true}
-			case "configuration-changed":
-				cfg, err := loadConfig(s.configPath)
-				if err != nil {
-					t.Fatal(err)
-				}
-				cfg.Timezone = "Etc/UTC"
-				if cfg.Fingerprint() == before.Configuration {
-					cfg.Timezone = "Asia/Tokyo"
-				}
-				if err := writePrivate(s.configPath, cfg); err != nil {
-					t.Fatal(err)
-				}
-			}
-			s.finishSafetyMonitor(context.Background(), client, before, "192.0.2.1", "")
-			after := gate.Status()
-			switch condition {
-			case "allowed":
-				if after.Mode != cage.GateOpen || !after.Until.After(before.Until) {
-					t.Fatal("tool update lease was not renewed")
-				}
-			case "paused", "configuration-changed":
-				if after.Mode != cage.GateClosed {
-					t.Fatal("denied network was renewed")
-				}
-			case "stop":
-				if after.Until != before.Until {
-					t.Fatal("stopping job allowed a lease renewal")
-				}
+	for _, jobKind := range []string{"environment-tools", "claude-desktop-install"} {
+		t.Run(jobKind, func(t *testing.T) {
+			for _, condition := range []string{"allowed", "paused", "stop", "configuration-changed"} {
+				t.Run(condition, func(t *testing.T) {
+					s, gate := grantedToolUpdateServer(t)
+					s.job.Kind = jobKind
+					client, err := s.gateClient()
+					if err != nil {
+						t.Fatal(err)
+					}
+					before := gate.Status()
+					switch condition {
+					case "paused":
+						if err := s.pauseNetworkNow("test user pause"); err != nil {
+							t.Fatal(err)
+						}
+					case "stop":
+						s.job = Job{ID: "stop", Kind: "stop", Running: true}
+					case "configuration-changed":
+						cfg, err := loadConfig(s.configPath)
+						if err != nil {
+							t.Fatal(err)
+						}
+						cfg.Timezone = "Etc/UTC"
+						if cfg.Fingerprint() == before.Configuration {
+							cfg.Timezone = "Asia/Tokyo"
+						}
+						if err := writePrivate(s.configPath, cfg); err != nil {
+							t.Fatal(err)
+						}
+					}
+					s.finishSafetyMonitor(context.Background(), client, before, "192.0.2.1", "")
+					after := gate.Status()
+					switch condition {
+					case "allowed":
+						if after.Mode != cage.GateOpen || !after.Until.After(before.Until) {
+							t.Fatal("tool update lease was not renewed")
+						}
+					case "paused", "configuration-changed":
+						if after.Mode != cage.GateClosed {
+							t.Fatal("denied network was renewed")
+						}
+					case "stop":
+						if after.Until != before.Until {
+							t.Fatal("stopping job allowed a lease renewal")
+						}
+					}
+				})
 			}
 		})
 	}
@@ -119,9 +124,11 @@ func TestToolUpdateDoesNotRestorePausedOrExpiredNetworking(t *testing.T) {
 		} else {
 			gate.Close("expired")
 		}
-		err := s.upgradeEnvironmentTools()
-		if err == nil || !strings.Contains(err.Error(), "网络") {
-			t.Fatalf("closed gate accepted: %v", err)
+		s.mu.Lock()
+		allowed := s.toolsNetworkAllowedLocked()
+		s.mu.Unlock()
+		if !allowed {
+			t.Fatal("business network pause blocked maintenance")
 		}
 		if gate.Status().Mode != cage.GateClosed {
 			t.Fatal("tool update restored closed network")

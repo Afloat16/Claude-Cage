@@ -26,7 +26,9 @@ test("cleanup preserves a Cage executable still in use", { skip: process.platfor
     await copyFile("/bin/sleep", executable);
     child = spawn(executable, ["30"], { stdio: "ignore" });
     await new Promise((resolve, reject) => { child.once("spawn", resolve); child.once("error", reject); });
-    assert.deepEqual(await cleanupApps({ keep: [latest], roots: [directory] }), []);
+    const skipped = [];
+    assert.deepEqual(await cleanupApps({ keep: [latest], roots: [directory], onInUse: (bundle) => skipped.push(bundle) }), []);
+    assert.deepEqual(skipped, [running]);
     await access(executable);
     await new Promise((resolve) => { child.once("exit", resolve); child.kill("SIGTERM"); });
     child = null;

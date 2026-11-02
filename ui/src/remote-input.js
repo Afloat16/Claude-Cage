@@ -1,12 +1,18 @@
 import { getKeycode, getKeysym } from "../.generated/novnc/core/input/util.js";
-import { readClipboard, writeClipboard, nativeAvailable } from "./api";
+import { writeClipboard, nativeAvailable } from "./api";
+import {
+  readClipboardContent,
+  imagePayload,
+  transferFiles,
+  hasFiles,
+} from "./image-transfer";
 
 // A user gesture starts every host clipboard access. Fences and serialization
 // in the shared RFB patch ensure that repeated pastes are processed in order.
 export function installRemoteInput(
   rfb,
   container,
-  { mode, onStatus, onFallback, isActive, insertText },
+  { mode, onStatus, onFallback, isActive, insertText, pasteContent },
 ) {
   const listeners = [],
     handled = new Set(),
@@ -115,12 +121,32 @@ export function installRemoteInput(
       },
     );
   };
-  const readAndPaste = async () => {
-    try {
-      paste(await readClipboard());
-    } catch {
-      onFallback("", "在此粘贴文本，然后发送到 Cage。");
-    }
+  const receive = (content) => {
+    if (disposed || !isActive()) return;
+    pending++;
+    say("正在传递剪贴板内容…");
+    rfb.focus();
+    return pasteContent(content).then(
+      () => {
+        pending--;
+        say(pending ? "正在粘贴…" : "已传递到当前输入位置");
+      },
+      (error) => {
+        pending--;
+        if (error.name === "NotAllowedError" && !disposed) {
+          onFallback(
+            "",
+            "浏览器未允许读取剪贴板。图片可直接拖入画面；文本可在这里粘贴。",
+          );
+          return;
+        }
+        say(error.message || "图片或文本未能传入，请重新连接后重试");
+      },
+    );
+  };
+  const readAndPaste = () => {
+    if (disposed || !isActive()) return;
+    return receive(readClipboardContent());
   };
   on(rfb, "clipboard", async (event) => {
     lastText = event.detail.text;
@@ -263,15 +289,30 @@ export function installRemoteInput(
     document,
     "paste",
     (event) => {
-      if (!focused() && event.target !== target) return;
+      if (!isActive() || (!focused() && event.target !== target)) return;
       event.preventDefault();
       event.stopImmediatePropagation();
-      if (event.clipboardData.types.includes("text/plain"))
+      const files = transferFiles(event.clipboardData);
+      if (files.length) {
+        for (const file of files) receive(imagePayload(file));
+      } else if (event.clipboardData.types.includes("text/plain"))
         paste(event.clipboardData.getData("text/plain"));
-      else say("当前支持文本粘贴");
+      else say("剪贴板中没有可粘贴的图片或文本");
     },
     true,
   );
+  on(container, "dragover", (event) => {
+    if (!isActive() || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+  });
+  on(container, "drop", (event) => {
+    if (!isActive() || !hasFiles(event.dataTransfer)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    for (const file of transferFiles(event.dataTransfer))
+      receive(imagePayload(file));
+  });
   return {
     copy,
     readAndPaste,

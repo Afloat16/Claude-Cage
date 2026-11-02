@@ -1,3 +1,4 @@
+import { shortcut } from "./platform.mjs";
 import React, { useEffect, useState } from "react";
 import {
   ArrowUpRight,
@@ -6,6 +7,8 @@ import {
   FolderOpen,
   Globe2,
   Home,
+  Monitor,
+  MessageCircle,
   PanelLeftClose,
   Plus,
   Settings2,
@@ -14,6 +17,7 @@ import { EnvironmentShield } from "./environment-shield";
 import logo from "./logo.png";
 import { projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
+import { AccountMenu } from "./account";
 
 export function WorkspaceSidebar({
   workspace,
@@ -38,8 +42,14 @@ export function WorkspaceSidebar({
   onReorder,
   onNewTerminal,
   onBrowser,
+  downloadAction,
+  onClaudeWeb,
+  onClaudeDesktop,
+  desktopOpen,
   onEditor,
   onSettings,
+  onAccountConfirm,
+  onAccountStatus,
   onSafety,
   onCollapse,
   updateAction,
@@ -76,7 +86,7 @@ export function WorkspaceSidebar({
           工作台
         </button>
         <button
-          className={`sidebar-link ${!home && tabs.some((tab) => tab.id === active && tab.kind !== "terminal") ? "selected" : ""}`}
+          className={`sidebar-link ${!desktopOpen && !home && tabs.some((tab) => tab.id === active && tab.kind !== "terminal") ? "selected" : ""}`}
           onClick={onBrowser}
           disabled={!ready || busy}
           aria-label="打开浏览器"
@@ -85,13 +95,18 @@ export function WorkspaceSidebar({
           <Globe2 size={17} />
           浏览器
         </button>
+        <div className="claude-shortcuts">
+          <button className="sidebar-link" onClick={onClaudeWeb} disabled={!ready || busy} title="在 Cage 浏览器打开 claude.ai"><MessageCircle size={17} />claude.ai</button>
+          <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
+        </div>
+        {downloadAction}
         <button
           className="sidebar-link"
           onClick={() => onOpenProject()}
           disabled={busy || !running}
         >
           <FolderOpen size={17} />
-          打开项目<kbd>⌘O</kbd>
+          打开项目<kbd>{shortcut("⌘O")}</kbd>
         </button>
         <button
           className="sidebar-link"
@@ -178,7 +193,7 @@ export function WorkspaceSidebar({
                     <WorkspaceTabs
                       tabs={terminals}
                       saved={saved}
-                      active={home ? "" : active}
+                      active={home || desktopOpen ? "" : active}
                       label={`${project} 的终端`}
                       busy={busy}
                       ready={ready}
@@ -210,10 +225,8 @@ export function WorkspaceSidebar({
           <EnvironmentShield size={17} healthy={healthy} />
         </button>
         <div className="sidebar-footer-actions">
-          <button className="sidebar-link" onClick={onSettings}>
-            <Settings2 size={17} />
-            设置<kbd>⌘,</kbd>
-          </button>
+          <AccountMenu onSettings={onSettings} onConfirm={onAccountConfirm} onStatus={onAccountStatus} busy={busy} />
+          <button className="icon-button" aria-label="设置" title={shortcut("设置 ⌘,")} onClick={() => onSettings("keyboard")}><Settings2 size={17} /></button>
           {updateAction}
         </div>
       </div>

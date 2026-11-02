@@ -35,8 +35,8 @@
   white-space: nowrap;
 }
 .proxy-badge.online {
-  color: #278050;
-  background: color-mix(in srgb, #278050 12%, transparent);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
 }
 .proxy-tabs {
   display: flex;
@@ -276,7 +276,7 @@
   font-size: 12px;
 }
 .proxy-notice {
-  color: #278050;
+  color: var(--success);
 }
 .proxy-loading {
   padding: 20px 0;

@@ -2,10 +2,12 @@
 import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 const runFile = promisify(execFile);
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, constants } from "node:fs";
+import { open } from "node:fs/promises";
 import http from "node:http";
 import { auditBrowser } from "./browser-audit.mjs";
 import { DownloadManager } from "./browser-downloads.mjs";
+import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
 import { timingSafeEqual } from "node:crypto";
 
 const config = JSON.parse(
@@ -77,12 +79,16 @@ const downloads = new DownloadManager({
     return JSON.parse(output);
   },
 });
+const uploadDirectory = "/home/cage-browser/.cage-uploads";
+rmSync(uploadDirectory, { recursive: true, force: true });
+const uploadSessions = new Map();
+const uploads = new UploadManager({ directory: uploadDirectory, cdp, changed: () => broadcastState() });
 function cdp(method, params = {}, sessionId, timeout = 4500) {
   return new Promise((resolve, reject) => {
     const id = ++sequence;
     const timer = setTimeout(() => {
       pending.delete(id);
-      reject(new Error("Browser command timed out"));
+      reject(new Error(`Browser command timed out: ${method}`));
     }, timeout);
     pending.set(id, { resolve, reject, timer });
     chrome.stdio[3].write(
@@ -126,6 +132,7 @@ chrome.stdio[4].on("data", (chunk) => {
       if (t.type === "page" && !auditContexts.has(t.browserContextId)) {
         const fresh = !targets.has(t.targetId);
         targets.set(t.targetId, t);
+        if (fresh) void session(t.targetId).catch(() => {});
         if (t.targetId === activeId) rememberSelection();
         broadcastState();
         if (!activeId) activeId = t.targetId;
@@ -136,6 +143,8 @@ chrome.stdio[4].on("data", (chunk) => {
     if (event.method === "Target.targetDestroyed") {
       if (!targets.has(p.targetId)) continue;
       targets.delete(p.targetId);
+      uploads.cancelTab(p.targetId);
+      for (const [sid, tab] of uploadSessions) if (tab === p.targetId) uploadSessions.delete(sid);
       sessions.delete(p.targetId);
       broadcastState();
       if (activeId === p.targetId) {
@@ -146,6 +155,11 @@ chrome.stdio[4].on("data", (chunk) => {
     if (event.method === "Browser.downloadWillBegin")
       downloads.begin(p.guid, p.suggestedFilename);
     if (event.method === "Browser.downloadProgress") downloads.progress(p);
+    const uploadTab = uploadSessions.get(event.sessionId);
+    if (uploadTab && event.method === "Page.fileChooserOpened")
+      void uploads.opened(uploadTab, event.sessionId, p).catch(() => {});
+    if (uploadTab && event.method === "Page.frameNavigated" && !p.frame?.parentId)
+      uploads.cancelTab(uploadTab);
   }
 });
 chrome.on("exit", () => {
@@ -166,15 +180,21 @@ async function session(id) {
   if (!sessions.has(id))
     sessions.set(
       id,
-      cdp("Target.attachToTarget", { targetId: id, flatten: true }).then(
-        (r) => r.sessionId,
-      ),
+      cdp("Target.attachToTarget", { targetId: id, flatten: true }).then(async (r) => {
+        uploadSessions.set(r.sessionId, id);
+        await cdp("Page.enable", {}, r.sessionId);
+        await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId);
+        return r.sessionId;
+      }).catch(error => { sessions.delete(id); throw error; }),
     );
   return sessions.get(id);
 }
 async function activate(id, focus = false) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
+  // Restored background tabs may have no live renderer until activated.
+  // Page.enable must not block the command that wakes that renderer.
   await cdp("Target.activateTarget", { targetId: id });
+  await session(id);
   activeId = id;
   rememberSelection();
   broadcastState(focus);
@@ -293,6 +313,7 @@ function publicState() {
   return {
     active: activeId,
     downloads: downloads.snapshot(),
+    uploads: uploads.snapshot(),
     tabs: [...targets.values()].map((t) => ({
       id: t.targetId,
       title: displayTitle(t),
@@ -361,6 +382,21 @@ function mutate(fn) {
   return result;
 }
 
+function pasteImage(png) {
+  if (typeof png !== "string" || png.length > 27962028) throw new Error("Image too large");
+  const data = Buffer.from(png, "base64");
+  if (!data.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10]))) throw new Error("Invalid PNG");
+  return new Promise((resolve, reject) => {
+    const child = spawn("/usr/local/bin/cage-image-input", ["paste"], {
+      stdio: ["pipe", "ignore", "ignore"], timeout: 15000,
+    });
+    child.on("error", reject);
+    child.stdin.on("error", reject);
+    child.on("close", (code) => code === 0 ? resolve() : reject(new Error("Image paste failed")));
+    child.stdin.end(data);
+  });
+}
+
 const server = http.createServer(async (req, res) => {
   res.setHeader("Cache-Control", "no-store");
   res.setHeader("Content-Type", "application/json");
@@ -378,6 +414,25 @@ const server = http.createServer(async (req, res) => {
   }
   try {
     if (!ready) throw new Error("Browser is starting");
+    const route = new URL(req.url, "http://localhost");
+    if (req.method === "POST" && route.pathname === "/upload-file") {
+      if (Number(req.headers["content-length"]) > uploadLimit) throw new Error("每个文件不能超过 2 GB");
+      res.end(JSON.stringify(await uploads.receive(route.searchParams.get("id"), route.searchParams.get("name"), req)));
+      return;
+    }
+    if (req.method === "GET" && route.pathname === "/download-file") {
+      const source = downloads.sourceFile(route.searchParams.get("id"));
+      const file = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW);
+      const stat = await file.stat();
+      if (!stat.isFile()) { await file.close(); throw new Error("下载文件不可用"); }
+      res.setHeader("Content-Type", "application/octet-stream");
+      res.setHeader("Content-Length", stat.size);
+      const stream = file.createReadStream();
+      res.on("close", () => stream.destroy());
+      stream.on("error", () => res.destroy());
+      stream.pipe(res);
+      return;
+    }
     if (req.method === "GET" && req.url === "/health") {
       res.end('{"ready":true}');
       return;
@@ -403,9 +458,11 @@ const server = http.createServer(async (req, res) => {
     let text = "";
     for await (const chunk of req) {
       text += chunk;
-      if (text.length > 65536) throw new Error("Request too large");
+      if (text.length > (req.url === "/paste-image" ? 28 * 1024 * 1024 : 65536)) throw new Error("Request too large");
     }
     const input = JSON.parse(text || "{}");
+    if (req.url === "/upload-finish") { res.end(JSON.stringify(await uploads.finish(input.id))); return; }
+    if (req.url === "/upload-cancel") { uploads.cancel(input.id); res.end('{"ok":true}'); return; }
     if (req.url === "/download-retry") {
       res.end(JSON.stringify(downloads.retry(input.id)));
       return;
@@ -437,6 +494,10 @@ const server = http.createServer(async (req, res) => {
       const id = input.id || activeId;
       if (!targets.has(id)) throw new Error("Tab no longer exists");
       switch (req.url) {
+        case "/paste-image":
+          if (input.id !== activeId) throw new Error("Image target changed");
+          await pasteImage(input.png);
+          break;
         case "/insert-text":
           if (input.id !== activeId || typeof input.text !== "string" ||
               !input.text || Buffer.byteLength(input.text, "utf8") > 8192)
@@ -503,7 +564,10 @@ server.listen(18500, "127.0.0.1");
         [...targets.keys()][0],
     );
   ready = true;
-})().catch(() => process.exit(1));
+})().catch(error => {
+  console.error("Browser startup failed:", error.message);
+  process.exit(1);
+});
 process.on("SIGTERM", () => {
   shuttingDown = true;
   server.close();

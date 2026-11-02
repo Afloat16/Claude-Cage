@@ -56,10 +56,13 @@ function fixture(native = false) {
     Map,
     Set,
     console,
-    readClipboard: async () => {
+    readClipboardContent: async () => {
       reads++;
-      return "中文🙂";
+      return { text: "中文🙂" };
     },
+    transferFiles: (data) => Array.from(data?.files || []),
+    hasFiles: (data) => Array.from(data?.types || []).includes("Files"),
+    imagePayload: async () => ({ png: "fixture-image" }),
     writeClipboard: async (text) => writes.push(text),
     nativeAvailable: () => native,
     getKeycode: (e) => e.code,
@@ -86,6 +89,10 @@ function fixture(native = false) {
       isActive: () => true,
       insertText: async (text) => {
         texts.push(text);
+      },
+      pasteContent: async (content) => {
+        const value = await content;
+        if (rfb.target) pastes.push(value.png || value.text);
       },
     },
   );

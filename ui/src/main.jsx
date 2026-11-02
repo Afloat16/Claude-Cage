@@ -1,3 +1,4 @@
+import { shortcut, primaryModifier } from "./platform.mjs";
 import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
@@ -6,10 +7,12 @@ import {
   ArrowRight,
   ArrowUpRight,
   Copy,
+  Clock3,
   FileCode2,
   FolderOpen,
   Globe2,
   LoaderCircle,
+  MapPin,
   MoreHorizontal,
   Plus,
   PanelLeftOpen,
@@ -26,9 +29,13 @@ import { SettingsPanel } from "./settings";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
+import { ClaudeDesktop } from "./claude-desktop";
+import { AccountProvider, AccountGate } from "./account";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { BrowserFavorites } from "./browser-favorites";
 import { BrowserDownloads, useDownloadNotifications } from "./browser-downloads";
+import { BrowserUploads } from "./browser-uploads";
+import { AudioControls, useAudioOutput } from "./audio";
 import { ProjectDialog } from "./project-dialog";
 import {
   readLocal,
@@ -48,6 +55,8 @@ import "./appearance.css";
 import { stopAndExit } from "./quit";
 
 function App() {
+  const [desktopOpen, setDesktopOpen] = useState(false);
+  const [terminalChoice, setTerminalChoice] = useState(null);
   const appUpdates = useAppUpdates();
   const [recoveringEditor, setRecoveringEditor] = useState(false);
   const windowVisible = useWindowVisibility();
@@ -96,11 +105,12 @@ function App() {
   activeRef.current = active;
   readyRef.current = Boolean(status?.ready);
   const current = tabs.find((t) => t.id === active),
-    terminal = current?.kind === "terminal",
+    terminal = !desktopOpen && current?.kind === "terminal",
     busy = Boolean(status?.job?.running),
-    showHome = home || !status?.vm_running || !current,
-    showRemote = status?.ready && !terminal && !showHome;
+    showHome = !desktopOpen && (home || !status?.vm_running || !current),
+    showRemote = !desktopOpen && status?.ready && !terminal && !showHome;
   const running = Boolean(status?.vm_running);
+  const audio = useAudioOutput(running && !status?.environment_update_required && !connectionError);
   const projects = status?.projects || [];
   const workspace = selectedProject || status?.workspace;
   const contentWorkspace =
@@ -127,7 +137,7 @@ function App() {
           ? status?.environment_update_required ? "环境待更新" : "浏览器待恢复"
           : "已停止";
   const notify = (text) => setToast(text);
-  useDownloadNotifications(browser.downloads, notify);
+  useDownloadNotifications(browser.downloads, notify, Boolean(browser.uploads?.length));
   const refreshSettings = async () => {
     const results = await Promise.allSettled([api("/settings"), api("/proxy")]);
     if (results[0].status === "fulfilled") setSettings(results[0].value);
@@ -143,6 +153,7 @@ function App() {
     setSettingsOpen(true);
   };
   const select = async (id) => {
+    setDesktopOpen(false);
     setHome(false);
     setActive(id);
     localStorage.setItem("cage-active", id);
@@ -168,6 +179,7 @@ function App() {
   const openBrowserPage = async (
     url = settings?.browser_home_url || "https://www.bing.com/",
   ) => {
+    setDesktopOpen(false);
     const result = await action("/browser/new", { url });
     if (result) {
       setHome(false);
@@ -198,9 +210,12 @@ function App() {
       tabs.find((t) => t.kind !== "terminal");
     return tab ? select(tab.id) : newPage();
   };
-  const newTerminal = async (path = workspace) => {
+  const newTerminal = (path = workspace) => setTerminalChoice(path);
+  const createTerminal = async (path, kind) => {
+    setTerminalChoice(null);
+    setDesktopOpen(false);
     setHome(false);
-    const result = await action("/terminals", { workspace: path });
+    const result = await action("/terminals", { workspace: path, kind });
     if (result) {
       setSelectedProject(result.workspace);
       const tab = {
@@ -215,6 +230,7 @@ function App() {
   };
   const newTerminalHere = () => newTerminal(contentWorkspace);
   const openEditor = async (path = workspace) => {
+    setDesktopOpen(false);
     setHome(false);
     const result = await action("/browser/editor", { workspace: path });
     if (result) {
@@ -501,7 +517,7 @@ function App() {
   }, [toast]);
   useEffect(() => {
     const key = (event) => {
-      if (!event.metaKey) return;
+      if (!primaryModifier(event)) return;
       const k = event.key.toLowerCase();
       if (document.querySelector("[data-browser-dialog]")) {
         if (k === "w") {
@@ -534,6 +550,7 @@ function App() {
         details ||
         safetyOpen ||
         projectDialog ||
+        terminalChoice ||
         rename
       ) {
         if (k === "w") {
@@ -562,7 +579,7 @@ function App() {
           addressField.current?.focus();
           addressField.current?.select();
         };
-      if (k === "w" && current) handle = () => closeTab(current);
+      if (k === "w" && current && !desktopOpen) handle = () => closeTab(current);
       if (/^[1-9]$/.test(k)) {
         const tab = k === "9" ? switchTabs.at(-1) : switchTabs[Number(k) - 1];
         if (tab) handle = () => select(tab.id);
@@ -597,6 +614,7 @@ function App() {
         details ||
         safetyOpen ||
         projectDialog ||
+        terminalChoice ||
         rename ||
         showHome
       )
@@ -628,7 +646,7 @@ function App() {
         return;
       }
       if (
-        (settingsOpen || dialog || projectDialog || rename) &&
+        (settingsOpen || dialog || projectDialog || terminalChoice || rename) &&
         ["newTab", "newTerminal"].includes(command)
       )
         return;
@@ -650,9 +668,11 @@ function App() {
           details ||
           safetyOpen ||
           projectDialog ||
+          terminalChoice ||
           rename
         )
           document.dispatchEvent(new Event("cage-close-modal"));
+        else if (desktopOpen) setDesktopOpen(false);
         else if (current) await closeTab(current);
       }
       if (command === "quit") {
@@ -699,6 +719,8 @@ function App() {
     showHome,
     savedTabs,
     selectedProject,
+    desktopOpen,
+    terminalChoice,
   ]);
   const project = projectName(contentWorkspace);
   const tabLayoutKey = status?.environment_directory || status?.workspace;
@@ -878,6 +900,7 @@ function App() {
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
+            downloadAction={<BrowserDownloads sidebar downloads={browser.downloads} ready={status.ready && !busy} onStatus={notify} />}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             defaultWorkspace={status.environment_directory}
@@ -891,7 +914,7 @@ function App() {
             running={running}
             runtimeLabel={runtimeLabel}
             network={network}
-            onHome={() => setHome(true)}
+            onHome={() => { setDesktopOpen(false); setHome(true); }}
             onOpenProject={(path = "") => setProjectDialog({ path })}
             onSelect={select}
             onClose={closeTab}
@@ -901,8 +924,13 @@ function App() {
             onProjectSelect={setSelectedProject}
             onNewTerminal={newTerminal}
             onBrowser={openBrowser}
+            desktopOpen={desktopOpen}
+            onClaudeWeb={() => openBrowserPage("https://claude.ai/")}
+            onClaudeDesktop={() => { setHome(false); setDesktopOpen(true); }}
             onEditor={openEditor}
-            onSettings={() => openSettings()}
+            onSettings={openSettings}
+            onAccountConfirm={confirm}
+            onAccountStatus={notify}
             onSafety={() => setSafetyOpen(true)}
             onCollapse={() =>
               persist("cage-sidebar-collapsed", true, setSidebarCollapsed)
@@ -910,7 +938,7 @@ function App() {
           />
         )}
         <div className="workbench-main">
-          <header className="chrome">
+          {!desktopOpen && <header className="chrome">
             {!showHome && !terminal ? (
               <div className="browser-tab-bar">
                 {sidebarCollapsed && (
@@ -946,7 +974,7 @@ function App() {
                 <button
                   className="icon-button browser-new-tab"
                   aria-label="新建网页"
-                  title="新建网页 ⌘T"
+                  title={shortcut("新建网页 ⌘T")}
                   disabled={!status.ready || busy}
                   onClick={newPage}
                 >
@@ -1001,7 +1029,7 @@ function App() {
                   <button
                     className="icon-button"
                     aria-label="新建终端"
-                    title="新建终端 ⌘⇧↵"
+                    title={shortcut("新建终端 ⌘⇧↵")}
                     onClick={newTerminalHere}
                     disabled={!running || busy}
                   >
@@ -1011,7 +1039,7 @@ function App() {
                     <button
                       className="icon-button"
                       aria-label="关闭当前标签"
-                      title="关闭当前标签 ⌘W"
+                      title={shortcut("关闭当前标签 ⌘W")}
                       onClick={() => closeTab(current)}
                       disabled={busy}
                     >
@@ -1159,7 +1187,7 @@ function App() {
               </div>
             )}
             {busy && <div className="progress-line" />}
-          </header>
+          </header>}
           {connectionError && (
             <div className="connection-banner" role="alert">
               工作台连接中断，后台状态暂时未知。
@@ -1173,6 +1201,13 @@ function App() {
             </div>
           )}
           <main className="workspace">
+            {desktopOpen && <ClaudeDesktop
+              status={status} visible={!settingsOpen} remoteRef={remote}
+              onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}
+              onConfirm={confirm} onDetails={() => setDetails(true)}
+              sidebarCollapsed={sidebarCollapsed}
+              onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)}
+            />}
             {status.environment_update_required && !busy && (
               <div className="environment-update-banner" role="status">
                 <span>{status.environment_update_error || "环境组件需要更新。请先保存编辑器中的文件。"}</span>
@@ -1181,7 +1216,7 @@ function App() {
             )}
             {(status.vm_running || terminal) && (
               <>
-                {status.ready ? (
+                {status.ready && !desktopOpen ? (
                   <RemoteView
                     ref={remote}
                     visible={Boolean(showRemote && !settingsOpen)}
@@ -1193,7 +1228,7 @@ function App() {
                     }
                   />
                 ) : (
-                  !terminal &&
+                  !desktopOpen && !terminal &&
                   !showHome && (
                     <div className="view-overlay">
                       <RefreshCw />
@@ -1220,7 +1255,7 @@ function App() {
                           ? terminalControls.current.set(tab.id, control)
                           : terminalControls.current.delete(tab.id)
                       }
-                      visible={active === tab.id && !showHome && !settingsOpen}
+                      visible={!desktopOpen && active === tab.id && !showHome && !settingsOpen}
                       onStatus={notify}
                     />
                   ))}
@@ -1229,11 +1264,7 @@ function App() {
             {showHome && (
               <div className="welcome">
                 <div className="welcome-content">
-                  <EnvironmentShield
-                    className="welcome-symbol"
-                    healthy={status.ready && network.mode === "open"}
-                    size={42}
-                  />
+                  <img className="welcome-logo" src={logo} alt="Cage" />
                   <h1>
                     {busy
                       ? status.job.kind === "stop"
@@ -1377,12 +1408,24 @@ function App() {
                       打开项目后，在终端输入 <code>claude</code>
                       ，按提示登录你的账户。
                       <br />
-                      默认工作区和打开的项目与 Mac 共享，编辑和删除文件会同步。
+                      默认工作区和打开的项目与本机共享，编辑和删除文件会同步。
                     </p>
                   )}
                   {status.project_error && (
                     <div className="start-error" role="alert">
-                      {status.project_error}
+                      <strong>部分项目文件夹尚未连接</strong>
+                      <p>环境和浏览器可继续使用。</p>
+                      {status.project_errors?.length ? (
+                        <ul className="project-connection-errors">
+                          {status.project_errors.map(({ path, message }) => (
+                            <li key={path}>
+                              <strong>{projectName(path)}</strong>
+                              <span className="project-error-path">{path}</span>
+                              <p>{message}</p>
+                            </li>
+                          ))}
+                        </ul>
+                      ) : <p>{status.project_error}</p>}
                     </div>
                   )}
                   {status.job?.error && (
@@ -1422,17 +1465,22 @@ function App() {
             </button>
             <span className="status-divider" />
             <button onClick={() => openSettings("network")}>
-              <Globe2 size={12} />
+              <MapPin size={12} />
               <span>
                 {status.network_error
                   ? "出口待确认"
-                  : status.location
-                    ? `${status.location.country} · ${status.location.city}`
+                  : status.location || status.safety?.exit_ip
+                    ? [
+                        status.safety?.exit_ip || status.location?.ip,
+                        status.location?.country,
+                        status.location?.city,
+                      ].filter(Boolean).join(" · ")
                     : "指定代理出口"}
               </span>
             </button>
             <span className="status-divider" />
             <button onClick={() => openSettings("region")}>
+              <Clock3 size={12} />
               {settings.timezone}
               {settings.auto_timezone ? " · 自动" : ""}
             </button>
@@ -1444,6 +1492,7 @@ function App() {
               selected={proxy?.selected}
             />
             <span className="status-spacer" />
+            <AudioControls audio={audio} />
             <span className="status-feedback" role="status">
               {toast ||
                 (busy
@@ -1472,6 +1521,7 @@ function App() {
           </footer>
         </div>
       </div>
+      <BrowserUploads requests={status.ready ? browser.uploads : []} onStatus={notify} />
       {settingsOpen && (
         <SettingsPanel
           current={settings}
@@ -1490,6 +1540,16 @@ function App() {
           onClose={() => setProjectDialog(null)}
           onOpened={openedProject}
         />
+      )}
+      {terminalChoice !== null && (
+        <Modal title="新建终端" onClose={() => setTerminalChoice(null)}>
+          <p className="field-help">{terminalChoice}</p>
+          <div className="terminal-choice-buttons">
+            <button className="quiet-button" disabled={busy} onClick={() => createTerminal(terminalChoice, "shell")}><TerminalSquare size={18} />新建普通终端</button>
+            <button className="primary" disabled={busy} onClick={() => createTerminal(terminalChoice, "claude")}><TerminalSquare size={18} />新建 Claude 终端</button>
+          </div>
+          <p className="field-help">Claude 终端会自动运行设置中的启动命令。当前命令：<code>{settings.claude_terminal_command || "claude"}</code></p>
+        </Modal>
       )}
       {rename && (
         <Modal
@@ -1608,9 +1668,11 @@ function App() {
   );
 }
 createRoot(document.getElementById("root")).render(
-  <AppearanceProvider>
-    <App />
-  </AppearanceProvider>,
+  <AccountProvider>
+    <AppearanceProvider>
+      <AccountGate><App /></AccountGate>
+    </AppearanceProvider>
+  </AccountProvider>,
 );
 
 // A launcher can reopen an existing window with a fresh one-use ticket.

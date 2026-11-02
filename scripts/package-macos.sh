@@ -8,6 +8,10 @@ fi
 case "${1:-}" in ''|--from-notarized-app) ;; *) echo 'Usage: scripts/package-macos.sh [--from-notarized-app]' >&2; exit 2 ;; esac
 : "${CAGE_SIGNING_IDENTITY:?Set CAGE_SIGNING_IDENTITY to your Developer ID Application identity.}"
 : "${CAGE_NOTARY_PROFILE:?Set CAGE_NOTARY_PROFILE to a notarytool keychain profile.}"
+notary_credentials=(--keychain-profile "$CAGE_NOTARY_PROFILE")
+if [[ -n "${CAGE_NOTARY_KEYCHAIN:-}" ]]; then
+  notary_credentials+=(--keychain "$CAGE_NOTARY_KEYCHAIN")
+fi
 if [[ "$CAGE_SIGNING_IDENTITY" == - ]]; then echo 'Release packages require a Developer ID identity.' >&2; exit 1; fi
 version="$(tr -d '\n\r' < VERSION)"
 release="$PWD/_output/releases/$version"
@@ -17,7 +21,7 @@ if [[ "${1:-}" != --from-notarized-app ]]; then
   bash scripts/build-app.sh
   ditto -c -k --keepParent "$bundle" "$release/Cage-notarization.zip"
   xcrun notarytool submit "$release/Cage-notarization.zip" \
-    --keychain-profile "$CAGE_NOTARY_PROFILE" --wait --timeout 20m \
+    "${notary_credentials[@]}" --wait --timeout 20m \
     --output-format json > "$release/app-notarization.json"
   node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1])); if(r.status!=="Accepted") throw new Error(`Apple notarization: ${r.status}; submission ${r.id}`)' "$release/app-notarization.json"
   xcrun stapler staple "$bundle"
@@ -58,7 +62,7 @@ EOF
 artifact="Cage-$version-macos-arm64.dmg"
 hdiutil create -volname Cage -srcfolder "$stage" -ov -format UDZO "$release/$artifact"
 codesign --force --sign "$CAGE_SIGNING_IDENTITY" --timestamp "$release/$artifact"
-xcrun notarytool submit "$release/$artifact" --keychain-profile "$CAGE_NOTARY_PROFILE" \
+xcrun notarytool submit "$release/$artifact" "${notary_credentials[@]}" \
   --wait --timeout 20m --output-format json > "$release/dmg-notarization.json"
 node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1])); if(r.status!=="Accepted") throw new Error(`Apple notarization: ${r.status}; submission ${r.id}`)' "$release/dmg-notarization.json"
 xcrun stapler staple "$release/$artifact"

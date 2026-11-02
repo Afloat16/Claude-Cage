@@ -1,0 +1,122 @@
+name: Reusable Windows build and installer
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact 40-character commit SHA to build
+        required: true
+        type: string
+      release:
+        description: Require trusted signing and reviewed corresponding sources
+        type: boolean
+        default: false
+      artifact_name:
+        description: Release artifact name, or development artifact prefix
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  development:
+    if: ${{ !inputs.release }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.403
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/cache@v4
+        with:
+          path: _output/windows-deps
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json') }}
+      - name: Build, test and install the unsigned development package
+        env:
+          CAGE_BUILD_REF: ${{ inputs.ref }}
+        run: ./scripts/ci-windows-build.ps1
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-${{ matrix.os }}
+          path: _output/releases/*/windows/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      - name: Preserve public test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-${{ matrix.os }}-reports
+          path: ${{ runner.temp }}/cage-smoke-*.json
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 14
+  release:
+    if: ${{ inputs.release }}
+    runs-on: windows-2025
+    environment: cage-release
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.403
+      - uses: astral-sh/setup-uv@v10.3.3
+      - uses: actions/cache@v4
+        with:
+          path: _output/windows-deps
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json') }}
+      - name: Build, sign, test and install the release candidate
+        env:
+          CAGE_BUILD_REF: ${{ inputs.ref }}
+          CAGE_WINDOWS_PFX_BASE64: ${{ secrets.CAGE_WINDOWS_PFX_BASE64 }}
+          CAGE_WINDOWS_PFX_PASSWORD: ${{ secrets.CAGE_WINDOWS_PFX_PASSWORD }}
+          CAGE_WINDOWS_QEMU_SOURCE_URL: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_URL }}
+          CAGE_WINDOWS_QEMU_SOURCE_SHA256: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_SHA256 }}
+        run: ./scripts/ci-windows-build.ps1 -Release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            _output/releases/*/windows/Cage-*-windows-amd64-setup.exe
+            _output/releases/*/windows/SHA256SUMS
+            _output/releases/*/windows/mihomo-*-source.tar.gz
+            _output/releases/*/windows/qemu-*-source.tar.gz
+            _output/releases/*/windows/qemu-*-windows-full-source.*
+            _output/releases/*/windows/build-metadata.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      # The caller owns publication. This workflow has no repository write access.

@@ -61,7 +61,7 @@ def copy_to_workspace(source, size, workspace, name):
             except OSError:
                 if published is None:
                     raise
-                published['warning'] = '文件已保存到 Mac；共享目录中的临时文件暂时无法清理。'
+                published['warning'] = '文件已保存到本机；共享目录中的临时文件暂时无法清理。'
             finally:
                 os.close(destination)
         os.close(parent)
@@ -85,14 +85,14 @@ def error_message(error):
         return str(error)
     if isinstance(error, OSError):
         if error.errno == errno.ENOSPC:
-            return '空间不足，文件尚未保存到 Mac。清理空间后可重试。'
+            return '空间不足，文件尚未保存到本机。清理空间后可重试。'
         if error.errno in (errno.EACCES, errno.EPERM, errno.EROFS):
             return '无法写入共享下载目录。检查目录权限和共享连接后可重试。'
         if error.errno in (errno.ELOOP, errno.ENOTDIR):
             return '下载目录包含符号链接或已不再是目录，请修复后重试。'
         if error.errno == errno.ENOENT:
             return '下载源文件或共享目录不可用，请检查后重试。'
-    return '文件尚未保存到 Mac。检查共享连接和可用空间后可重试。'
+    return '文件尚未保存到本机。检查共享连接和可用空间后可重试。'
 
 
 def main():
@@ -141,7 +141,7 @@ def main():
         except OSError:
             cleaned = False
         if not cleaned:
-            result['warning'] = '文件已保存到 Mac；客机中的下载源文件发生变化或暂时无法清理。'
+            result['warning'] = '文件已保存到本机；客机中的下载源文件发生变化或暂时无法清理。'
         print(json.dumps(result, ensure_ascii=False))
         return 0
     finally:

@@ -6,17 +6,23 @@ on:
   pull_request:
     paths: ['www/**', 'assets/**', 'README*.md', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   release:
-    types: [published, edited]
+    types: [published]
   workflow_dispatch:
     inputs:
       release_tag:
         description: 'Optional public release tag to download and verify before deployment'
         required: false
         type: string
+  workflow_call:
+    inputs:
+      release_tag:
+        description: Exact published Cage release to verify and deploy
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
-  group: website-${{ github.ref }}
+  group: website-${{ github.event_name }}-${{ inputs.release_tag || github.event.release.tag_name || github.ref }}
   cancel-in-progress: false
 jobs:
   verify-release:
@@ -56,7 +62,14 @@ jobs:
       - run: npm ci --prefix www
       - run: node --test www/scripts/sync-release.test.mjs
       - name: Resolve the public download version
-        run: node www/scripts/sync-release.mjs
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+        run: |
+          if [[ -n "$RELEASE_TAG" ]]; then
+            node www/scripts/sync-release.mjs --tag "$RELEASE_TAG"
+          else
+            node www/scripts/sync-release.mjs
+          fi
       - run: npm run --prefix www check
       - run: npm run --prefix www build
       - run: node www/scripts/check-site.mjs
@@ -65,7 +78,7 @@ jobs:
           path: www/dist
   deploy:
     needs: build
-    if: always() && needs.build.result == 'success' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.event_name == 'release')
+    if: always() && needs.build.result == 'success' && (github.event_name == 'workflow_dispatch' || github.event_name == 'release') && (github.ref == 'refs/heads/main' || github.event_name == 'release')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:

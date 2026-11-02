@@ -15,6 +15,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/appupdate"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/workbench"
@@ -26,7 +27,7 @@ cage desktop       Open the unified Cage workbench (desktop launcher)
 cage serve         Run its private localhost control service
 cage init          Create a private profile; add and select nodes in Cage settings
 cage check         Verify proxy transport (no VM required)
-cage proxy-start   Start Cage's bundled proxy core with the applied node (macOS)
+cage proxy-start   Start Cage's bundled proxy core with the applied node
 cage proxy-stop    Stop Cage's core and close external networking
 cage setup         Build the isolated base VM through the specified proxy
 cage up            Start the shared Cage environment, editor and browser
@@ -61,6 +62,9 @@ func run() int {
 		fmt.Print(help)
 		return 0
 	}
+	if err := host.ConfigureWindowsRuntime(); err != nil {
+		return fail(err)
+	}
 	path := os.Getenv(cage.ConfigEnv)
 	if path == "" {
 		home, _ := os.UserHomeDir()
@@ -72,6 +76,22 @@ func run() int {
 	}
 	if args[0] == "app-update" {
 		return appupdate.Run(path, args[1:], os.Stdout)
+	}
+	if args[0] == "browser-file" {
+		if len(args) < 4 || len(args) > 5 || args[1] != "--json" {
+			return fail(fmt.Errorf("browser-file --json save|open|reveal ID [destination]"))
+		}
+		destination := ""
+		if len(args) == 5 {
+			destination = args[4]
+		}
+		result, err := workbench.BrowserFile(path, args[2], args[3], destination)
+		if err != nil {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
+			return 1
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(result)
+		return 0
 	}
 	if args[0] == "serve" {
 		if err := workbench.Serve(path); err != nil {
@@ -144,7 +164,7 @@ func run() int {
 		return 0
 	}
 	if args[0] == "init" {
-		if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+		if err = host.EnsurePrivateDir(filepath.Dir(path)); err != nil {
 			return fail(err)
 		}
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
@@ -246,13 +266,25 @@ func run() int {
 		args = append([]string{"setup", "--memory", "4", "--cpus", "2", "--disk", "24", "--preinstall=node,python,chromium,claude,code-server"}, args[1:]...)
 	}
 	if args[0] == "up" || args[0] == "login" {
-		result := cli.Main([]string{"run", "bash", "-c", cfg.StartScript()}, cli.Stdio())
+		result := cli.Main([]string{"run", "true"}, cli.Stdio())
 		if result != 0 {
 			return result
 		}
-		fmt.Println("Cage local services are ready. Open Cage.app or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
+		if err := workbench.RunMaintenanceScript(context.Background(), path, cfg.StartScript(), os.Stdout, os.Stderr); err != nil {
+			return fail(err)
+		}
+		fmt.Println("Cage local services are ready. Open Cage or run cage desktop to complete the required network checks. External networking stays closed until the workbench approves this VM; no local access password is required.")
 		if args[0] == "login" {
 			return cli.Main([]string{"run", "--tty", "bash", "-lc", "source /etc/profile.d/claude-cage.sh; exec claude auth login"}, cli.Stdio())
+		}
+		return 0
+	}
+	if args[0] == "update-tools" {
+		if result := cli.Main([]string{"run", "true"}, cli.Stdio()); result != 0 {
+			return result
+		}
+		if err := workbench.RunMaintenanceScript(context.Background(), path, cage.ToolsUpdateScript(), os.Stdout, os.Stderr); err != nil {
+			return fail(err)
 		}
 		return 0
 	}
@@ -265,9 +297,20 @@ func run() int {
 	}
 	return cli.Main(args, cli.Stdio())
 }
+
+// Service assets exceed Windows' command-line limit. Give only this internal
+// invocation a script stream; interactive login and ordinary run keep stdin.
+func runGuestServiceStart(script string, stdio cli.IO, invoke func([]string, cli.IO) int) int {
+	stdio.Stdin = strings.NewReader(script)
+	return invoke([]string{"run", "bash", "-s"}, stdio)
+}
+
 func fail(err error) int { fmt.Fprintln(os.Stderr, strings.TrimSpace(err.Error())); return 1 }
 
 func openWorkbench(address string) error {
+	if runtime.GOOS == "windows" {
+		return exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", address).Start()
+	}
 	command := "xdg-open"
 	if runtime.GOOS == "darwin" {
 		command = "open"

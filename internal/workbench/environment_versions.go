@@ -151,8 +151,7 @@ func (s *Server) synchronizeEnvironment() error {
 }
 
 func (s *Server) toolsNetworkAllowedLocked() bool {
-	gate := s.safety.Gate
-	return s.ready && !s.networkPaused && gate != nil && gate.Mode == cage.GateOpen && gate.Until.After(time.Now())
+	return !s.closing
 }
 func (s *Server) upgradeEnvironmentTools() error {
 	if !s.vmRunning() {
@@ -163,18 +162,10 @@ func (s *Server) upgradeEnvironmentTools() error {
 	manifest := s.guestManifest
 	s.mu.Unlock()
 	if !allowed {
-		return errors.New("工具升级需要已放行的网络。请先恢复外网并通过检查，再重新点击更新。")
+		return errors.New("工作台正在退出，请稍后重试工具更新。")
 	}
 	if manifest == nil || !manifest.Current() {
 		return errGuestUpdateRequired
-	}
-	client, err := s.gateClient()
-	if err != nil {
-		return err
-	}
-	state, err := client.Status(s.operationContext())
-	if err != nil || state.Mode != cage.GateOpen || !state.Until.After(time.Now()) {
-		return errors.New("网络放行已失效，请先重新检查再更新工具。")
 	}
 	monitorContext, stopMonitor := context.WithCancel(s.operationContext())
 	monitorDone := make(chan struct{})
@@ -201,7 +192,7 @@ func (s *Server) upgradeEnvironmentTools() error {
 		<-monitorDone
 	}
 	s.setMessage("正在更新 Chromium、编辑器和开发工具，工作台终端与磁盘保持运行…")
-	err = s.runCage("run", "bash", "-c", cage.ToolsUpdateScript())
+	err := s.runCage("update-tools")
 	finishMonitor()
 	if err != nil {
 		return err

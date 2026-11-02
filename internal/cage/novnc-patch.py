@@ -68,26 +68,45 @@ replace_once('    clipboardPasteFrom(text) {', '''    // Cage: serialize the cli
     }
 
     cageRunInput(action) {
+        return this._cageQueueInput(() => this._cageRunInput(action));
+    }
+
+    async _cageRunInput(action) {
+        if (this._rfbConnectionState !== 'connected' || this._viewOnly || !this._supportsFence)
+            throw new Error('Input transport is not ready');
+        // Flush preceding VNC clicks/keys before a browser text insertion.
+        await new Promise((resolve, reject) => {
+            const id = 'cage-input-' + (this._cageInputSequence = (this._cageInputSequence || 0) + 1);
+            const timer = setTimeout(() => {
+                this._cageInputFence = null;
+                reject(new Error('Input fence timed out'));
+            }, 4000);
+            this._cageInputFence = { id, timer, resolve };
+            RFB.messages.clientFence(this._sock, (1 << 31) | 1, id);
+        });
+        if (this._rfbConnectionState !== 'connected') throw new Error('Input disconnected');
+        return action();
+    }
+
+    cagePasteContent(content, pasteImage, valid) {
+        // Reserve the queue before asynchronous host clipboard/image decoding.
+        // Keep a rejection handler attached even if an earlier input fails.
+        const pending = Promise.resolve(content).then(value => ({value}), error => ({error}));
         return this._cageQueueInput(async () => {
-            if (this._rfbConnectionState !== 'connected' || this._viewOnly || !this._supportsFence)
-                throw new Error('Input transport is not ready');
-            // Flush preceding VNC clicks/keys before a browser text insertion.
-            await new Promise((resolve, reject) => {
-                const id = 'cage-input-' + (this._cageInputSequence = (this._cageInputSequence || 0) + 1);
-                const timer = setTimeout(() => {
-                    this._cageInputFence = null;
-                    reject(new Error('Input fence timed out'));
-                }, 4000);
-                this._cageInputFence = { id, timer, resolve };
-                RFB.messages.clientFence(this._sock, (1 << 31) | 1, id);
-            });
-            if (this._rfbConnectionState !== 'connected') throw new Error('Input disconnected');
-            return action();
+            const {value, error} = await pending;
+            if (error) throw error;
+            if (!valid()) throw new Error('Input target changed');
+            if (value.png) return this._cageRunInput(() => pasteImage(value));
+            return this._cagePasteText(value.text || '');
         });
     }
 
     cagePasteText(text) {
-        return this._cageQueueInput(() => new Promise((resolve, reject) => {
+        return this._cageQueueInput(() => this._cagePasteText(text));
+    }
+
+    _cagePasteText(text) {
+        return new Promise((resolve, reject) => {
             if (this._rfbConnectionState !== 'connected' || this._viewOnly ||
                 !this._supportsFence ||
                 !this._clipboardServerCapabilitiesActions[extendedClipboardActionNotify] ||
@@ -102,7 +121,7 @@ replace_once('    clipboardPasteFrom(text) {', '''    // Cage: serialize the cli
             }, 4000);
             this._cagePasteJob = {id, timer, resolve, phase: 'data'};
             this.clipboardPasteFrom(text);
-        }));
+        });
     }
 
     clipboardPasteFrom(text) {''')

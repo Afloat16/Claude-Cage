@@ -1,0 +1,106 @@
+name: Reusable Linux desktop and Debian package
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Exact 40-character commit SHA to build
+        required: true
+        type: string
+      release:
+        description: Produce a release candidate without test reports
+        type: boolean
+        default: false
+      artifact_name:
+        description: Name of the package artifact
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  debian:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash
+    container:
+      image: debian:12
+      # Permit WebKit's own sandbox inside this disposable test container.
+      options: --security-opt seccomp=unconfined --security-opt systempaths=unconfined
+    steps:
+      - name: Install build and test dependencies
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libjson-glib-dev dpkg-dev curl ca-certificates git qemu-system-x86 qemu-utils ovmf openssh-client iproute2 dbus-x11 xvfb xauth fonts-noto-cjk zsh
+          useradd -m -s /bin/bash cage
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - name: Verify the immutable build revision
+        env:
+          CAGE_BUILD_REF: ${{ inputs.ref }}
+          CAGE_RELEASE: ${{ inputs.release }}
+        run: |
+          [[ "$CAGE_BUILD_REF" =~ ^[0-9a-fA-F]{40}$ ]] || { echo 'Build ref must be a complete commit SHA.' >&2; exit 1; }
+          [[ "$(git rev-parse HEAD)" == "${CAGE_BUILD_REF,,}" ]] || { echo 'Checkout differs from the requested commit.' >&2; exit 1; }
+          if [[ "$CAGE_RELEASE" == true && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
+            echo 'Release candidates require an explicitly dispatched release workflow.' >&2
+            exit 1
+          fi
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build Linux application and package
+        run: |
+          node scripts/check-version.mjs
+          bash scripts/build-linux.sh
+          bash scripts/package-linux.sh --skip-build
+          npm test --prefix ui
+          npm run --prefix ui lint
+      - name: Linux executable tests as an ordinary user
+        run: |
+          chown -R cage:cage "$GITHUB_WORKSPACE"
+          runuser -u cage -- go test ./internal/... ./cmd/...
+          runuser -u cage -- go vet ./internal/managedproxy ./internal/workbench ./cmd/cage
+      - name: Install, render native workbench, reinstall and remove
+        run: |
+          version=$(cat VERSION)
+          bash scripts/test-linux-install.sh "_output/releases/$version/linux/Cage-$version-linux-amd64.deb"
+      - name: Record release candidate identity
+        if: ${{ inputs.release }}
+        run: |
+          version=$(cat VERSION)
+          node scripts/release-version.mjs metadata linux "_output/releases/$version/linux/build-metadata.json"
+      - name: Upload verified package and corresponding source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: |
+            _output/releases/*/linux/Cage-*-linux-amd64.deb
+            _output/releases/*/linux/SHA256SUMS
+            _output/releases/*/linux/mihomo-*-source.tar.gz
+            _output/releases/*/linux/build-metadata.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+      - name: Preserve public development test reports
+        if: ${{ always() && !inputs.release }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-reports
+          path: |
+            /home/cage-package-test/reports/install.json
+            /home/cage-package-test/reports/first-install.json
+            /home/cage-package-test/reports/first-install.json.png
+            /home/cage-package-test/reports/after-reinstall.json
+            /home/cage-package-test/reports/after-reinstall.json.png
+          if-no-files-found: ignore
+          overwrite: true
+          retention-days: 14
+      # KVM and physical desktop acceptance remain separate real-machine checks.
