@@ -35,7 +35,7 @@ for (const code of codes) {
   }
   const windowsLinks = [...html.matchAll(/href="([^"]*windows-amd64-setup\.exe)"/g)].map(match => match[1]);
   assert.deepEqual(windowsLinks, published.windowsDownloadURL ? [published.windowsDownloadURL, published.windowsDownloadURL] : [], `${code}: Windows download must match the verified optional release metadata`);
-  for (const [suffix, url] of [['linux-amd64.deb', published.linuxDownloadURL || published.linuxPreview?.downloadURL], ['windows-amd64-setup-unsigned.exe', published.windowsDownloadURL ? undefined : published.windowsPreview?.downloadURL]]) {
+  for (const [suffix, url] of [['linux-amd64.deb', published.linuxDownloadURL], ['windows-amd64-setup-unsigned.exe', published.windowsDownloadURL ? undefined : published.windowsPreview?.downloadURL]]) {
     const links = [...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).filter(link => link.endsWith(suffix));
     assert.deepEqual(links, url ? [url, url] : [], `${code}: ${suffix} must match verified metadata`);
   }

@@ -66,9 +66,9 @@ gh workflow run www.yml --repo Lee-xeo/Claude-Cage --ref main
 
 主页的“下载应用”打开 macOS、Windows、Linux 平台选择。默认版本来自具有完整 macOS 资产的公开 Release；同一版本的 Windows 正式安装器或 Linux DEB 具有有效摘要时，同时提供对应下载。缺少公开安装包的平台仍显示系统要求，并链接安装与构建说明。
 
-缺少同版本 Windows 或 Linux 安装包时，同步脚本还会检查公开的 `desktop-preview-<版本>` 预发行条目。该条目必须包含同版本 Windows 未签名安装器、Linux DEB、Mihomo 与 QEMU 主程序源码，以及有效的 `SHA256SUMS`。Windows 入口显示“预览版 · 未签名”，需手动安装和更新。该入口不改变应用内更新规则；签名限制、系统兼容性与验收范围须在发行说明中写明。
+三平台安装包统一归入 `v<版本>` Release，不单独建立平台预览标签。同一预发行条目可以附带 Windows 未签名安装器及其对应的 Mihomo、QEMU 主程序源码，全部列入共用的 `SHA256SUMS`。Windows 入口显示“预览版 · 未签名”，需手动安装和更新。该入口不改变应用内更新规则；签名限制、系统兼容性与验收范围须在发行说明中写明。
 
-用户明确授权公开未签名预览后，维护者可手动触发 `platform-preview.yml`，提供成功的三平台 CI run ID 并启用 `unsigned_windows`。工作流从该次 CI 取得原始产物、核对源码版本和摘要，在草稿中上传并核对 GitHub digest 后公开。随后调用官网工作流，匿名下载三平台安装包、核对摘要，并验证 macOS 签名与公证，成功后部署官网。现有 macOS Release 附件保留，普通推送不会触发预览包发布。
+用户明确授权公开未签名预览后，维护者可手动触发 `platform-preview.yml`，提供成功的三平台 CI run ID 并启用 `unsigned_windows`。工作流要求对应 `v<版本>` 预发行条目已经存在，从该次 CI 取得原始产物、核对源码版本和摘要后补充缺少的平台附件，上传后核对 GitHub digest，最后更新共用校验清单。已有的同名安装包必须内容一致，不被覆盖；发行说明记录 Windows/Linux 的实际源码提交。随后调用官网工作流，匿名下载三平台安装包、核对摘要，并验证 macOS 签名与公证，成功后部署官网。普通推送不会触发发布。
 
 主页构建从公开 Release 刷新下载链接，避免源码版本领先安装包时出现失效下载。图片、样式、404 返回链接与兼容重定向均使用 `/Claude-Cage/` 子路径。
 

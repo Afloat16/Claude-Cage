@@ -76,23 +76,20 @@ export function releaseMetadata(release, text) {
       // A partial platform upload must not hide other verified downloads.
     }
   }
+  if (!metadata.windowsDownloadURL && release.prerelease) {
+    const unsigned = optionalAsset(release, `Cage-${version}-windows-amd64-setup-unsigned.exe`);
+    const qemu = release.assets.find(asset => /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(asset.name));
+    if (unsigned && qemu && optionalAsset(release, qemu.name)) {
+      try {
+        checksumFor(text, unsigned);
+        checksumFor(text, qemu);
+        metadata.windowsPreview = { version, releaseURL: metadata.releaseURL, downloadURL: unsigned.browser_download_url };
+      } catch {
+        // An incomplete unsigned upload must not hide other platform downloads.
+      }
+    }
+  }
   return metadata;
-}
-
-export function platformPreviewMetadata(release, text, version) {
-  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || release.draft || !release.prerelease || release.tag_name !== `desktop-preview-${version}`) {
-    throw new Error('Expected a published platform preview matching the application version');
-  }
-  const windows = optionalAsset(release, `Cage-${version}-windows-amd64-setup-unsigned.exe`);
-  const linux = optionalAsset(release, `Cage-${version}-linux-amd64.deb`);
-  const source = release.assets.find(asset => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(asset.name));
-  const qemu = release.assets.find(asset => /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(asset.name));
-  for (const asset of [windows, linux, source, qemu]) {
-    if (!asset || !optionalAsset(release, asset.name)) throw new Error('Platform preview lacks complete installers or corresponding source');
-    checksumFor(text, asset);
-  }
-  const metadata = asset => ({ version, releaseURL: `${repoURL}/releases/tag/${release.tag_name}`, downloadURL: asset.browser_download_url });
-  return { windowsPreview: metadata(windows), linuxPreview: metadata(linux) };
 }
 
 async function checksumText(release) {
@@ -135,10 +132,7 @@ async function main() {
   let release;
   let releases;
   if (values.tag) {
-    // Companion platform previews retain their own source tag and checksum
-    // file; the main version continues to own the notarized macOS package.
-    const tag = values.tag.startsWith('desktop-preview-') ? `v${values.tag.slice('desktop-preview-'.length)}` : values.tag;
-    release = await (await request(`${apiURL}/tags/${encodeURIComponent(tag)}`)).json();
+    release = await (await request(`${apiURL}/tags/${encodeURIComponent(values.tag)}`)).json();
   } else {
     releases = await (await request(`${apiURL}?per_page=100`)).json();
     // GitHub orders by creation time. Show the first complete public Cage release.
@@ -152,28 +146,13 @@ async function main() {
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
   const metadata = releaseMetadata(release, text);
-  let preview;
-  let previewText;
-  if (!metadata.windowsDownloadURL || !metadata.linuxDownloadURL) {
-    releases ||= await (await request(`${apiURL}?per_page=100`)).json();
-    preview = releases.find(item => !item.draft && item.prerelease && item.tag_name === `desktop-preview-${version}`);
-    if (preview) {
-      previewText = await checksumText(preview);
-      const platforms = platformPreviewMetadata(preview, previewText, version);
-      if (!metadata.windowsDownloadURL) metadata.windowsPreview = platforms.windowsPreview;
-      if (!metadata.linuxDownloadURL) metadata.linuxPreview = platforms.linuxPreview;
-    }
-  }
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);
     await writeFile(join(values['archive-directory'], 'SHA256SUMS'), text);
-    if (preview) {
-      for (const platform of [metadata.windowsPreview, metadata.linuxPreview].filter(Boolean)) {
-        const asset = preview.assets.find(asset => asset.browser_download_url === platform.downloadURL);
-        await download(asset, checksumFor(previewText, asset), values['archive-directory']);
-      }
-      await writeFile(join(values['archive-directory'], 'SHA256SUMS-platforms'), previewText);
+    for (const url of [metadata.windowsDownloadURL || metadata.windowsPreview?.downloadURL, metadata.linuxDownloadURL].filter(Boolean)) {
+      const asset = release.assets.find(asset => asset.browser_download_url === url);
+      await download(asset, checksumFor(text, asset), values['archive-directory']);
     }
   }
   const output = resolve(values.output);

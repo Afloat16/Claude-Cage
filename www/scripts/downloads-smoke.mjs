@@ -9,7 +9,7 @@ const release = JSON.parse(await readFile(new URL('../src/data/release.json', im
 const expected = {
   macOS: release.downloadURL,
   Windows: release.windowsDownloadURL || release.windowsPreview?.downloadURL,
-  Linux: release.linuxDownloadURL || release.linuxPreview?.downloadURL,
+  Linux: release.linuxDownloadURL,
 };
 for (const [platform, url] of Object.entries(expected)) assert.ok(url, `${platform} must have a verified public installer`);
 await mkdir(output, { recursive: true });

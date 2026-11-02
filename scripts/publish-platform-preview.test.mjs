@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSyn
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { stagePreview } from './publish-platform-preview.mjs';
+import { stagePreview, mergeReleaseChecksums } from './publish-platform-preview.mjs';
 const version = '0.1.1-alpha';
 const dependencies = { mihomoSource: { file: 'mihomo-v1.19.33-source.tar.gz' }, qemuSource: { file: 'qemu-' + 'a'.repeat(40) + '-source.tar' } };
 const hash = text => createHash('sha256').update(text).digest('hex');
@@ -42,4 +42,24 @@ test('corrupt, missing, duplicate and unexpected checksum entries never become r
     }
     assert.throws(() => stagePreview(f.windows, f.linux, f.output, version, dependencies));
   });
+});
+
+test('consolidation preserves macOS checksums and rejects conflicting version assets', () => {
+  const hash = 'a'.repeat(64), other = 'b'.repeat(64);
+  const mac = 'Cage-0.1.1-alpha-macos-arm64.dmg', windows = 'Cage-0.1.1-alpha-windows-amd64-setup-unsigned.exe';
+  const release = { tag_name: 'v0.1.1-alpha', draft: false, prerelease: true,
+    assets: [{name: mac, state: 'uploaded', digest: `sha256:${hash}`}] };
+  const files = new Map([[windows, {digest: other}], ['SHA256SUMS', {digest: other}]]);
+  const original = `${hash}  ${mac}\n`;
+  const merged = mergeReleaseChecksums(release, original, files, '0.1.1-alpha');
+  assert.equal(merged, original + `${other}  ${windows}\n`);
+  const partial = {...release, assets:[...release.assets, {name:windows, state:'uploaded', digest:`sha256:${other}`}]};
+  assert.equal(mergeReleaseChecksums(partial, original, files, '0.1.1-alpha'), merged);
+  assert.equal(mergeReleaseChecksums(partial, merged, files, '0.1.1-alpha'), merged);
+  assert.throws(() => mergeReleaseChecksums(release, original + original, files, '0.1.1-alpha'));
+  assert.throws(() => mergeReleaseChecksums(release, original, files, '0.1.0-alpha.1'));
+  assert.throws(() => mergeReleaseChecksums(release, original, new Map([[mac,{digest:other}]]), '0.1.1-alpha'));
+  assert.throws(() => mergeReleaseChecksums({...release,draft:true}, original, files, '0.1.1-alpha'));
+  assert.throws(() => mergeReleaseChecksums({...release,prerelease:false}, original, files, '0.1.1-alpha'));
+  assert.throws(() => mergeReleaseChecksums(partial, original, new Map(), '0.1.1-alpha'));
 });

@@ -15,7 +15,7 @@ npm run build    # dist/
 
 “下载应用”在所有语言中打开同一个三平台选择弹窗，列出 macOS、Windows、Linux 的系统要求、可用安装包、版本说明与安装指南。没有公开包的平台提供安装与构建说明。弹窗支持键盘操作、Esc、关闭按钮和点击背景关闭；禁用 JavaScript 时下载区仍提供平台链接。
 
-下载信息来自 `src/data/release.json`，表示可公开下载的版本，可以低于根目录 `VERSION` 所标记的开发版本。`downloadURL` 为 macOS 包，`windowsDownloadURL` 和 `linuxDownloadURL` 为同版本可选安装包。独立的 `desktop-preview-<版本>` Release 可提供同版本 Windows 未签名包与 Linux 包，分别使用 `windowsPreview`、`linuxPreview` 保存版本、下载地址和说明；Windows 始终标注未签名，不进入签名安装包的自动更新入口。同步时核对两个安装包及其对应源码摘要，只关联与 macOS 主版本一致的预览包。从仓库根目录运行 `node www/scripts/sync-release.mjs`，即可从匿名 GitHub API 刷新公开版本；带 `--archive-directory` 时下载并核验三平台包。普通本地构建使用已保存的数据，不要求联网。
+下载信息来自 `src/data/release.json`，表示可公开下载的版本，可以低于根目录 `VERSION` 所标记的开发版本。三平台附件统一放在 `v<版本>` Release。`downloadURL` 为 macOS 包，`windowsDownloadURL` 和 `linuxDownloadURL` 为同版本可选安装包；预发行条目的 Windows 未签名包通过 `windowsPreview` 保存下载信息，始终标注未签名，不进入签名安装包的自动更新入口。同步时核对安装包及配套源码摘要。从仓库根目录运行 `node www/scripts/sync-release.mjs`，即可从匿名 GitHub API 刷新公开版本；带 `--archive-directory` 时下载并核验三平台包。普通本地构建使用已保存的数据，不要求联网。
 
 GitHub Actions 在网站文件或 README 的普通推送与 PR 中检查和构建；公开 Release 发布或维护者手动运行时部署 GitHub Pages。Release 事件会先下载实际 macOS 安装包与对应 Mihomo 源码，验证摘要、Developer ID 签名、Apple 公证和 Gatekeeper，失败时不会部署这一轮网站。Windows、Linux 的发行验收由对应平台流程负责。发布操作见[公开发行与主页部署](../docs/public-releases.md)。
 
@@ -23,6 +23,6 @@ GitHub Actions 在网站文件或 README 的普通推送与 PR 中检查和构�
 
 GitHub Pages 是当前主页的发布目标，部署配置由仓库工作流维护。
 
-维护者明确授权 Windows 未签名公开预览后，可手动运行 `platform-preview.yml`，提供已经成功的三平台 CI run ID 并启用 `unsigned_windows`。流程从该次 CI 获取安装包，核对源码版本、两个平台的原始摘要、配套源码和上传后的 GitHub digest，公开独立平台 Release 后调用官网验收与部署。日常推送不触发此发布，现有 macOS 附件不被覆盖。
+维护者明确授权 Windows 未签名公开预览后，可手动运行 `platform-preview.yml`，提供已经成功的三平台 CI run ID 并启用 `unsigned_windows`。流程从该次 CI 获取安装包，核对源码版本、原始摘要、配套源码和上传后的 GitHub digest，补充到已存在的 `v<版本>` 预发行条目，合并校验清单并记录各平台源码提交，随后调用官网验收与部署。流程不创建新 Release 或标签，日常推送不触发发布，现有 macOS 安装包不被覆盖。
 
 `public/install.sh` 仍被上游 `release.sh` 与安装器测试使用，保留用于 agent-vm 兼容流程，不作为 Cage 安装入口。

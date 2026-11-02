@@ -46,6 +46,34 @@ export function stagePreview(windows, linux, destination, version, dependencies)
   return verified;
 }
 
+export function mergeReleaseChecksums(release, text, files, version) {
+  assert.equal(release.tag_name, `v${version}`);
+  assert.equal(release.draft, false);
+  assert.equal(release.prerelease, true, 'Unsigned packages require a prerelease');
+  const entries = new Map();
+  for (const line of text.trim().split(/\r?\n/)) {
+    const match = /^([a-f0-9]{64}) [ *]([A-Za-z0-9][A-Za-z0-9._-]*)$/i.exec(line);
+    assert.ok(match && !entries.has(match[2]), 'Invalid or duplicate existing checksum');
+    entries.set(match[2], match[1].toLowerCase());
+  }
+  const assets = release.assets.filter(asset => asset.name !== 'SHA256SUMS');
+  for (const name of entries.keys()) assert.ok(assets.some(asset => asset.name === name), 'Existing release is incomplete');
+  assert.ok(entries.has(`Cage-${version}-macos-arm64.dmg`));
+  for (const asset of assets) {
+    assert.equal(asset.state, 'uploaded');
+    // A retry may find uploaded platform files whose merged manifest is still pending.
+    const expected = entries.get(asset.name) || files.get(asset.name)?.digest;
+    assert.ok(expected, `Unlisted existing asset: ${asset.name}`);
+    assert.equal(asset.digest, `sha256:${expected}`, `Existing checksum differs: ${asset.name}`);
+  }
+  for (const [name, file] of files) {
+    if (name === 'SHA256SUMS') continue;
+    if (entries.has(name)) assert.equal(entries.get(name), file.digest, `Conflicting release asset: ${name}`);
+    entries.set(name, file.digest);
+  }
+  return [...entries].map(([name, hash]) => `${hash}  ${name}\n`).join('');
+}
+
 async function main() {
   assert.equal(process.env.GITHUB_EVENT_NAME, 'workflow_dispatch');
   assert.equal(process.env.GITHUB_REPOSITORY, repo);
@@ -64,41 +92,48 @@ async function main() {
   const root = '_output/platform-publication';
   const destination = join(root, 'public');
   const files = stagePreview(join(root, 'windows', version, 'windows'), join(root, 'linux', version, 'linux'), destination, version, dependencies);
-  const tag = `desktop-preview-${version}`;
-  const marker = `<!-- cage-platform-preview source=${run.head_sha} ci=${runID} -->`;
-  const notes = `${marker}\n\nCage ${version} 的 Windows 与 Linux 安装包，来自同一份通过三平台 CI 的源码。macOS 安装包继续从 [v${version}](https://github.com/${repo}/releases/tag/v${version}) 下载。\n\n- **Windows：未签名预览版**，Windows 10 22H2 / Windows 11 x64。安装包名含 \`-unsigned.exe\`；系统可能提示未知发布者，请核对来源和 SHA256SUMS。该包需手动更新，不进入签名自动更新通道。\n- **Linux：Debian 12 / Ubuntu 24.04 x86_64**，下载 \`.deb\` 并通过系统包管理器安装。\n- Windows 2022/2025 runner 上的安装、WebView2、重装、卸载和数据保留检查通过；Debian 12 容器中的 GTK/WebKit、安装重装、运行中拒绝替换及卸载保留数据检查通过。托管 CI 不代替硬件虚拟化和所有真实设备的兼容性验证。\n- 附带 Mihomo、QEMU 主程序对应源码和 SHA256SUMS。升级前保存并停止 Cage 环境，用户配置及项目保留。\n\n[查看完整 CI](https://github.com/${repo}/actions/runs/${runID}) · [官网下载](https://lee-xeo.github.io/Claude-Cage/#download)\n\n源码：${run.head_sha}\n`;
-  const releases = () => JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${repo}/releases?per_page=100`])).flat();
-  let release = releases().find(item => item.tag_name === tag);
-  if (!release) {
-    const refs = api(`git/matching-refs/tags/${tag}`);
-    const ref = refs.find(item => item.ref === `refs/tags/${tag}`);
-    if (ref) assert.equal(ref.object.sha, run.head_sha, 'Existing preview tag belongs to another commit');
-    else api('git/refs', ['--method', 'POST', '-f', `ref=refs/tags/${tag}`, '-f', `sha=${run.head_sha}`]);
-    const requestPath = join(root, 'release-request.json');
-    writeFileSync(requestPath, JSON.stringify({ tag_name: tag, name: `Cage ${version} · Windows 未签名 / Linux 预览版`, body: notes, draft: true, prerelease: true, make_latest: 'false' }));
-    // Use the creation response; the releases list can lag behind a new draft.
-    release = api('releases', ['--method', 'POST', '--input', requestPath]);
-  }
-  assert.ok(release && release.body.includes(marker), 'Release belongs to a different source/run');
+  const tag = `v${version}`;
+  let release = api(`releases/tags/${tag}`);
+  const originalChecksums = release.assets.find(asset => asset.name === 'SHA256SUMS');
+  assert.ok(originalChecksums && originalChecksums.size <= 65536);
+  const response = await fetch(originalChecksums.browser_download_url);
+  assert.ok(response.ok, 'Cannot read public checksum manifest');
+  const originalText = await response.text();
+  assert.equal(digest(originalText), originalChecksums.digest.replace('sha256:', ''));
+  const merged = mergeReleaseChecksums(release, originalText, files, version);
+  writeFileSync(join(destination, 'SHA256SUMS'), merged);
+  files.set('SHA256SUMS', { digest: digest(merged), size: Buffer.byteLength(merged) });
   for (const [name, file] of files) {
-    const asset = release.assets.find(item => item.name === name);
-    if (asset) {
-      assert.equal(asset.digest, `sha256:${file.digest}`, `Existing asset differs: ${name}`);
-      assert.equal(asset.size, file.size);
-    } else {
-      assert.equal(release.draft, true, 'Never add to or replace a published preview');
-      gh(['release', 'upload', tag, join(destination, name), '--repo', repo]);
-    }
+    if (name === 'SHA256SUMS') continue;
+    const existing = release.assets.find(asset => asset.name === name);
+    if (existing) {
+      assert.equal(existing.digest, `sha256:${file.digest}`, `Existing asset differs: ${name}`);
+      assert.equal(existing.size, file.size);
+    } else gh(['release', 'upload', tag, join(destination, name), '--repo', repo]);
+  }
+  // Upload the merged manifest last. Existing installation archives are never replaced.
+  const uploaded = api(`releases/${release.id}`);
+  for (const [name, file] of files) {
+    if (name === 'SHA256SUMS') continue;
+    const asset = uploaded.assets.find(asset => asset.name === name);
+    assert.ok(asset && asset.state === 'uploaded');
+    assert.equal(asset.digest, `sha256:${file.digest}`);
+    assert.equal(asset.size, file.size);
+  }
+  assert.equal(uploaded.assets.find(asset => asset.name === 'SHA256SUMS').digest, originalChecksums.digest, 'Checksum manifest changed concurrently');
+  if (originalChecksums.digest !== `sha256:${digest(merged)}`) {
+    gh(['release', 'upload', tag, join(destination, 'SHA256SUMS'), '--repo', repo, '--clobber']);
   }
   release = api(`releases/${release.id}`);
-  assert.deepEqual(release.assets.map(a => a.name).sort(), [...files.keys()].sort());
-  for (const asset of release.assets) {
-    assert.equal(asset.state, 'uploaded');
-    assert.equal(asset.digest, `sha256:${files.get(asset.name).digest}`);
-    assert.equal(asset.size, files.get(asset.name).size);
+  assert.equal(release.assets.find(asset => asset.name === 'SHA256SUMS').digest, `sha256:${digest(merged)}`);
+  mergeReleaseChecksums(release, merged, files, version);
+  const marker = `<!-- cage-platform-packages source=${run.head_sha} ci=${runID} -->`;
+  if (!release.body.includes(marker)) {
+    const notes = release.body + `\n\n## Windows 与 Linux 下载\n\n${marker}\n\n本版本同时提供三平台安装包，共用 SHA256SUMS。macOS 安装包保持原样；Windows/Linux 包来自完成平台构建修复的源码 [${run.head_sha.slice(0, 7)}](https://github.com/${repo}/commit/${run.head_sha})，与 macOS 标签的构建提交不同。\n\n- **Windows：未签名 x64 预览版**，文件名含 -setup-unsigned.exe，需手动安装和更新，系统可能提示未知发布者；不进入签名自动更新通道。\n- **Linux：Debian 12 / Ubuntu 24.04 x86_64**，下载 .deb 并通过系统包管理器安装、更新。\n- [三平台 CI](https://github.com/${repo}/actions/runs/${runID}) 已通过 Windows 2022/2025 安装器及 Debian 12 容器验收。托管 CI 不代替所有真实设备和硬件虚拟化验收。\n- 随附 Mihomo 与 QEMU 主程序对应源码；升级前保存文件、停止环境并退出 Cage。\n\n[官网三平台下载](https://lee-xeo.github.io/Claude-Cage/#download)\n`;
+    const notesPath = join(root, 'notes.md'); writeFileSync(notesPath, notes);
+    gh(['release', 'edit', tag, '--repo', repo, '--notes-file', notesPath]);
   }
-  if (release.draft) release = api(`releases/${release.id}`, ['--method', 'PATCH', '-F', 'draft=false', '-F', 'prerelease=true', '-f', 'make_latest=false']);
   appendFileSync(process.env.GITHUB_OUTPUT, `tag=${tag}\nurl=${release.html_url}\n`);
-  console.log(`Published verified platform preview: ${release.html_url}`);
+  console.log(`Verified platform packages in version release: ${release.html_url}`);
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(error => { console.error(error.message); process.exitCode = 1; });

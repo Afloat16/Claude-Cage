@@ -1,4 +1,4 @@
-name: Publish verified Windows and Linux preview downloads
+name: Add verified Windows and Linux packages to a version release
 on:
   workflow_dispatch:
     inputs:
@@ -46,7 +46,7 @@ jobs:
           run-id: ${{ inputs.run_id }}
           name: cage-linux-amd64-test
           path: _output/platform-publication/linux
-      - name: Verify source and every checksum, then publish the complete preview
+      - name: Verify and add platform packages to the existing version release
         id: publish
         env:
           GH_TOKEN: ${{ github.token }}

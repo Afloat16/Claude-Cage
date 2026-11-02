@@ -6,11 +6,11 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { releaseAssets, checksumFor, releaseMetadata, platformPreviewMetadata } from './sync-release.mjs';
+import { releaseAssets, checksumFor, releaseMetadata } from './sync-release.mjs';
 
 const hash = 'a'.repeat(64);
 function fixture() {
-  return { tag_name: 'v0.2.0-alpha.10', draft: false, assets:
+  return { tag_name: 'v0.2.0-alpha.10', draft: false, prerelease: true, assets:
     ['Cage-0.2.0-alpha.10-macos-arm64.dmg', 'SHA256SUMS', 'mihomo-v1.19.33-source.tar.gz'].map(name => ({
       name, state: 'uploaded', size: 100, digest: `sha256:${hash}`,
       browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.2.0-alpha.10/${name}`,
@@ -101,30 +101,29 @@ test('Linux links require a unique complete DEB and a matching checksum', () => 
   assert.ok(!releaseMetadata(release, sums(release)).linuxDownloadURL);
 });
 
-test('platform previews match the current version and keep unsigned Windows separate', () => {
-  const release = windowsFixture();
-  release.tag_name = 'desktop-preview-0.2.0-alpha.10';
-  release.prerelease = true;
-  release.assets = ['Cage-0.2.0-alpha.10-windows-amd64-setup-unsigned.exe', 'Cage-0.2.0-alpha.10-linux-amd64.deb', 'mihomo-v1.19.33-source.tar.gz', `qemu-${'a'.repeat(40)}-source.tar.gz`].map(name => ({
-    ...release.assets[0], name, browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/${name}`,
-  }));
-  const common = { version: '0.2.0-alpha.10', releaseURL: `https://github.com/Lee-xeo/Claude-Cage/releases/tag/${release.tag_name}` };
-  assert.deepEqual(platformPreviewMetadata(release, sums(release), common.version), {
-    windowsPreview: { ...common, downloadURL: release.assets[0].browser_download_url },
-    linuxPreview: { ...common, downloadURL: release.assets[1].browser_download_url },
-  });
-  assert.throws(() => releaseAssets(release));
-  assert.throws(() => platformPreviewMetadata(release, '', common.version));
-  assert.throws(() => platformPreviewMetadata(release, sums(release), '0.2.0-alpha.11'));
-  for (const mutate of [r => { r.draft = true; }, r => { r.prerelease = false; },
-    r => { r.assets[0].state = 'new'; }, r => { r.assets[0].size = 0; },
-    r => { r.assets[0].browser_download_url = 'https://example.com/installer.exe'; },
-    r => { r.assets.push({ ...r.assets[0] }); }, r => { r.assets.pop(); },
-    r => { r.assets[1].name = 'Cage-0.1.0-linux-amd64.deb'; },
-    r => { r.assets[0].name = r.assets[0].name.replace('-unsigned', ''); }]) {
-    const invalid = structuredClone(release); mutate(invalid);
-    assert.throws(() => platformPreviewMetadata(invalid, sums(invalid), common.version));
+test('same-version unsigned Windows uses the version release and preserves the signed channel', () => {
+  const release = fixture();
+  for (const name of ['Cage-0.2.0-alpha.10-windows-amd64-setup-unsigned.exe', `qemu-${'a'.repeat(40)}-source.tar.gz`]) {
+    release.assets.push({ ...release.assets[0], name, browser_download_url: `https://github.com/Lee-xeo/Claude-Cage/releases/download/${release.tag_name}/${name}` });
   }
+  const metadata = releaseMetadata(release, sums(release));
+  assert.equal(metadata.windowsPreview.downloadURL, release.assets[3].browser_download_url);
+  assert.equal(metadata.windowsPreview.releaseURL, metadata.releaseURL);
+  assert.ok(!metadata.windowsDownloadURL);
+  const signed = windowsFixture().assets.at(-1);
+  const both = { ...release, assets: [...release.assets, signed] };
+  assert.equal(releaseMetadata(both, sums(both)).windowsDownloadURL, signed.browser_download_url);
+  assert.ok(!releaseMetadata(both, sums(both)).windowsPreview);
+  for (const mutate of [
+    r => { r.prerelease = false; }, r => { r.assets[3].state = 'new'; },
+    r => { r.assets[3].browser_download_url = r.assets[3].browser_download_url.replace('/v0.2.0-alpha.10/', '/desktop-preview-0.2.0-alpha.10/'); },
+    r => { r.assets.push({ ...r.assets[3] }); }, r => { r.assets.pop(); },
+    r => { r.assets[3].digest = 'sha256:' + 'b'.repeat(64); },
+  ]) {
+    const invalid = structuredClone(release); mutate(invalid);
+    assert.ok(!releaseMetadata(invalid, sums(invalid)).windowsPreview);
+  }
+  assert.ok(!releaseMetadata(release, sums(fixture())).windowsPreview);
 });
 
 test('macOS verification checks both owned archives without requiring other-platform source files', () => {

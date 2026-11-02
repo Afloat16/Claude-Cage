@@ -11,7 +11,7 @@ interface Props { locale: CageLocale }
 const { locale } = Astro.props;
 const c = cageCopy[locale];
 type PlatformRelease = { version: string; releaseURL: string; downloadURL: string };
-const published: PlatformRelease & { windowsDownloadURL?: string; linuxDownloadURL?: string; windowsPreview?: PlatformRelease; linuxPreview?: PlatformRelease } = releaseData;
+const published: PlatformRelease & { windowsDownloadURL?: string; linuxDownloadURL?: string; windowsPreview?: PlatformRelease } = releaseData;
 const base = import.meta.env.BASE_URL;
 const repo = 'https://github.com/Lee-xeo/Claude-Cage';
 const platforms = [
@@ -23,9 +23,9 @@ const platforms = [
     preview: !published.windowsDownloadURL && !!published.windowsPreview,
     notes: published.windowsDownloadURL ? published.releaseURL : published.windowsPreview?.releaseURL, guide: 'windows.md' },
   { name: 'Linux', icon: 'linux', requirements: 'Debian 12 / Ubuntu 24.04 · x86_64', format: '.deb',
-    url: published.linuxDownloadURL || published.linuxPreview?.downloadURL,
-    version: published.linuxDownloadURL ? published.version : published.linuxPreview?.version,
-    notes: published.linuxDownloadURL ? published.releaseURL : published.linuxPreview?.releaseURL, guide: 'linux.md' },
+    url: published.linuxDownloadURL,
+    version: published.linuxDownloadURL ? published.version : undefined,
+    notes: published.linuxDownloadURL ? published.releaseURL : undefined, guide: 'linux.md' },
 ];
 const pathFor = (code: CageLocale) => `${base}${code === 'zh' ? '' : `${code}/`}`;
 const canonical = new URL(pathFor(locale), Astro.site);
