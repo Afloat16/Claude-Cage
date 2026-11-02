@@ -59,6 +59,7 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: ui/package-lock.json
+      - uses: astral-sh/setup-uv@v10.3.3
       - name: Build Linux application and package
         run: |
           node scripts/check-version.mjs
