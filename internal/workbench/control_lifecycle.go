@@ -56,12 +56,14 @@ func (s *Server) handoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	busy := s.job.Running || controllerHasVM(s.profile)
-	for _, terminal := range s.terminals {
-		terminal.mu.Lock()
-		busy = busy || !terminal.closed
-		terminal.mu.Unlock()
+	if s.closing {
+		s.mu.Unlock()
+		s.op.Unlock()
+		http.Error(w, "后台正在更新，请重新打开 Cage。", http.StatusServiceUnavailable)
+		return
 	}
+	busy := s.jobs.snapshot().Running || controllerHasVM(s.profile)
+	busy = busy || s.terminals.hasLive()
 	if busy || s.shutdown == nil {
 		s.mu.Unlock()
 		s.op.Unlock()
@@ -78,10 +80,16 @@ func (s *Server) handoff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "代理尚未停止，未继续后台更新。", http.StatusConflict)
 		return
 	}
-	jsonReply(w, map[string]bool{"stopping": true})
-	// Keep the lifecycle lock until the listener and current HTTP handlers close.
-	// No new job or terminal may start after the idle decision.
-	go func() { s.shutdown(); s.op.Unlock() }()
+	// A fixed length keeps the complete acknowledgement readable even if
+	// cancellation prevents net/http from writing a final chunk afterwards.
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Content-Length", "18")
+	_, _ = w.Write([]byte("{\"stopping\":true}\n"))
+	// Publish the acknowledgement before cancelling this request. Admission is
+	// already sealed; shutdown must not wait for requests while holding op.
+	_ = http.NewResponseController(w).Flush()
+	s.op.Unlock()
+	go s.shutdown()
 }
 
 func controllerHasVM(profile string) bool {

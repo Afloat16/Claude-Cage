@@ -3,11 +3,13 @@ package workbench
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
+	"time"
 
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -87,11 +89,14 @@ func (s *Server) browserStateForHost(body []byte) ([]byte, error) {
 // The guest emits one compact JSON snapshot per data line, plus heartbeat
 // comments. Resolve grants for each snapshot so an already-open stream also
 // recognizes projects added after it connected.
-func (s *Server) writeBrowserEvents(w http.ResponseWriter, body io.Reader) error {
+func (s *Server) writeBrowserEvents(ctx context.Context, w http.ResponseWriter, body io.Reader) error {
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 16<<10), (1<<20)+16)
-	flusher := w.(http.Flusher)
+	controller := http.NewResponseController(w)
 	for scanner.Scan() {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		line := scanner.Bytes()
 		if bytes.HasPrefix(line, []byte("data: ")) {
 			mapped, err := s.browserStateForHost(line[len("data: "):])
@@ -100,11 +105,20 @@ func (s *Server) writeBrowserEvents(w http.ResponseWriter, body io.Reader) error
 			}
 			line = append([]byte("data: "), mapped...)
 		}
+		if len(line) > browserResponseLimit+len("data: ") {
+			return errors.New("浏览器事件超出大小限制")
+		}
+		_ = controller.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if _, err := w.Write(append(line, '\n')); err != nil {
 			return err
 		}
 		if len(line) == 0 {
-			flusher.Flush()
+			if err := controller.Flush(); err != nil {
+				return err
+			}
 		}
 	}
 	return scanner.Err()

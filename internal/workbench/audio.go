@@ -57,7 +57,8 @@ func (s *Server) audio(w http.ResponseWriter, r *http.Request) {
 	s.streamAudio(w, r.WithContext(ctx), pipe)
 }
 
-func (s *Server) streamAudio(w http.ResponseWriter, r *http.Request, source io.Reader) {
+func (s *Server) streamAudio(w http.ResponseWriter, r *http.Request, source io.ReadCloser) {
+	defer source.Close()
 	ws, err := s.upgrade(w, r)
 	if err != nil {
 		return
@@ -70,13 +71,14 @@ func (s *Server) streamAudio(w http.ResponseWriter, r *http.Request, source io.R
 	}
 	// Reading is necessary to observe the client disconnect. The client sends
 	// no audio or commands; any data message closes this output-only stream.
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		defer ws.Close()
 		_ = sendAudioPCM(ws, source)
 	}()
+	defer func() { _ = source.Close(); _ = ws.Close(); <-done }()
 	_, _, _ = ws.ReadMessage()
-	// source belongs to the request's SSH process; the caller cancels it when
-	// this handler returns, releasing a blocked read after a disconnect.
 }
 
 func sendAudioPCM(ws *websocket.Conn, source io.Reader) error {

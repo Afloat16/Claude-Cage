@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -37,12 +38,12 @@ func TestBrowserEditorWorkspaceRESTUsesAuthorizedWindowsProjects(t *testing.T) {
 		`{"id":"second","kind":"editor","workspace":"/d/跨盘 项目/two","url":"http://127.0.0.1:18080/?folder=%2Fd%2F跨盘%20项目%2Ftwo"},` +
 		`{"id":"web","kind":"web","workspace":"/c/Users/甲 用户/项目 一","url":"https://example.test/"},` +
 		`{"id":"unshared","kind":"editor","workspace":"/e/private","url":"http://127.0.0.1:18080/?folder=%2Fe%2Fprivate"}]}`
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		if r.Method != "GET" || r.URL.Path != "/tabs" || r.Header.Get("Authorization") != "Bearer private-test-token" {
 			t.Fatalf("unexpected guest snapshot request: %s %s", r.Method, r.URL.Path)
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(snapshot))}, nil
-	})}
+	}))
 	w := request(s, "GET", "/api/browser/tabs", "", "", true)
 	if w.Code != http.StatusOK {
 		t.Fatalf("snapshot: %d %s", w.Code, w.Body.String())
@@ -64,7 +65,7 @@ func TestBrowserEditorWorkspaceRESTUsesAuthorizedWindowsProjects(t *testing.T) {
 		t.Fatal("an unshared editor path became a host project grant")
 	}
 	stream := httptest.NewRecorder()
-	if err := s.writeBrowserEvents(stream, strings.NewReader(": heartbeat\n\ndata: "+snapshot+"\n\n")); err != nil {
+	if err := s.writeBrowserEvents(context.Background(), stream, strings.NewReader(": heartbeat\n\ndata: "+snapshot+"\n\n")); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(stream.Body.String(), ": heartbeat\n\n") {
@@ -106,7 +107,7 @@ func TestBrowserEditorWorkspaceSSESeesProjectsAddedAfterConnection(t *testing.T)
 		return strings.NewReader(frame)
 	}}
 	w := httptest.NewRecorder()
-	if err := s.writeBrowserEvents(w, reader); err != nil {
+	if err := s.writeBrowserEvents(context.Background(), w, reader); err != nil {
 		t.Fatal(err)
 	}
 	var workspaces []string

@@ -459,7 +459,7 @@ func (s *Server) refreshProxySubscriptions() {
 	for _, src := range p.Sources {
 		if src.URL != "" && src.Interval > 0 && time.Since(src.Updated) >= time.Duration(src.Interval)*time.Hour && time.Since(src.Attempted) > 15*time.Minute {
 			// Automatic refresh never opts into a host-network fallback.
-			s.launch(&discardResponse{}, "proxy-update", func() error { return s.changeProxy("refresh", proxyInput{ID: src.ID}, nil) })
+			_, _ = s.submitJob("proxy-update", func() error { return s.changeProxy("refresh", proxyInput{ID: src.ID}, nil) })
 			return
 		}
 	}
@@ -478,7 +478,7 @@ func (s *Server) checkProxyHealth() {
 		return
 	}
 	p, err := managedproxy.Load(s.profile)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifetimeContext(), 2*time.Second)
 	defer cancel()
 	if err == nil && cfg.RequireManagedProxy(s.profile) == nil && managedproxy.Running(ctx, s.profile, p) {
 		return
@@ -488,15 +488,3 @@ func (s *Server) checkProxyHealth() {
 	s.networkError = "内置代理未就绪；外网保持关闭"
 	s.mu.Unlock()
 }
-
-// Keep automatic job responses local instead of creating a control client.
-type discardResponse struct{ header http.Header }
-
-func (w *discardResponse) Header() http.Header {
-	if w.header == nil {
-		w.header = http.Header{}
-	}
-	return w.header
-}
-func (*discardResponse) Write(b []byte) (int, error) { return len(b), nil }
-func (*discardResponse) WriteHeader(int)             {}

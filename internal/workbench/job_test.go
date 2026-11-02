@@ -21,7 +21,7 @@ func TestStopPreemptsJobWithoutLosingStopResult(t *testing.T) {
 		<-ctx.Done()
 		close(cancelled)
 		s.setMessage("stale result")
-		_, _ = jobOutput{s}.Write([]byte("stale log"))
+		_, _ = s.jobs.execution().Write([]byte("stale log"))
 		return ctx.Err()
 	})
 	select {
@@ -48,8 +48,8 @@ func TestStopPreemptsJobWithoutLosingStopResult(t *testing.T) {
 	defer s.op.Unlock()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.job.Kind != "stop" || s.job.Running || s.job.Error != "" || s.job.Log != "" {
-		t.Fatalf("stale job overwrote stop: %+v", s.job)
+	if s.jobs.snapshot().Kind != "stop" || s.jobs.snapshot().Running || s.jobs.snapshot().Error != "" || s.jobs.snapshot().Log != "" {
+		t.Fatalf("stale job overwrote stop: %+v", s.jobs.snapshot())
 	}
 }
 
@@ -77,7 +77,7 @@ func TestPauseBypassesBusyQueueAndRevokesCheck(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s.job = Job{Kind: "safety", Running: true}
+	s.setJobForTest(Job{Kind: "safety", Running: true})
 	s.checkCancel = cancel
 	w := request(s, "POST", "/api/safety/close", s.origin, "{}", true)
 	if w.Code != 200 {

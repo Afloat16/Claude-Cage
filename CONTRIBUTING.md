@@ -40,6 +40,8 @@ bash scripts/build-app.sh --install
 
 修改前阅读对应的[工作台设计](docs/design/workbench.md)、[网络检查设计](docs/design/network-checks.md)或[内置代理设计](docs/design/managed-proxy.md)。调整接口、数据归属或安全边界时，同时更新设计与用户说明。
 
+修改后端任务、终端、浏览器或连接回收时，从[控制服务职责](docs/design/control-service.md)定位入口、资源拥有者和三平台适配；传输层与业务规则分别维护。
+
 ## 自动检查与发布
 
 日常推送会运行三平台检查并生成测试包，版本号保持不变。只有用户明确要求发版时，才运行独立的发布入口；配置和失败恢复见 [CI/CD 指南](docs/ci-cd.md)。

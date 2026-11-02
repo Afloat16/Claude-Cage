@@ -1,308 +1,101 @@
 package workbench
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
-	"io"
-	"net"
+	"errors"
 	"net/http"
-	"os/exec"
-	"sync"
 	"time"
 
-	"al.essio.dev/pkg/shellescape"
 	"github.com/gorilla/websocket"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
-type terminalPTY interface {
-	io.ReadWriteCloser
-	Resize(cols, rows uint16) error
-	Wait() error
-	Kill() error
-}
-
-type terminalSession struct {
-	mu        sync.Mutex
-	id, title string
-	workspace string
-	cmd       *exec.Cmd
-	file      terminalPTY
-	history   []byte
-	closed    bool
-	clients   map[chan []byte]bool
-}
-
-func (t *terminalSession) summary() map[string]any {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	return map[string]any{"id": t.id, "title": t.title, "closed": t.closed, "workspace": t.workspace}
-}
-func (t *terminalSession) close() {
-	t.mu.Lock()
-	if !t.closed {
-		t.closed = true
-		_ = t.file.Kill()
-		_ = t.file.Close()
-	}
-	t.mu.Unlock()
-}
-func (t *terminalSession) read() {
-	b := make([]byte, 16<<10)
-	for {
-		n, e := t.file.Read(b)
-		if n > 0 {
-			chunk := append([]byte(nil), b[:n]...)
-			t.mu.Lock()
-			t.history = append(t.history, chunk...)
-			if len(t.history) > 512<<10 {
-				t.history = t.history[len(t.history)-(512<<10):]
-			}
-			for ch := range t.clients {
-				select {
-				case ch <- chunk:
-				default:
-					close(ch)
-					delete(t.clients, ch)
-				}
-			}
-			t.mu.Unlock()
-		}
-		if e != nil {
-			break
-		}
-	}
-	_ = t.file.Wait()
-	t.mu.Lock()
-	t.closed = true
-	for ch := range t.clients {
-		close(ch)
-		delete(t.clients, ch)
-	}
-	t.mu.Unlock()
-	_ = t.file.Close()
-}
 func (s *Server) listTerminals(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := []map[string]any{}
-	for _, t := range s.terminals {
-		out = append(out, t.summary())
-	}
-	jsonReply(w, out)
+	jsonReply(w, s.terminals.snapshot())
 }
+
 func (s *Server) newTerminal(w http.ResponseWriter, r *http.Request) {
-	if !s.op.TryLock() {
-		http.Error(w, "环境正在执行其他操作", 409)
-		return
-	}
-	defer s.op.Unlock()
-	s.mu.Lock()
-	ready, busy, count := vmAlive(s.profile, s.environmentDir()), s.job.Running, len(s.terminals)
-	s.mu.Unlock()
-	if !ready || busy {
-		http.Error(w, "环境尚未就绪或正在重启", 409)
-		return
-	}
-	if count >= 12 {
-		http.Error(w, "最多保留 12 个终端，请先关闭不用的会话", 409)
-		return
-	}
-	var input struct {
-		Workspace string `json:"workspace"`
-		Kind      string `json:"kind"`
-	}
+	var input terminalRequest
 	if !readJSON(w, r, &input) {
 		return
 	}
-	if input.Kind != "" && input.Kind != "shell" && input.Kind != "claude" {
-		http.Error(w, "终端类型无效", http.StatusBadRequest)
-		return
-	}
-	workspace, err := s.projectWorkspace(input.Workspace)
-	if err != nil {
+	session, err := s.createTerminal(input)
+	switch {
+	case errors.Is(err, errTerminalsClosed):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	case errors.Is(err, errTerminalBusy), errors.Is(err, errTerminalNotReady), errors.Is(err, errTerminalLimit):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, errTerminalStart):
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	case err != nil:
 		requestError(w, err)
-		return
+	default:
+		jsonReply(w, session.summary())
 	}
-	if err := s.ensureProjectShare(workspace); err != nil {
-		requestError(w, err)
-		return
-	}
-	name := vmname.Name(s.environmentDir())
-	s.mu.Lock()
-	command := claudeTerminalCommand(s.preferences)
-	s.mu.Unlock()
-	script := terminalScript(guestPath(workspace), input.Kind, command)
-	cmd := s.sshCommand(context.Background(), "-tt", "lima-"+name, "--", script)
-	file, err := startTerminal(cmd, 100, 30)
-	if err != nil {
-		http.Error(w, "无法创建终端连接", 500)
-		return
-	}
-	s.mu.Lock()
-	s.terminalSequence++
-	number := s.terminalSequence
-	s.mu.Unlock()
-	t := &terminalSession{workspace: workspace, id: randomToken()[:16], title: fmt.Sprintf("终端 %d", number), cmd: cmd, file: file, clients: map[chan []byte]bool{}}
-	if input.Kind == "claude" {
-		t.title = fmt.Sprintf("Claude %d", number)
-	}
-	s.mu.Lock()
-	s.terminals[t.id] = t
-	s.mu.Unlock()
-	go t.read()
-	jsonReply(w, t.summary())
 }
 
-// The saved command is interpreted only by the guest's interactive shell.
-// Reconnecting a viewer never executes it again; exiting Claude leaves a shell.
-func terminalScript(workspace, kind, command string) string {
-	prefix := "cd " + shellescape.Quote(workspace) + " && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 "
-	if kind != "claude" {
-		return prefix + "bash -l"
-	}
-	return prefix + "CAGE_TERMINAL_COMMAND=" + shellescape.Quote(command) + " bash -lic " + shellescape.Quote("eval \"$CAGE_TERMINAL_COMMAND\"; unset CAGE_TERMINAL_COMMAND; exec bash -il")
-}
 func (s *Server) closeTerminal(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	t := s.terminals[r.PathValue("id")]
-	delete(s.terminals, r.PathValue("id"))
-	s.mu.Unlock()
-	if t != nil {
-		t.close()
-	}
+	s.terminals.remove(r.PathValue("id"))
 	jsonReply(w, map[string]bool{"ok": true})
 }
-func (s *Server) upgrade(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
-	up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return r.Header.Get("Origin") == s.origin }, ReadBufferSize: 16384, WriteBufferSize: 16384}
-	ws, err := up.Upgrade(w, r, nil)
-	if err == nil {
-		context.AfterFunc(r.Context(), func() { _ = ws.Close() })
-	}
-	return ws, err
-}
+
 func (s *Server) terminalStream(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	t := s.terminals[r.PathValue("id")]
-	s.mu.Unlock()
-	if t == nil {
+	session := s.terminals.get(r.PathValue("id"))
+	if session == nil {
 		http.NotFound(w, r)
 		return
 	}
-	ws, e := s.upgrade(w, r)
-	if e != nil {
+	ws, err := s.upgrade(w, r)
+	if err != nil {
 		return
 	}
 	defer ws.Close()
 	ws.SetReadLimit(1 << 20)
-	ch := make(chan []byte, 64)
-	t.mu.Lock()
-	history := append([]byte(nil), t.history...)
-	closed := t.closed
-	if !closed {
-		t.clients[ch] = true
-	}
-	t.mu.Unlock()
-	defer func() { t.mu.Lock(); delete(t.clients, ch); t.mu.Unlock() }()
-	if len(history) > 0 {
-		if e = ws.WriteMessage(websocket.BinaryMessage, history); e != nil {
+	subscription := session.subscribe()
+	defer subscription.Close()
+	if len(subscription.History) > 0 {
+		_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
+		if err := ws.WriteMessage(websocket.BinaryMessage, subscription.History); err != nil {
 			return
 		}
-	}
-	if closed {
-		return
 	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		for chunk := range ch {
+		defer ws.Close()
+		for chunk := range subscription.Output {
 			_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
 			if ws.WriteMessage(websocket.BinaryMessage, chunk) != nil {
-				break
+				return
 			}
 		}
+	}()
+	defer func() {
+		subscription.Close()
 		_ = ws.Close()
+		<-done
 	}()
 	for {
-		_, data, e := ws.ReadMessage()
-		if e != nil {
-			break
+		_, data, err := ws.ReadMessage()
+		if err != nil {
+			return
 		}
-		var v struct {
+		var input struct {
 			Type string `json:"type"`
 			Data string `json:"data"`
 			Cols uint16 `json:"cols"`
 			Rows uint16 `json:"rows"`
 		}
-		if json.Unmarshal(data, &v) != nil {
+		if json.Unmarshal(data, &input) != nil {
 			continue
 		}
-		switch v.Type {
+		switch input.Type {
 		case "input":
-			_, _ = io.WriteString(t.file, v.Data)
+			if err := session.enqueueInput(r.Context(), input.Data); err != nil {
+				return
+			}
 		case "resize":
-			if v.Cols > 1 && v.Cols < 600 && v.Rows > 1 && v.Rows < 400 {
-				_ = t.file.Resize(v.Cols, v.Rows)
-			}
-		}
-	}
-	t.mu.Lock()
-	if t.clients[ch] {
-		delete(t.clients, ch)
-		close(ch)
-	}
-	t.mu.Unlock()
-	<-done
-}
-func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	ready := s.ready
-	s.mu.Unlock()
-	if !ready {
-		http.Error(w, "环境尚未就绪", 409)
-		return
-	}
-	remote, e := net.DialTimeout("tcp", "127.0.0.1:15900", 3*time.Second)
-	if e != nil {
-		http.Error(w, "画面连接暂时不可用", 502)
-		return
-	}
-	defer remote.Close()
-	s.streamVNC(w, r, remote, remote)
-}
-
-func (s *Server) streamVNC(w http.ResponseWriter, r *http.Request, reader io.Reader, writer io.Writer) {
-	ws, e := s.upgrade(w, r)
-	if e != nil {
-		return
-	}
-	defer ws.Close()
-	ws.SetReadLimit(4 << 20)
-	go func() {
-		defer ws.Close()
-		b := make([]byte, 64<<10)
-		for {
-			n, e := reader.Read(b)
-			if n > 0 {
-				_ = ws.SetWriteDeadline(time.Now().Add(10 * time.Second))
-				if ws.WriteMessage(websocket.BinaryMessage, b[:n]) != nil {
-					return
-				}
-			}
-			if e != nil {
-				return
-			}
-		}
-	}()
-	for {
-		kind, b, e := ws.ReadMessage()
-		if e != nil {
-			return
-		}
-		if kind == websocket.BinaryMessage {
-			if _, e = writer.Write(b); e != nil {
-				return
+			if input.Cols > 1 && input.Cols < 600 && input.Rows > 1 && input.Rows < 400 {
+				_ = session.file.Resize(input.Cols, input.Rows)
 			}
 		}
 	}

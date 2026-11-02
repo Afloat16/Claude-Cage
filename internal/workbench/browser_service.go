@@ -1,0 +1,108 @@
+package workbench
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+)
+
+var (
+	errBrowserNotReady = errors.New("环境尚未就绪")
+	errBrowserBusy     = errors.New("环境正在执行其他操作")
+)
+
+type browserInputError struct{ error }
+
+type browserInput struct {
+	ID        string `json:"id"`
+	URL       string `json:"url"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Workspace string `json:"workspace,omitempty"`
+	Text      string `json:"text,omitempty"`
+}
+
+func (s *Server) browserClient() *browserClient {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.browserControl == nil {
+		s.browserControl = newBrowserClient(s.lifetimeContextLocked())
+	}
+	return s.browserControl
+}
+
+func (s *Server) guestAPI(ctx context.Context, token, method, path string, body []byte) ([]byte, error) {
+	return s.browserClient().request(ctx, token, method, path, body)
+}
+
+func (s *Server) setBrowserHome(ctx context.Context, token, home string) error {
+	body, _ := json.Marshal(map[string]string{"url": home})
+	_, err := s.guestAPI(ctx, token, http.MethodPost, "/homepage", body)
+	return err
+}
+
+func (s *Server) browserAction(ctx context.Context, action string, input *browserInput) ([]byte, error) {
+	s.mu.Lock()
+	ready, token := s.ready, s.credentials.Token
+	s.mu.Unlock()
+	if !ready {
+		return nil, errBrowserNotReady
+	}
+	method := http.MethodGet
+	var body []byte
+	if input != nil {
+		method = http.MethodPost
+		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {
+			return nil, browserInputError{errors.New("输入文字或目标标签无效")}
+		}
+		if action == "new" && input.URL == "" {
+			s.mu.Lock()
+			input.URL = browserHomeURL(s.preferences)
+			s.mu.Unlock()
+		}
+		if action == "editor" || action == "editor-restart" {
+			if !s.op.TryLock() {
+				return nil, errBrowserBusy
+			}
+			defer s.op.Unlock()
+			s.mu.Lock()
+			closing := s.closing
+			s.mu.Unlock()
+			if closing {
+				return nil, errJobsClosed
+			}
+			workspace, err := s.projectWorkspace(input.Workspace)
+			if err != nil {
+				return nil, browserInputError{err}
+			}
+			if err := s.ensureProjectShare(workspace); err != nil {
+				return nil, browserInputError{err}
+			}
+			input.Workspace = guestPath(workspace)
+		}
+		body, _ = json.Marshal(input)
+	}
+	data, err := s.guestAPI(ctx, token, method, "/"+action, body)
+	if err != nil {
+		return nil, err
+	}
+	if action == "tabs" {
+		data, err = s.browserStateForHost(data)
+	}
+	if len(data) > browserResponseLimit {
+		return nil, errors.New("浏览器响应超出大小限制")
+	}
+	return data, err
+}
+
+func (s *Server) subscribeBrowser(ctx context.Context) (io.ReadCloser, error) {
+	s.mu.Lock()
+	ready, token := s.ready, s.credentials.Token
+	s.mu.Unlock()
+	if !ready {
+		return nil, errBrowserNotReady
+	}
+	return s.browserClient().events(ctx, token)
+}

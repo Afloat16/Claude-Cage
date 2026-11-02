@@ -157,7 +157,7 @@ func TestAccountLockBlocksRoutesAndCancelsAccess(t *testing.T) {
 func TestLockDisconnectsTerminalViewerWithoutEndingSession(t *testing.T) {
 	s := testServer(t)
 	term := &terminalSession{id: "keep", title: "ongoing work", history: []byte("still running"), clients: map[chan []byte]bool{}}
-	s.terminals[term.id] = term
+	s.terminals.sessions = map[string]*terminalSession{term.id: term}
 	server := httptest.NewServer(s.handler())
 	defer server.Close()
 	s.origin = server.URL

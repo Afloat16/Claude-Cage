@@ -46,7 +46,7 @@ func TestImageInputAuthenticationAndDestination(t *testing.T) {
 	s.ready = true
 	s.credentials.Token = "guest-test-token"
 	calls := 0
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		calls++
 		if r.URL.Path != "/paste-image" || r.Header.Get("Authorization") != "Bearer guest-test-token" {
 			t.Fatal("wrong destination or credentials")
@@ -56,7 +56,7 @@ func TestImageInputAuthenticationAndDestination(t *testing.T) {
 			t.Fatal("image or target changed", err)
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"ok":true}`))}, nil
-	})}
+	}))
 	body := `{"target":"browser","id":"tab-1","png":"` + testPNG(t) + `"}`
 	path := "/api/input/image"
 	if w := request(s, "POST", path, s.origin, body, false); w.Code != 401 {

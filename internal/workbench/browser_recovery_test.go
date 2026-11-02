@@ -13,7 +13,7 @@ func TestDownloadRetryUsesAuthenticatedFixedGuestAction(t *testing.T) {
 	s.ready = true
 	s.credentials.Token = "guest-test-token"
 	called := 0
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		called++
 		if r.URL.String() != "http://127.0.0.1:18500/download-retry" || r.Header.Get("Authorization") != "Bearer guest-test-token" {
 			t.Fatal("retry did not use the fixed authenticated guest endpoint")
@@ -23,7 +23,7 @@ func TestDownloadRetryUsesAuthenticatedFixedGuestAction(t *testing.T) {
 			t.Fatal("retry lost the selected download", err)
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(`{"ok":true}`))}, nil
-	})}
+	}))
 	for _, action := range []string{"download-retry", "editor-restart"} {
 		if w := request(s, "POST", "/api/browser/"+action, s.origin, `{}`, false); w.Code != 401 {
 			t.Fatal("recovery accepted without session", action, w.Code)

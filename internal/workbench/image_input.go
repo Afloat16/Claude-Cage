@@ -49,7 +49,7 @@ func (s *Server) imageInput(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Lock()
-	ready, token, terminal := s.ready, s.credentials.Token, s.terminals[input.ID]
+	ready, token, terminal := s.ready, s.credentials.Token, s.terminals.get(input.ID)
 	s.mu.Unlock()
 	if !ready {
 		http.Error(w, "环境尚未就绪", 409)

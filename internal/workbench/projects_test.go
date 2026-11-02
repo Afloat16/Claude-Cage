@@ -30,7 +30,7 @@ func TestProjectSelectionKeepsOneVMAndExistingSessionsOffline(t *testing.T) {
 	}
 	originalVM := vmname.Name(s.environmentDir())
 	terminal := &terminalSession{id: "keep", title: "existing terminal"}
-	s.terminals[terminal.id] = terminal
+	s.terminals.sessions = map[string]*terminalSession{terminal.id: terminal}
 	a, _ := filepath.EvalSymlinks(t.TempDir())
 	b, _ := filepath.EvalSymlinks(t.TempDir())
 	s.projectShares = map[string]*projectShare{a: {done: make(chan struct{})}, b: {done: make(chan struct{})}}
@@ -44,7 +44,7 @@ func TestProjectSelectionKeepsOneVMAndExistingSessionsOffline(t *testing.T) {
 		if !s.ready || !s.vmRunning() || !s.networkPaused || vmname.Name(s.environmentDir()) != originalVM {
 			t.Fatal("project selection changed environment lifecycle or networking")
 		}
-		if s.terminals[terminal.id] != terminal || terminal.closed {
+		if s.terminals.get(terminal.id) != terminal || terminal.closed {
 			t.Fatal("project selection interrupted the old terminal")
 		}
 	}
@@ -231,13 +231,13 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 	if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &terminal) != nil || terminal.Workspace != a {
 		t.Fatalf("terminal did not use the explicit directory: %s", w.Body.String())
 	}
-	session := s.terminals[terminal.ID]
+	session := s.terminals.get(terminal.ID)
 	defer session.close()
 	if script := session.cmd.Args[len(session.cmd.Args)-1]; !strings.HasPrefix(script, "cd "+shellescape.Quote(guestPath(a))+" &&") {
 		t.Fatalf("terminal command opened a different directory: %s", script)
 	}
 	var editorWorkspace string
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		var input struct {
 			Workspace string `json:"workspace"`
 		}
@@ -246,7 +246,7 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 		}
 		editorWorkspace = input.Workspace
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"editor"}`)), Header: http.Header{}}, nil
-	})}
+	}))
 	for _, action := range []string{"editor", "editor-restart"} {
 		w = request(s, "POST", "/api/browser/"+action, s.origin, string(body), true)
 		if w.Code != 200 || editorWorkspace != guestPath(a) || s.workspace() != b {
@@ -262,7 +262,7 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 			}
 		}
 	}
-	if len(s.terminals) != 1 || s.workspace() != b {
+	if len(s.terminals.snapshot()) != 1 || s.workspace() != b {
 		t.Fatal("rejected requests changed existing sessions")
 	}
 }

@@ -7,10 +7,50 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestAlreadyAdmittedHandoffsShutDownOnlyOnce(t *testing.T) {
+	s := testServer(t)
+	var count atomic.Int32
+	stopped := make(chan struct{}, 16)
+	s.shutdown = func() { count.Add(1); stopped <- struct{}{} }
+	var callers sync.WaitGroup
+	// These requests have already passed the handler's activity admission. A
+	// later request must recheck closing once it acquires the operation lock.
+	for range 16 {
+		callers.Add(1)
+		go func() {
+			defer callers.Done()
+			r := httptest.NewRequest("POST", s.origin+"/api/handoff", strings.NewReader(`{"token":"`+s.token+`"}`))
+			r.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			s.handoff(w, r)
+			if w.Code != 200 && w.Code != 409 && w.Code != 503 {
+				t.Errorf("unexpected handoff response: %d", w.Code)
+			}
+		}()
+	}
+	callers.Wait()
+	select {
+	case <-stopped:
+	case <-time.After(time.Second):
+		t.Fatal("handoff did not shut down")
+	}
+	// A deterministic late admitted request also covers the scheduling case
+	// where all simultaneous callers above happened to observe a locked op.
+	r := httptest.NewRequest("POST", s.origin+"/api/handoff", strings.NewReader(`{"token":"`+s.token+`"}`))
+	r.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	s.handoff(w, r)
+	if w.Code != http.StatusServiceUnavailable || count.Load() != 1 {
+		t.Fatalf("repeated handoff restarted shutdown: status=%d calls=%d", w.Code, count.Load())
+	}
+}
 
 func TestHandoffRequiresLauncherSecretAndIdleEnvironment(t *testing.T) {
 	for _, busy := range []string{"none", "job", "terminal", "vm", "operation"} {
@@ -20,9 +60,9 @@ func TestHandoffRequiresLauncherSecretAndIdleEnvironment(t *testing.T) {
 			s.shutdown = func() { stopped.Store(true) }
 			switch busy {
 			case "job":
-				s.job = Job{ID: "active", Running: true}
+				s.setJobForTest(Job{ID: "active", Running: true})
 			case "terminal":
-				s.terminals["live"] = &terminalSession{}
+				s.terminals.sessions = map[string]*terminalSession{"live": {}}
 			case "vm":
 				path := filepath.Join(s.profile, "state", "lima", "base-building", "cage-running.json")
 				if err := writePrivate(path, map[string]int{"pid": os.Getpid()}); err != nil {

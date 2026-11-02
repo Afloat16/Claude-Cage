@@ -24,7 +24,7 @@ func TestBrowserUploadStreamsOnlyToLiveChooser(t *testing.T) {
 	s.credentials.Token = "guest-token"
 	data := bytes.Repeat([]byte{0, 1, 255, 0, 127}, 1<<18)
 	posts := 0
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		if r.Header.Get("Authorization") != "Bearer guest-token" {
 			t.Fatal("missing guest authentication")
 		}
@@ -41,7 +41,7 @@ func TestBrowserUploadStreamsOnlyToLiveChooser(t *testing.T) {
 			body = `{"ok":true}`
 		}
 		return &http.Response{StatusCode: 200, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
-	})}
+	}))
 	call := func(origin string, auth bool, name string, size int64) int {
 		r := httptest.NewRequest("POST", s.origin+"/api/browser/files/uploads/"+testBrowserFileID+"?name="+name, bytes.NewReader(data))
 		r.Host = "localhost:17777"

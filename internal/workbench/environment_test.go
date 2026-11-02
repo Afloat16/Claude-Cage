@@ -83,7 +83,7 @@ func TestBrowserHomeSavesWithoutRestartAndRoutesNewPages(t *testing.T) {
 	s.ready = true
 	s.credentials.Token = "private-guest-token"
 	var paths []string
-	s.guestClient = &http.Client{Transport: browserTransport(func(r *http.Request) (*http.Response, error) {
+	s.browserControl = browserClientForTest(t, s, browserTransport(func(r *http.Request) (*http.Response, error) {
 		paths = append(paths, r.URL.Path)
 		var input struct {
 			URL string `json:"url"`
@@ -95,7 +95,7 @@ func TestBrowserHomeSavesWithoutRestartAndRoutesNewPages(t *testing.T) {
 			t.Fatalf("incorrect home sent: %q", input.URL)
 		}
 		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(`{"id":"page"}`)), Header: http.Header{}}, nil
-	})}
+	}))
 	p := s.preferences
 	p.BrowserHomeURL = "https://example.com/start"
 	if err := s.apply(savedProfile{cfg, p}, true); err != nil {

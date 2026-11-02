@@ -21,6 +21,7 @@
 |---|---|
 | 从源码构建、修改和验证代码 | [参与开发](../CONTRIBUTING.md) |
 | 理解工作台、浏览器与后台的职责 | [工作台设计](design/workbench.md) |
+| 定位作业、终端、浏览器连接与退出流程的代码 | [控制服务职责](design/control-service.md) |
 | 理解网络检查、暂停与恢复 | [网络检查设计](design/network-checks.md) |
 | 理解节点配置、代理核心与凭据归属 | [内置代理设计](design/managed-proxy.md) |
 | 构建签名、公证的 macOS 安装包 | [发布 macOS 安装包](releasing.md) |

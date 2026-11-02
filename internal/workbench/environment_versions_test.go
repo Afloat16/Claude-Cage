@@ -55,7 +55,7 @@ func grantedToolUpdateServer(t *testing.T) (*Server, *cage.EgressGate) {
 	s.ready = true
 	required := cage.RequiredGuestManifest()
 	s.guestManifest = &required
-	s.job = Job{ID: "tools", Kind: "environment-tools", Running: true}
+	s.setJobForTest(Job{ID: "tools", Kind: "environment-tools", Running: true})
 	s.publishGate(gate.Status())
 	return s, gate
 }
@@ -66,7 +66,7 @@ func TestToolUpdateLeaseHonorsPauseStopAndConfigurationAtRenewal(t *testing.T) {
 			for _, condition := range []string{"allowed", "paused", "stop", "configuration-changed"} {
 				t.Run(condition, func(t *testing.T) {
 					s, gate := grantedToolUpdateServer(t)
-					s.job.Kind = jobKind
+					s.setJobForTest(Job{ID: "tools", Kind: jobKind, Running: true})
 					client, err := s.gateClient()
 					if err != nil {
 						t.Fatal(err)
@@ -78,7 +78,7 @@ func TestToolUpdateLeaseHonorsPauseStopAndConfigurationAtRenewal(t *testing.T) {
 							t.Fatal(err)
 						}
 					case "stop":
-						s.job = Job{ID: "stop", Kind: "stop", Running: true}
+						s.setJobForTest(Job{ID: "stop", Kind: "stop", Running: true})
 					case "configuration-changed":
 						cfg, err := loadConfig(s.configPath)
 						if err != nil {

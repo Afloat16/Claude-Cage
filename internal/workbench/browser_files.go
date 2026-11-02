@@ -12,7 +12,6 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"time"
 )
 
 const browserFileLimit int64 = 2 << 30
@@ -43,8 +42,7 @@ func (s *Server) browserUpload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境尚未就绪", 409)
 		return
 	}
-	// The snapshot also initializes the existing guest transport. Never accept a
-	// file without a live chooser owned by the remote browser.
+	// Never accept a file without a live chooser owned by the remote browser.
 	snapshot, err := s.guestAPI(r.Context(), token, "GET", "/tabs", nil)
 	var state struct {
 		Uploads []struct {
@@ -71,21 +69,7 @@ func (s *Server) browserUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) proxyBrowserFile(w http.ResponseWriter, r *http.Request, token, method, path string, body io.Reader) {
-	s.mu.Lock()
-	client := *s.guestClient
-	s.mu.Unlock()
-	client.Timeout = 30 * time.Minute
-	req, err := http.NewRequestWithContext(r.Context(), method, "http://127.0.0.1:18500"+path, body)
-	if err != nil {
-		http.Error(w, "文件传递请求无效", 400)
-		return
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		req.ContentLength = r.ContentLength
-		req.Header.Set("Content-Type", "application/octet-stream")
-	}
-	response, err := client.Do(req)
+	response, err := s.browserClient().file(r.Context(), token, method, path, body, r.ContentLength)
 	if err != nil {
 		http.Error(w, "文件传递中断，请重试", 502)
 		return

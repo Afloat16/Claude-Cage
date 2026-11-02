@@ -1,14 +1,11 @@
 package workbench
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"net"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -78,7 +75,7 @@ func (s *Server) attach() error {
 	if !s.vmRunning() {
 		return errors.New("环境尚未启动")
 	}
-	ctx, cancel := controlContext()
+	ctx, cancel := s.controlContext()
 	defer cancel()
 	b, err := s.guest(ctx, guestConnectionSnapshot)
 	if err != nil {
@@ -116,8 +113,10 @@ func (s *Server) attach() error {
 	s.restoreProjectShares()
 	return nil
 }
-func (s *Server) monitor() {
-	for {
+func (s *Server) monitor(ctx context.Context) {
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+	for ctx.Err() == nil {
 		if s.op.TryLock() {
 			if !s.busy() {
 				s.mu.Lock()
@@ -127,7 +126,7 @@ func (s *Server) monitor() {
 				if !ready {
 					_ = s.attach()
 				} else {
-					ctx, cancel := controlContext()
+					ctx, cancel := s.controlContext()
 					_, err := s.guestAPI(ctx, token, "GET", "/health", nil)
 					cancel()
 					if err != nil {
@@ -139,24 +138,14 @@ func (s *Server) monitor() {
 			}
 			s.op.Unlock()
 		}
-		time.Sleep(5 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
 }
 
-type jobOutput struct{ s *Server }
-
-func (w jobOutput) Write(b []byte) (int, error) {
-	w.s.mu.Lock()
-	defer w.s.mu.Unlock()
-	if w.s.activeJobID != "" && w.s.activeJobID != w.s.job.ID {
-		return len(b), nil
-	}
-	w.s.job.Log += string(b)
-	if len(w.s.job.Log) > 24000 {
-		w.s.job.Log = w.s.job.Log[len(w.s.job.Log)-24000:]
-	}
-	return len(b), nil
-}
 func (s *Server) runCage(args ...string) error {
 	ctx, cancel := context.WithTimeout(s.operationContext(), 30*time.Minute)
 	defer cancel()
@@ -167,12 +156,9 @@ func (s *Server) runCage(args ...string) error {
 		cmd.Dir = s.profile
 	}
 	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+s.configPath)
-	s.mu.Lock()
-	jobID := s.activeJobID
-	s.mu.Unlock()
-	cmd.Env = append(cmd.Env, cage.JobEnv+"="+jobID)
-	cmd.Stdout = jobOutput{s}
-	cmd.Stderr = jobOutput{s}
+	execution := s.jobs.execution()
+	cmd.Env = append(cmd.Env, cage.JobEnv+"="+execution.id)
+	cmd.Stdout, cmd.Stderr = execution, execution
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s 未完成，请查看操作详情并重试", args[0])
 	}
@@ -324,9 +310,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 }
 func (s *Server) stopEnvironment() (returned error) {
 	s.setMessage("正在停止 Cage 环境…")
-	s.mu.Lock()
-	explicitStop := s.job.Kind == "stop"
-	s.mu.Unlock()
+	explicitStop := s.jobs.snapshot().Kind == "stop"
 	defer func() {
 		if explicitStop && returned == nil {
 			returned = managedproxy.Stop(s.profile)
@@ -343,10 +327,6 @@ func (s *Server) stopEnvironment() (returned error) {
 		}
 	}
 	s.mu.Lock()
-	sessions := make([]*terminalSession, 0, len(s.terminals))
-	for _, t := range s.terminals {
-		sessions = append(sessions, t)
-	}
 	s.ready = false
 	s.credentials = guestCredentials{}
 	s.guestManifest = nil
@@ -354,9 +334,7 @@ func (s *Server) stopEnvironment() (returned error) {
 	s.guestUpdateError = ""
 	s.safety.Error = ""
 	s.mu.Unlock()
-	for _, t := range sessions {
-		t.close()
-	}
+	s.terminals.closeAll()
 	s.closeProjectShares()
 	if s.workspace() == "" {
 		return nil
@@ -379,8 +357,8 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	s.mu.Lock()
 	oldPrefs := s.preferences
 	resumeVersion := s.safety.pauseVersion
-	if s.activeJobID != "" {
-		resumeVersion = s.activePauseVersion
+	if execution := s.jobs.execution(); execution.id != "" {
+		resumeVersion = execution.pauseVersion
 	}
 	wasReady := vmAlive(s.profile, s.environmentDir())
 	s.mu.Unlock()
@@ -447,7 +425,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	token, ready := s.credentials.Token, s.ready
 	s.mu.Unlock()
 	if !changed && ready && browserHomeURL(oldPrefs) != browserHomeURL(v.Preferences) {
-		ctx, cancel := controlContext()
+		ctx, cancel := s.controlContext()
 		defer cancel()
 		if err = s.setBrowserHome(ctx, token, browserHomeURL(v.Preferences)); err != nil {
 			return fmt.Errorf("设置已保存，但浏览器暂时未能应用默认网站，请恢复连接后重试：%w", err)
@@ -461,128 +439,12 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	return nil
 }
 
-func (s *Server) setBrowserHome(ctx context.Context, token, home string) error {
-	body, _ := json.Marshal(map[string]string{"url": home})
-	_, err := s.guestAPI(ctx, token, "POST", "/homepage", body)
-	return err
-}
-func (s *Server) guestAPI(ctx context.Context, token, method, path string, body []byte) ([]byte, error) {
-	s.mu.Lock()
-	if s.guestClient == nil {
-		s.guestClient = &http.Client{Transport: &http.Transport{Proxy: nil, IdleConnTimeout: 30 * time.Second, MaxIdleConnsPerHost: 4, DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext}, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
-	}
-	client := s.guestClient
-	s.mu.Unlock()
-	if path == "/audit" || path == "/paste-image" {
-		auditClient := *client
-		auditClient.Timeout = 20 * time.Second
-		client = &auditClient
-	}
-	if path == "/editor-restart" {
-		recoveryClient := *client
-		recoveryClient.Timeout = 30 * time.Second
-		client = &recoveryClient
-	}
-	req, _ := http.NewRequestWithContext(ctx, method, "http://127.0.0.1:18500"+path, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	res, err := client.Do(req)
-	if err != nil {
-		return nil, errors.New("浏览器服务暂时无法连接")
-	}
-	defer res.Body.Close()
-	b, err := io.ReadAll(io.LimitReader(res.Body, 1<<20))
-	if err != nil {
-		return nil, errors.New("浏览器响应中断")
-	}
-	if res.StatusCode != 200 {
-		return nil, errors.New("浏览器操作失败，请刷新标签后重试")
-	}
-	return b, nil
-}
-func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
-	action := r.PathValue("action")
-	if r.Method == "GET" {
-		action = "tabs"
-	}
-	allowed := map[string]bool{"tabs": true, "new": true, "activate": true, "close": true, "navigate": true, "back": true, "forward": true, "reload": true, "editor": true, "editor-restart": true, "download-retry": true, "upload-finish": true, "upload-cancel": true, "resize": true, "insert-text": true}
-	if !allowed[action] {
-		http.NotFound(w, r)
-		return
-	}
-	s.mu.Lock()
-	ready, token := s.ready, s.credentials.Token
-	s.mu.Unlock()
-	if !ready {
-		http.Error(w, "环境尚未就绪", 409)
-		return
-	}
-	var body []byte
-	if r.Method != "GET" {
-		var input struct {
-			ID        string `json:"id"`
-			URL       string `json:"url"`
-			Width     int    `json:"width,omitempty"`
-			Height    int    `json:"height,omitempty"`
-			Workspace string `json:"workspace,omitempty"`
-			Text      string `json:"text,omitempty"`
-		}
-		if !readJSON(w, r, &input) {
-			return
-		}
-		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {
-			http.Error(w, "输入文字或目标标签无效", http.StatusBadRequest)
-			return
-		}
-		if action == "new" && input.URL == "" {
-			s.mu.Lock()
-			input.URL = browserHomeURL(s.preferences)
-			s.mu.Unlock()
-		}
-		if action == "editor" || action == "editor-restart" {
-			if !s.op.TryLock() {
-				http.Error(w, "环境正在执行其他操作", 409)
-				return
-			}
-			defer s.op.Unlock()
-			workspace, err := s.projectWorkspace(input.Workspace)
-			if err != nil {
-				requestError(w, err)
-				return
-			}
-			input.Workspace = workspace
-			if err := s.ensureProjectShare(input.Workspace); err != nil {
-				requestError(w, err)
-				return
-			}
-			input.Workspace = guestPath(workspace)
-		}
-		body, _ = json.Marshal(input)
-	}
-	b, err := s.guestAPI(r.Context(), token, r.Method, "/"+action, body)
-	if err != nil {
-		http.Error(w, err.Error(), 502)
-		return
-	}
-	if action == "tabs" {
-		b, err = s.browserStateForHost(b)
-		if err != nil {
-			http.Error(w, err.Error(), 502)
-			return
-		}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Write(b)
-}
-
 // Interface recovery uses the ordinary cancellable job queue. Location changes
 // remain governed by the saved exit policy and never replace its baseline.
-func (s *Server) monitorNetwork() {
+func (s *Server) monitorNetwork(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
-	for {
+	for ctx.Err() == nil {
 		if s.op.TryLock() {
 			s.monitorProxyInterface()
 			s.checkProxyHealth()
@@ -590,38 +452,12 @@ func (s *Server) monitorNetwork() {
 			s.refreshProxySubscriptions()
 			s.op.Unlock()
 		}
-		<-ticker.C
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 	}
-}
-
-func (s *Server) browserEvents(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	ready, token := s.ready, s.credentials.Token
-	s.mu.Unlock()
-	if !ready {
-		http.Error(w, "Browser unavailable", 409)
-		return
-	}
-	transport := &http.Transport{Proxy: nil, DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}
-	req, _ := http.NewRequestWithContext(r.Context(), "GET", "http://127.0.0.1:18500/events", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
-	response, err := client.Do(req)
-	if err != nil {
-		http.Error(w, "Browser unavailable", 502)
-		return
-	}
-	defer response.Body.Close()
-	if response.StatusCode != 200 {
-		http.Error(w, "Browser unavailable", 502)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Connection", "keep-alive")
-	flusher := w.(http.Flusher)
-	flusher.Flush()
-	_ = s.writeBrowserEvents(w, response.Body)
 }
 
 func vmAlive(profile, workspace string) bool {

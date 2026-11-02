@@ -32,7 +32,7 @@ type projectShare struct {
 	once      sync.Once
 }
 
-func (p *projectShare) close() {
+func (p *projectShare) stop() {
 	p.once.Do(func() {
 		if p.cmd != nil && p.cmd.Process != nil {
 			_ = p.cmd.Process.Kill()
@@ -43,9 +43,22 @@ func (p *projectShare) close() {
 	})
 }
 
+func (p *projectShare) close() {
+	p.stop()
+	if p.done != nil {
+		<-p.done
+	}
+}
+
 // Called under the lifecycle lock. Each SFTP server is rooted in exactly the
 // directory the user opened; switching projects keeps existing mounts alive.
 func (s *Server) ensureProjectShare(path string) (returned error) {
+	s.mu.Lock()
+	closing := s.closing
+	s.mu.Unlock()
+	if closing {
+		return errJobsClosed
+	}
 	defer func() {
 		if returned == nil {
 			s.clearProjectError(path)
@@ -91,13 +104,14 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 		return err
 	}
 	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o slave,allow_other,cache=no,nodev,nosuid"
-	cmd := s.sshCommand(context.Background(), "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
+	cmd := s.sshCommand(s.lifetimeContext(), "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
 	output, err := cmd.StdoutPipe()
 	if err != nil {
 		return err
 	}
 	input, err := cmd.StdinPipe()
 	if err != nil {
+		_ = output.Close()
 		return err
 	}
 	share := &projectShare{cmd: cmd, transport: projectTransport{output, input}, done: make(chan struct{})}
@@ -106,10 +120,10 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 		return err
 	}
 	go func() {
+		defer close(share.done)
 		_ = reversesshfs.ServeConfined(share.transport, path, false, mounts.BaseNames)
-		_ = share.transport.Close()
+		share.stop()
 		_ = cmd.Wait()
-		close(share.done)
 	}()
 	for {
 		if _, err = s.guest(ctx, "mountpoint -q "+quoted+" && test \"$(cat "+shellescape.Quote(guestPath(probe.Name()))+")\" = "+shellescape.Quote(challenge)); err == nil {
@@ -246,6 +260,9 @@ func (s *Server) closeProjectShares() {
 	shares := s.projectShares
 	s.projectShares = nil
 	s.mu.Unlock()
+	for _, share := range shares {
+		share.stop()
+	}
 	for _, share := range shares {
 		share.close()
 	}

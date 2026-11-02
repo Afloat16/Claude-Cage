@@ -108,7 +108,7 @@ CAGE_VERSIONS`)
 	}
 	tools["proxy"] = toolVersion{Current: proxy.Version, Required: requiredProxy}
 	s.mu.Lock()
-	busy := s.job.Running
+	busy := s.jobs.snapshot().Running
 	allowed := s.toolsNetworkAllowedLocked()
 	identity := s.identity
 	s.mu.Unlock()

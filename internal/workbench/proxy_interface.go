@@ -1,7 +1,6 @@
 package workbench
 
 import (
-	"context"
 	"path/filepath"
 
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
@@ -19,7 +18,7 @@ func (s *Server) monitorProxyInterface() {
 	if err != nil || cfg.RequireManagedProxy(s.profile) != nil {
 		return
 	}
-	name, err := physicalProxyInterface(context.Background())
+	name, err := physicalProxyInterface(s.lifetimeContext())
 	if err != nil {
 		_ = s.closeProxyGate(err.Error())
 		s.mu.Lock()
@@ -42,7 +41,7 @@ func (s *Server) monitorProxyInterface() {
 	s.mu.Lock()
 	s.proxyNetworkLost = false
 	s.mu.Unlock()
-	s.launch(&discardResponse{}, "proxy-network", s.rebindProxyInterface)
+	_, _ = s.submitJob("proxy-network", s.rebindProxyInterface)
 }
 
 func (s *Server) rebindProxyInterface() error {

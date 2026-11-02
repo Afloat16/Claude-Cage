@@ -97,7 +97,7 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 				<-done
 			}()
 			s.setMessage("正在下载并安装 Claude Desktop，可在操作详情查看进度…")
-			return RunMaintenanceScript(s.operationContext(), s.configPath, cage.ClaudeDesktopInstallScript(), jobOutput{s}, jobOutput{s})
+			return RunMaintenanceScript(s.operationContext(), s.configPath, cage.ClaudeDesktopInstallScript(), s.jobs.execution(), s.jobs.execution())
 		case "start":
 			s.setMessage("正在打开 Claude Desktop…")
 			key, err := s.account.desktopKey()
@@ -114,7 +114,7 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 			defer cancel()
 			cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", "/usr/local/bin/cage-claude-start")
 			cmd.Stdin = bytes.NewReader(key)
-			cmd.Stdout, cmd.Stderr = jobOutput{s}, jobOutput{s}
+			cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
 			if err = cmd.Run(); err != nil {
 				return errors.New("Claude Desktop 未能启动，请查看操作详情；已有登录数据保持不变")
 			}
@@ -134,7 +134,7 @@ func (s *Server) runDesktopScript(script string, timeout time.Duration) error {
 	command := fmt.Sprintf("sudo systemd-run --quiet --pipe --wait --collect --unit=cage-desktop-operation --property=User=cage --property=RuntimeMaxSec=%d --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=/home/cage /bin/bash -se", int(timeout.Seconds()))
 	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", command)
 	cmd.Stdin = strings.NewReader(script)
-	cmd.Stdout, cmd.Stderr = jobOutput{s}, jobOutput{s}
+	cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
 	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			cleanup, finish := context.WithTimeout(context.Background(), 5*time.Second)
@@ -212,13 +212,16 @@ func (s *Server) claudeDesktopVNC(w http.ResponseWriter, r *http.Request) {
 	}
 	writer, err := cmd.StdinPipe()
 	if err != nil {
+		_ = reader.Close()
 		http.Error(w, "无法连接应用画面", 502)
 		return
 	}
 	if err = cmd.Start(); err != nil {
+		_ = reader.Close()
+		_ = writer.Close()
 		http.Error(w, "无法连接应用画面", 502)
 		return
 	}
 	defer func() { cancel(); writer.Close(); reader.Close(); _ = cmd.Wait() }()
-	s.streamVNC(w, r, reader, writer)
+	s.streamVNC(w, r, reader, writer, func() { cancel(); _ = writer.Close(); _ = reader.Close() })
 }

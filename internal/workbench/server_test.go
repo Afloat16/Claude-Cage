@@ -41,8 +41,17 @@ func testServer(t *testing.T) *Server {
 	account := &localAccount{path: filepath.Join(profile, "account.json"), record: &accountRecord{Version: 1, Username: "Test"}}
 	account.setKey(make([]byte, 32))
 	t.Cleanup(account.lock)
-	return &Server{account: account, profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}, terminals: map[string]*terminalSession{}}
+	return &Server{account: account, profile: profile, configPath: path, origin: "http://localhost:17777", token: strings.Repeat("a", 64), session: strings.Repeat("b", 64), preferences: Preferences{Keyboard: "mac"}}
 }
+
+// Fixtures for network policy tests need a published state without executing
+// a real environment operation. Production code submits through submitJob.
+func (s *Server) setJobForTest(job Job) {
+	s.jobs.mu.Lock()
+	defer s.jobs.mu.Unlock()
+	s.jobs.state = job
+}
+
 func request(s *Server, method, path, origin, body string, auth bool) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, s.origin+path, strings.NewReader(body))
 	r.Host = "localhost:17777"

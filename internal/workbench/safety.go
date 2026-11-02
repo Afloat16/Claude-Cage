@@ -541,7 +541,8 @@ func (s *Server) runSafetyCheck() (returned error) {
 // Monitoring renews a short host-owned lease without replaying the disruptive
 // failure drill. Lost supervision eventually closes existing guest connections.
 func (s *Server) networkMonitorBlockedLocked() bool {
-	return s.networkPaused || (s.job.Running && s.job.Kind != "environment-tools" && s.job.Kind != "claude-desktop-install")
+	job := s.jobs.snapshot()
+	return s.closing || s.networkPaused || (job.Running && job.Kind != "environment-tools" && job.Kind != "claude-desktop-install")
 }
 
 func (s *Server) monitorSafety() {
@@ -559,7 +560,7 @@ func (s *Server) monitorSafety() {
 		s.mu.Unlock()
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(s.lifetimeContext(), 45*time.Second)
 	s.mu.Lock()
 	s.monitorCancel = cancel
 	s.mu.Unlock()
