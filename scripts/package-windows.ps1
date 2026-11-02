@@ -42,6 +42,9 @@ if ($Release) {
     if ($webview.Status -ne 'Valid' -or $webview.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'WebView2 installer must have a valid Microsoft signature.' }
 }
 New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
+# Verify source material before the expensive installer compression.
+$dependencies = Get-Content -LiteralPath (Join-Path $repository 'packaging/windows/dependencies.json') -Raw | ConvertFrom-Json
+$qemuTar = Get-VerifiedGitArchive $dependencies.qemuSource (Join-Path $repository '_output/windows-deps')
 $suffix = if ($Release) { '' } else { '-unsigned' }
 $artifact = Join-Path $OutputDirectory "Cage-$version-windows-amd64-setup$suffix.exe"
 $manifest = Join-Path $OutputDirectory 'uninstall-files.nsh'
@@ -66,13 +69,11 @@ if ($Release) { Sign-CageFile $artifact $signTool }
 if ((Get-Item -LiteralPath $artifact).Length -gt 512MB) { throw 'Installer exceeds the application updater 512 MiB limit.' }
 
 # Source materials travel beside the binary, not inside the application directory.
-$dependencies = Get-Content -LiteralPath (Join-Path $repository 'packaging/windows/dependencies.json') -Raw | ConvertFrom-Json
 $coreSource = Join-Path $OutputDirectory "mihomo-$($dependencies.mihomo.version)-source.tar.gz"
 $verifiedCoreSource = Get-VerifiedDependency $dependencies.mihomoSource (Join-Path $repository '_output/windows-deps')
 Copy-Item -LiteralPath $verifiedCoreSource -Destination $coreSource -Force
 Invoke-BuildTool $sevenZip @('t', '-bso0', '-bsp0', $coreSource)
 $releaseFiles = @($artifact, $coreSource)
-$qemuTar = Get-VerifiedGitArchive $dependencies.qemuSource (Join-Path $repository '_output/windows-deps')
 $qemuSource = Join-Path $OutputDirectory ($dependencies.qemuSource.file + '.gz')
 if (Test-Path -LiteralPath $qemuSource) { Remove-Item -LiteralPath $qemuSource }
 Invoke-BuildTool $sevenZip @('a', '-tgzip', '-mx=9', '-bso0', '-bsp0', $qemuSource, $qemuTar)
