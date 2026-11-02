@@ -18,7 +18,9 @@ permissions:
   contents: read
 jobs:
   debian:
-    runs-on: ubuntu-24.04
+    # Debian 12's bubblewrap requires unprivileged user namespace mappings.
+    # Ubuntu 24.04's host policy restricts them even in an unconfined container.
+    runs-on: ubuntu-22.04
     timeout-minutes: 60
     defaults:
       run:
