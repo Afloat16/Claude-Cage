@@ -67,7 +67,6 @@ async function main() {
   const tag = `desktop-preview-${version}`;
   const marker = `<!-- cage-platform-preview source=${run.head_sha} ci=${runID} -->`;
   const notes = `${marker}\n\nCage ${version} 的 Windows 与 Linux 安装包，来自同一份通过三平台 CI 的源码。macOS 安装包继续从 [v${version}](https://github.com/${repo}/releases/tag/v${version}) 下载。\n\n- **Windows：未签名预览版**，Windows 10 22H2 / Windows 11 x64。安装包名含 \`-unsigned.exe\`；系统可能提示未知发布者，请核对来源和 SHA256SUMS。该包需手动更新，不进入签名自动更新通道。\n- **Linux：Debian 12 / Ubuntu 24.04 x86_64**，下载 \`.deb\` 并通过系统包管理器安装。\n- Windows 2022/2025 runner 上的安装、WebView2、重装、卸载和数据保留检查通过；Debian 12 容器中的 GTK/WebKit、安装重装、运行中拒绝替换及卸载保留数据检查通过。托管 CI 不代替硬件虚拟化和所有真实设备的兼容性验证。\n- 附带 Mihomo、QEMU 主程序对应源码和 SHA256SUMS。升级前保存并停止 Cage 环境，用户配置及项目保留。\n\n[查看完整 CI](https://github.com/${repo}/actions/runs/${runID}) · [官网下载](https://lee-xeo.github.io/Claude-Cage/#download)\n\n源码：${run.head_sha}\n`;
-  const notesPath = join(root, 'notes.md'); writeFileSync(notesPath, notes);
   const releases = () => JSON.parse(gh(['api', '--paginate', '--slurp', `repos/${repo}/releases?per_page=100`])).flat();
   let release = releases().find(item => item.tag_name === tag);
   if (!release) {
@@ -75,8 +74,10 @@ async function main() {
     const ref = refs.find(item => item.ref === `refs/tags/${tag}`);
     if (ref) assert.equal(ref.object.sha, run.head_sha, 'Existing preview tag belongs to another commit');
     else api('git/refs', ['--method', 'POST', '-f', `ref=refs/tags/${tag}`, '-f', `sha=${run.head_sha}`]);
-    gh(['release', 'create', tag, '--repo', repo, '--verify-tag', '--draft', '--prerelease', '--latest=false', '--title', `Cage ${version} · Windows 未签名 / Linux 预览版`, '--notes-file', notesPath]);
-    release = releases().find(item => item.tag_name === tag);
+    const requestPath = join(root, 'release-request.json');
+    writeFileSync(requestPath, JSON.stringify({ tag_name: tag, name: `Cage ${version} · Windows 未签名 / Linux 预览版`, body: notes, draft: true, prerelease: true, make_latest: 'false' }));
+    // Use the creation response; the releases list can lag behind a new draft.
+    release = api('releases', ['--method', 'POST', '--input', requestPath]);
   }
   assert.ok(release && release.body.includes(marker), 'Release belongs to a different source/run');
   for (const [name, file] of files) {
