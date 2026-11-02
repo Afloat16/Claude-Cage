@@ -42,6 +42,9 @@ jobs:
           CAGE_BUILD_REF: ${{ inputs.ref }}
           CAGE_RELEASE: ${{ inputs.release }}
         run: |
+          # checkout's temporary HOME does not persist into later container
+          # steps. Trust this CI-owned checkout only, before root builds it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           [[ "$CAGE_BUILD_REF" =~ ^[0-9a-fA-F]{40}$ ]] || { echo 'Build ref must be a complete commit SHA.' >&2; exit 1; }
           [[ "$(git rev-parse HEAD)" == "${CAGE_BUILD_REF,,}" ]] || { echo 'Checkout differs from the requested commit.' >&2; exit 1; }
           if [[ "$CAGE_RELEASE" == true && "$GITHUB_EVENT_NAME" != workflow_dispatch ]]; then
