@@ -12,10 +12,10 @@ const repository = 'Lee-xeo/Claude-Cage';
 const repoURL = `https://github.com/${repository}`;
 const apiURL = `https://api.github.com/repos/${repository}/releases`;
 
-async function request(url) {
+async function request(url, timeout = 180_000) {
   const response = await fetch(url, {
     headers: { 'User-Agent': 'Cage-Release-Verification', Accept: url.startsWith(apiURL) ? 'application/vnd.github+json' : 'application/octet-stream' },
-    signal: AbortSignal.timeout(180_000),
+    signal: AbortSignal.timeout(timeout),
   });
   if (!response.ok) throw new Error(`Public download failed: HTTP ${response.status} (${new URL(url).pathname})`);
   return response;
@@ -39,15 +39,18 @@ export function releaseAssets(release) {
     }
   }
   if (assets[1].size > 64 * 1024) throw new Error('Checksum file is too large');
-  // Windows is an optional download on the same release. An incomplete or
-  // unsigned Windows upload must not displace a valid macOS release.
-  const windowsAssets = release.assets.filter(asset => asset.name === `Cage-${version}-windows-amd64-setup.exe`);
-  const candidate = windowsAssets.length === 1 ? windowsAssets[0] : undefined;
-  const windows = candidate && candidate.state === 'uploaded' && Number.isSafeInteger(candidate.size) &&
-    candidate.size > 0 && candidate.size <= 512 * 1024 * 1024 &&
-    candidate.browser_download_url === `${repoURL}/releases/download/${release.tag_name}/${candidate.name}`
-    ? candidate : undefined;
-  return { version, archive: assets[0], checksums: assets[1], source, windows };
+  const windows = optionalAsset(release, `Cage-${version}-windows-amd64-setup.exe`);
+  const linux = optionalAsset(release, `Cage-${version}-linux-amd64.deb`);
+  return { version, archive: assets[0], checksums: assets[1], source, windows, linux };
+}
+
+function optionalAsset(release, name) {
+  const matches = release.assets.filter(asset => asset.name === name);
+  const asset = matches.length === 1 ? matches[0] : undefined;
+  return asset && asset.state === 'uploaded' && Number.isSafeInteger(asset.size) &&
+    asset.size > 0 && asset.size <= 512 * 1024 * 1024 &&
+    asset.browser_download_url === `${repoURL}/releases/download/${release.tag_name}/${name}`
+    ? asset : undefined;
 }
 
 export function checksumFor(text, asset) {
@@ -60,25 +63,50 @@ export function checksumFor(text, asset) {
 }
 
 export function releaseMetadata(release, text) {
-  const { version, archive, source, windows } = releaseAssets(release);
+  const { version, archive, source, windows, linux } = releaseAssets(release);
   checksumFor(text, archive);
   checksumFor(text, source);
   const metadata = { version, releaseURL: `${repoURL}/releases/tag/v${version}`, downloadURL: archive.browser_download_url };
-  if (windows) {
+  for (const [key, asset] of [['windowsDownloadURL', windows], ['linuxDownloadURL', linux]]) {
+    if (!asset) continue;
     try {
-      checksumFor(text, windows);
-      metadata.windowsDownloadURL = windows.browser_download_url;
+      checksumFor(text, asset);
+      metadata[key] = asset.browser_download_url;
     } catch {
-      // Keep the existing macOS entry until the Windows checksum is complete.
+      // A partial platform upload must not hide other verified downloads.
     }
   }
   return metadata;
 }
 
+export function platformPreviewMetadata(release, text, version) {
+  if (!/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version) || release.draft || !release.prerelease || release.tag_name !== `desktop-preview-${version}`) {
+    throw new Error('Expected a published platform preview matching the application version');
+  }
+  const windows = optionalAsset(release, `Cage-${version}-windows-amd64-setup-unsigned.exe`);
+  const linux = optionalAsset(release, `Cage-${version}-linux-amd64.deb`);
+  const source = release.assets.find(asset => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(asset.name));
+  const qemu = release.assets.find(asset => /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(asset.name));
+  for (const asset of [windows, linux, source, qemu]) {
+    if (!asset || !optionalAsset(release, asset.name)) throw new Error('Platform preview lacks complete installers or corresponding source');
+    checksumFor(text, asset);
+  }
+  const metadata = asset => ({ version, releaseURL: `${repoURL}/releases/tag/${release.tag_name}`, downloadURL: asset.browser_download_url });
+  return { windowsPreview: metadata(windows), linuxPreview: metadata(linux) };
+}
+
+async function checksumText(release) {
+  const asset = optionalAsset(release, 'SHA256SUMS');
+  if (!asset || asset.size > 64 * 1024) throw new Error('Missing complete checksum file');
+  const text = await (await request(asset.browser_download_url)).text();
+  if (Buffer.byteLength(text) !== asset.size) throw new Error('Checksum file size differs from GitHub metadata');
+  return text;
+}
+
 async function download(asset, digest, directory) {
   await mkdir(directory, { recursive: true });
   const path = join(directory, asset.name);
-  const response = await request(asset.browser_download_url);
+  const response = await request(asset.browser_download_url, 15 * 60 * 1000);
   const hash = createHash('sha256');
   let size = 0;
   try {
@@ -105,27 +133,48 @@ async function main() {
     'archive-directory': { type: 'string' },
   } });
   let release;
+  let releases;
   if (values.tag) {
-    release = await (await request(`${apiURL}/tags/${encodeURIComponent(values.tag)}`)).json();
+    // Companion platform previews retain their own source tag and checksum
+    // file; the main version continues to own the notarized macOS package.
+    const tag = values.tag.startsWith('desktop-preview-') ? `v${values.tag.slice('desktop-preview-'.length)}` : values.tag;
+    release = await (await request(`${apiURL}/tags/${encodeURIComponent(tag)}`)).json();
   } else {
-    const releases = await (await request(`${apiURL}?per_page=100`)).json();
+    releases = await (await request(`${apiURL}?per_page=100`)).json();
     // GitHub orders by creation time. Show the first complete public Cage release.
     release = releases.find(item => {
       try { releaseAssets(item); return true; } catch { return false; }
     });
     if (!release) throw new Error('No complete public Cage release is available');
   }
-  const { version, archive, checksums, source } = releaseAssets(release);
-  const response = await request(checksums.browser_download_url);
-  const text = await response.text();
-  if (Buffer.byteLength(text) !== checksums.size) throw new Error('Checksum file size differs from GitHub metadata');
+  const { version, archive, source } = releaseAssets(release);
+  const text = await checksumText(release);
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
   const metadata = releaseMetadata(release, text);
+  let preview;
+  let previewText;
+  if (!metadata.windowsDownloadURL || !metadata.linuxDownloadURL) {
+    releases ||= await (await request(`${apiURL}?per_page=100`)).json();
+    preview = releases.find(item => !item.draft && item.prerelease && item.tag_name === `desktop-preview-${version}`);
+    if (preview) {
+      previewText = await checksumText(preview);
+      const platforms = platformPreviewMetadata(preview, previewText, version);
+      if (!metadata.windowsDownloadURL) metadata.windowsPreview = platforms.windowsPreview;
+      if (!metadata.linuxDownloadURL) metadata.linuxPreview = platforms.linuxPreview;
+    }
+  }
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);
     await writeFile(join(values['archive-directory'], 'SHA256SUMS'), text);
+    if (preview) {
+      for (const platform of [metadata.windowsPreview, metadata.linuxPreview].filter(Boolean)) {
+        const asset = preview.assets.find(asset => asset.browser_download_url === platform.downloadURL);
+        await download(asset, checksumFor(previewText, asset), values['archive-directory']);
+      }
+      await writeFile(join(values['archive-directory'], 'SHA256SUMS-platforms'), previewText);
+    }
   }
   const output = resolve(values.output);
   await mkdir(dirname(output), { recursive: true });

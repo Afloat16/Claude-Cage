@@ -3,7 +3,7 @@
   "type": "module",
   "version": "0.1.1-alpha",
   "private": true,
-  "description": "Claude Cage project website and macOS downloads",
+  "description": "Claude Cage project website and macOS, Windows and Linux downloads",
   "license": "MIT",
   "scripts": {
     "dev": "astro dev",

@@ -1,0 +1,63 @@
+name: Publish verified Windows and Linux preview downloads
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: Successful three-platform CI run containing the installers
+        required: true
+        type: string
+      unsigned_windows:
+        description: Explicitly publish the Windows installer as an unsigned preview
+        required: true
+        default: false
+        type: boolean
+permissions:
+  contents: read
+concurrency:
+  group: cage-platform-preview
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main' && inputs.unsigned_windows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      tag: ${{ steps.publish.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node --test scripts/publish-platform-preview.test.mjs
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: cage-windows-amd64-test-windows-2025
+          path: _output/platform-publication/windows
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.run_id }}
+          name: cage-linux-amd64-test
+          path: _output/platform-publication/linux
+      - name: Verify source and every checksum, then publish the complete preview
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAGE_PREVIEW_RUN: ${{ inputs.run_id }}
+        run: node scripts/publish-platform-preview.mjs
+  website:
+    needs: publish
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/www.yml
+    with:
+      release_tag: ${{ needs.publish.outputs.tag }}

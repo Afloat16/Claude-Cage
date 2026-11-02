@@ -6,7 +6,7 @@
 
 <img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-[프로젝트 웹사이트](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [macOS용 다운로드](https://github.com/Lee-xeo/Claude-Cage/releases) · [시작하기](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [기여](CONTRIBUTING.md)
+[프로젝트 웹사이트](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [앱 다운로드](https://lee-xeo.github.io/Claude-Cage/ko/#download) · [시작하기](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [기여](CONTRIBUTING.md)
 
 ## Anthropic에 지쳤습니다
 
@@ -46,17 +46,17 @@ Claude Cage는 Linux 터미널, 브라우저 및 파일 편집기를 단일 데�
 
 ## 다운로드 및 설치
 
-초기 릴리스에서는 다음을 지원합니다. **macOS 14 이상을 실행하는 Apple Silicon Mac(M 시리즈 칩)**. Intel Mac, Windows 및 Linux는 현재 Cage 데스크탑 애플리케이션을 지원하는 플랫폼이 아닙니다.
+Cage는 macOS, Windows, Linux를 지원합니다. 대상은 macOS 14+의 Apple Silicon Mac, Windows 10 22H2 / 11 x64, Debian 12 / Ubuntu 24.04 x86_64입니다. Windows와 Linux는 개발 검증 중입니다. 설치 패키지 제공 여부, 서명 및 실제 검증 범위는 릴리스 노트를 확인하세요. Intel Mac, Windows ARM64, Linux ARM64는 아직 지원하지 않습니다. [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md).
 
-1. 열기 [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases) 그리고 Apple Silicon을 선택하세요. `.dmg` 릴리스의 설치 패키지.
-2. 설치 패키지를 열고 드래그하세요. **Cage** 으로 **응용**; 그런 다음 응용 프로그램에서 실행하십시오.
+1. 앱 다운로드: [macOS / Windows / Linux](https://lee-xeo.github.io/Claude-Cage/ko/#download).
+2. macOS: 설치 패키지를 열고 드래그하세요. **Cage** 으로 **응용**; 그런 다음 응용 프로그램에서 실행하십시오. Windows: [설치 안내](docs/windows.md#安装并开始工作) · Linux: [설치 안내](docs/linux.md#安装并开始工作).
 3. 앱 내 지침에 따라 자신의 네트워크 프록시를 구성하고, 환경을 시작하고, 프로젝트를 엽니다.
 
 설치 프로그램에는 워크벤치와 네트워크 프록시 코어가 포함되어 있습니다. 일상적인 사용에는 Go, Node.js, Docker 또는 Clash를 설치할 필요가 없습니다. 처음 실행 시에는 Linux 이미지와 개발 도구를 다운로드하기 위해 인터넷 연결이 필요합니다. Cage는 네트워크 프록시 서비스나 Claude 계정을 제공하지 않습니다.
 
 현재 버전: `0.1.1-alpha`. 소스 코드, 웹사이트, 릴리스는 공개되어 있습니다. 설치 프로그램 서명, Apple 공증 및 검증 범위에 대해서는 각 릴리스의 노트를 참조하세요. 클린 머신 설치, macOS 14를 실행하는 실제 Mac에서의 호환성, 실제 Claude 계정 인증 및 모델 요청에는 여전히 완전한 검증이 필요합니다.
 
-인앱 업데이트를 지원하는 버전은 왼쪽 하단에 업데이트 컨트롤이 표시됩니다. 업데이트를 사용할 수 있으면 아래쪽 화살표 도구 설명에 '업데이트 다운로드'가 표시됩니다. 이를 클릭하면 애플리케이션이 다운로드, 확인, 설치 및 다시 시작됩니다. 먼저 실행 중인 작업을 저장하고 중지하세요. 업데이트는 직접 연결을 사용하지 않고 선택한 네트워크 프록시를 통해 다운로드됩니다. 자동 설치에는 동일한 게시자의 서명과 Apple 확인이 필요합니다. 후속 버전에서는 인앱 업데이트를 사용할 수 있습니다. 자세한 내용은 다음을 참조하세요. [업그레이드 및 제거](docs/getting-started.md#升级与卸载).
+macOS 및 Windows 인앱 업데이트는 선택한 프록시로 다운로드하며 직접 연결로 전환하지 않습니다. 설치 전에 작업을 저장하고 중지하세요. macOS는 동일 게시자의 Developer ID 서명과 Apple 검증이 필요하며, Windows는 신뢰할 수 있는 Authenticode 서명과 동일 게시자 공개 키가 필요합니다. 서명 없는 Windows 미리 보기와 Linux 패키지는 수동으로 업데이트합니다. [업데이트 및 제거](docs/getting-started.md#升级与卸载).
 
 ## 3단계로 시작하세요
 
@@ -70,11 +70,11 @@ Claude Cage는 Linux 터미널, 브라우저 및 파일 편집기를 단일 데�
 
 ### 3. 프로젝트를 열고 Claude를 실행하세요.
 
-Mac에서 폴더를 선택하려면 '프로젝트 열기'를 클릭하고 새 터미널을 열고 다음을 입력하세요. `claude`; 그런 다음 Cage 브라우저에서 자신의 계정을 인증하세요. 프로젝트를 준비하지 않고 기본 작업공간으로 시작할 수도 있습니다. 전체 단계는 다음을 참조하세요. [시작하기](docs/getting-started.md).
+컴퓨터에서 폴더를 선택하려면 '프로젝트 열기'를 클릭하고 새 터미널을 열고 다음을 입력하세요. `claude`; 그런 다음 Cage 브라우저에서 자신의 계정을 인증하세요. 프로젝트를 준비하지 않고 기본 작업공간으로 시작할 수도 있습니다. 전체 단계는 다음을 참조하세요. [시작하기](docs/getting-started.md).
 
 ## 사용하기 전에 이러한 제한 사항을 이해하십시오.
 
-- 공유 프로젝트의 편집 및 삭제는 Mac의 파일에 직접적인 영향을 미칩니다. 버전 제어 또는 백업을 사용하십시오. `.git` 기타 메타데이터는 기본적으로 읽기 전용입니다. Mac에서 Git 커밋을 수행합니다.
+- 공유 프로젝트의 편집 및 삭제는 컴퓨터의 파일에 직접적인 영향을 미칩니다. 버전 제어 또는 백업을 사용하십시오. `.git` 기타 메타데이터는 기본적으로 읽기 전용입니다. 컴퓨터에서 Git 커밋을 수행합니다.
 - 모든 프로젝트는 도구, 계정 및 Linux 파일 시스템을 포함하여 하나의 Cage 환경을 공유합니다. 프로젝트는 서로 격리되지 않습니다.
 - 게스트는 현재 네트워크 프록시를 통해 공용 IPv4 TCP에 액세스할 수 있으며, DNS는 동일한 프록시를 통해 전송됩니다. 호스트 또는 로컬 네트워크에 대한 공용 UDP, IPv6, ICMP 및 게스트 시작 연결이 차단됩니다. 이러한 기능에 의존하는 도구는 작동하지 않을 수 있습니다.
 - 네트워크 검사에는 현재 구성과 샘플링된 증거가 표시됩니다. 계정이 플랫폼 제한을 피할 것이라고 보장할 수 없으며 완전한 가상화 보안 감사를 대체하지 않습니다.

@@ -6,7 +6,7 @@
 
 <img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下载 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
+[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下载应用](https://lee-xeo.github.io/Claude-Cage/#download) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
 
 ## 受够了 Anthropic
 
@@ -46,17 +46,17 @@ Claude Cage 是一个轻量 Linux 虚拟机，把 Linux 终端、浏览器和文
 
 ## 下载与安装
 
-首版面向 **Apple Silicon Mac（M 系列芯片），macOS 14 或更新版本**。Windows 10 22H2 / Windows 11 x64 的桌面实现与安装器已加入源码，当前处于开发验收阶段，见 [Windows 安装与更新](docs/windows.md)。Linux x86_64 的原生工作台与 Debian/Ubuntu 安装包已加入源码，处于开发验收阶段，见 [Linux 安装与使用](docs/linux.md)。Intel Mac 与 Windows ARM64 尚不作为 Cage 桌面版的受支持平台。
+Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 24.04 x86_64。Windows 和 Linux 仍处于开发验收阶段；安装包是否可用、签名与实测范围以各平台的发行说明为准。Intel Mac、Windows ARM64 和 Linux ARM64 尚不受支持。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
 
-1. 打开 [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases)，选择发布条目中的 Apple Silicon `.dmg` 安装包。
-2. 打开安装包，将 **Cage** 拖入 **Applications（应用程序）**，再从“应用程序”启动。
+1. 打开[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)，点击“下载应用”并选择平台。
+2. macOS：打开安装包，将 **Cage** 拖入 **Applications（应用程序）**，再从“应用程序”启动。Windows：[安装说明](docs/windows.md#安装并开始工作) · Linux：[安装说明](docs/linux.md#安装并开始工作)。
 3. 按应用内引导配置自己的代理，启动环境后打开项目。
 
 安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
 
 当前版本为 `0.1.1-alpha`。源码、主页与发行物公开；安装包的签名、公证和验收范围以对应 Release 说明为准。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
 
-支持应用内更新的版本会在左下角显示更新入口：有新版时，向下箭头的悬浮提示为“下载更新”，点击后下载、校验、安装并重启；有运行任务时先确认保存并停止。更新经所选代理下载，无直连回退。自动安装要求同一发布者签名且通过 Apple 验证；后续版本可通过应用内更新。具体条件见[升级与卸载](docs/getting-started.md#升级与卸载)。
+支持应用内更新的 macOS 和 Windows 版本通过所选代理下载，无直连回退；安装前请保存并停止任务。macOS 要求同一发布者的 Developer ID 签名并通过 Apple 验证，Windows 要求可信 Authenticode 签名和相同发布者公钥。Windows 未签名预览版和 Linux 系统包需手动更新。详见[升级与卸载](docs/getting-started.md#升级与卸载)。
 
 ## 三步开始
 

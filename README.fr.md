@@ -6,7 +6,7 @@
 
 <img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Télécharger pour macOS](https://github.com/Lee-xeo/Claude-Cage/releases) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Contribuer](CONTRIBUTING.md)
+[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Télécharger l’application](https://lee-xeo.github.io/Claude-Cage/fr/#download) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Contribuer](CONTRIBUTING.md)
 
 ## Assez d’Anthropic
 
@@ -46,17 +46,17 @@ Tout ce dont vous avez besoin est un point de terminaison proxy réseau fiable. 
 
 ## Téléchargement et installation
 
-La version initiale prend en charge **Mac Apple Silicon (puces de la série M), exécutant macOS 14 ou version ultérieure**. Les Mac Intel, Windows et Linux ne sont actuellement pas des plates-formes prises en charge pour l'application de bureau Cage.
+Cage prend en charge macOS, Windows et Linux : Apple Silicon avec macOS 14+, Windows 10 22H2 / 11 x64 et Debian 12 / Ubuntu 24.04 x86_64. Windows et Linux sont encore en cours de validation. Consultez les notes de version pour les paquets disponibles, les signatures et les tests réalisés. Intel Mac, Windows ARM64 et Linux ARM64 ne sont pas encore pris en charge. [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md).
 
-1. Ouvert [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases) et sélectionnez Apple Silicon `.dmg` package d’installation dans la version.
-2. Ouvrez le package d'installation et faites glisser **Cage** dans **Applications**; puis lancez-le depuis Applications.
+1. Télécharger l’application: [macOS / Windows / Linux](https://lee-xeo.github.io/Claude-Cage/fr/#download).
+2. macOS: Ouvrez le package d'installation et faites glisser **Cage** dans **Applications**; puis lancez-le depuis Applications. Windows: [Guide d’installation](docs/windows.md#安装并开始工作) · Linux: [Guide d’installation](docs/linux.md#安装并开始工作).
 3. Suivez les instructions de l'application pour configurer votre propre proxy réseau, démarrer l'environnement et ouvrir un projet.
 
 Le programme d'installation comprend le workbench et le noyau du proxy réseau. Une utilisation quotidienne ne nécessite pas l'installation de Go, Node.js, Docker ou Clash. Le premier lancement nécessite toujours une connexion Internet pour télécharger l’image Linux et les outils de développement. Cage ne fournit ni service proxy réseau ni compte Claude.
 
 Version actuelle : `0.1.1-alpha`. Le code source, le site Web et les versions sont publics. Reportez-vous aux notes de chaque version pour la signature du programme d'installation, la notarisation Apple et la portée de la validation. L'installation sur une machine propre, la compatibilité sur les Mac physiques exécutant macOS 14, l'autorisation réelle du compte Claude et les demandes de modèle nécessitent toujours une validation complète.
 
-Les versions avec prise en charge des mises à jour intégrées à l'application affichent un contrôle de mise à jour dans le coin inférieur gauche. Lorsqu'une mise à jour est disponible, l'info-bulle de la flèche vers le bas indique « Télécharger la mise à jour ». En cliquant dessus, vous téléchargez, vérifiez, installez et redémarrez l'application. Enregistrez et arrêtez d'abord les tâches en cours d'exécution. Les mises à jour sont téléchargées via le proxy réseau sélectionné, sans recours à une connexion directe. L'installation automatique nécessite une signature du même éditeur et une vérification Apple. Les versions ultérieures peuvent utiliser des mises à jour intégrées à l'application. Pour plus de détails, voir [Mettre à niveau et désinstaller](docs/getting-started.md#升级与卸载).
+Les mises à jour macOS et Windows passent par le proxy choisi, sans connexion directe de secours. Enregistrez et arrêtez les tâches avant l’installation. macOS exige une signature Developer ID du même éditeur et la vérification Apple ; Windows exige une signature Authenticode de confiance et la même clé publique de l’éditeur. La version préliminaire Windows non signée et Linux se mettent à jour manuellement. [Mise à jour et désinstallation](docs/getting-started.md#升级与卸载).
 
 ## Commencez en trois étapes
 
@@ -70,11 +70,11 @@ Revenez à l’atelier et cliquez sur « Démarrer l’environnement Cage ». 
 
 ### 3. Ouvrez un projet et exécutez Claude
 
-Cliquez sur « Ouvrir le projet » pour sélectionner un dossier sur votre Mac, ouvrez un nouveau terminal et entrez `claude`; puis autorisez votre propre compte dans le navigateur Cage. Vous pouvez également commencer avec l'espace de travail par défaut sans préparer de projet. Pour les étapes complètes, voir [Commencer](docs/getting-started.md).
+Cliquez sur « Ouvrir le projet » pour sélectionner un dossier sur votre ordinateur, ouvrez un nouveau terminal et entrez `claude`; puis autorisez votre propre compte dans le navigateur Cage. Vous pouvez également commencer avec l'espace de travail par défaut sans préparer de projet. Pour les étapes complètes, voir [Commencer](docs/getting-started.md).
 
 ## Comprendre ces limites avant utilisation
 
-- Les modifications et suppressions dans les projets partagés affectent directement les fichiers sur votre Mac. Utilisez le contrôle de version ou les sauvegardes. `.git` et les autres métadonnées sont en lecture seule par défaut ; faire des commits Git sur Mac.
+- Les modifications et suppressions dans les projets partagés affectent directement les fichiers sur votre ordinateur. Utilisez le contrôle de version ou les sauvegardes. `.git` et les autres métadonnées sont en lecture seule par défaut ; effectuer les commits Git sur l’ordinateur hôte.
 - Tous les projets partagent un environnement Cage, y compris ses outils, ses comptes et son système de fichiers Linux. Les projets ne sont pas isolés les uns des autres.
 - L'invité a actuellement accès au TCP IPv4 public via le proxy réseau, le DNS étant envoyé via le même proxy. Les connexions publiques UDP, IPv6, ICMP et initiées par l'invité à l'hôte ou au réseau local sont bloquées. Les outils qui dépendent de ces capacités peuvent ne pas fonctionner.
 - Les vérifications du réseau montrent la configuration actuelle et des échantillons de preuves. Ils ne peuvent pas garantir qu’un compte évitera les restrictions de la plateforme et ne remplacent pas un audit complet de sécurité de la virtualisation.

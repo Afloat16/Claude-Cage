@@ -6,7 +6,7 @@
 
 <img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-[專案主頁](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下載 macOS 版本](https://github.com/Lee-xeo/Claude-Cage/releases) · [開始使用](docs/getting-started.md) · [常見問題](docs/troubleshooting.md) · [參與開發](CONTRIBUTING.md)
+[專案主頁](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下載應用程式](https://lee-xeo.github.io/Claude-Cage/zh-TW/#download) · [開始使用](docs/getting-started.md) · [常見問題](docs/troubleshooting.md) · [參與開發](CONTRIBUTING.md)
 
 ## 受夠了 Anthropic
 
@@ -46,17 +46,17 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 
 ## 下載與安裝
 
-首版面向 **Apple Silicon Mac（M 系列晶片），macOS 14 或更新版本**。Intel Mac、Windows 和 Linux 尚不作為 Cage 桌面版的受支援平臺。
+Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 24.04 x86_64。Windows 和 Linux 仍處於開發驗收階段；安裝包供應、簽章與實測範圍以各平台發行說明為準。Intel Mac、Windows ARM64 和 Linux ARM64 尚不受支援。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
 
-1. 開啟 [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases)，選擇釋出條目中的 Apple Silicon `.dmg` 安裝包。
-2. 開啟安裝包，將 **Cage** 拖入 **Applications（應用程式）**，再從“應用程式”啟動。
+1. 開啟[專案主頁](https://lee-xeo.github.io/Claude-Cage/zh-TW/#download)，點選「下載應用程式」並選擇平台。
+2. macOS：開啟安裝包，將 **Cage** 拖入 **Applications（應用程式）**，再從“應用程式”啟動。Windows：[安裝說明](docs/windows.md#安装并开始工作) · Linux：[安裝說明](docs/linux.md#安装并开始工作)。
 3. 按應用內引導配置自己的代理，啟動環境後開啟專案。
 
 安裝包隨附工作臺和代理核心，日常使用無需安裝 Go、Node.js、Docker 或 Clash。首次啟動仍需聯網下載 Linux 映象與開發工具；Cage 不提供代理服務或 Claude 賬戶。
 
 當前版本為 `0.1.1-alpha`。原始碼、主頁與發行物公開；安裝包的簽名、公證和驗收範圍以對應 Release 說明為準。乾淨機器安裝、macOS 14 實機相容性、真實 Claude 授權與模型請求仍需完整驗收。
 
-支援應用內更新的版本會在左下角顯示更新入口：有新版時，向下箭頭的懸浮提示為“下載更新”，點選後下載、校驗、安裝並重啟；有執行任務時先確認儲存並停止。更新經所選代理下載，無直連回退。自動安裝要求同一發布者簽名且透過 Apple 驗證；後續版本可透過應用內更新。具體條件見[升級與解除安裝](docs/getting-started.md#升级与卸载)。
+支援應用程式內更新的 macOS 和 Windows 版本透過所選代理下載，無直連回退；安裝前請儲存並停止工作。macOS 要求相同發布者的 Developer ID 簽章並通過 Apple 驗證，Windows 要求可信 Authenticode 簽章及相同發布者公鑰。Windows 未簽章預覽版和 Linux 系統包需手動更新。詳見[升級與解除安裝](docs/getting-started.md#升级与卸载)。
 
 ## 三步開始
 
@@ -70,11 +70,11 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 
 ### 3. 開啟專案，執行 Claude
 
-點選“開啟專案”選擇 Mac 上的資料夾，再新建終端，輸入 `claude`，在 Cage 瀏覽器中完成自己的賬戶授權。也可以先使用預設工作區，無需提前準備專案。完整步驟見[開始使用](docs/getting-started.md)。
+點選“開啟專案”選擇 本機 上的資料夾，再新建終端，輸入 `claude`，在 Cage 瀏覽器中完成自己的賬戶授權。也可以先使用預設工作區，無需提前準備專案。完整步驟見[開始使用](docs/getting-started.md)。
 
 ## 使用前瞭解這些邊界
 
-- 共享專案中的修改和刪除會直接影響 Mac 上的檔案。請使用版本控制或備份；`.git` 等後設資料預設只讀，Git 提交在 Mac 上完成。
+- 共享專案中的修改和刪除會直接影響 本機 上的檔案。請使用版本控制或備份；`.git` 等後設資料預設只讀，Git 提交在 本機 上完成。
 - 所有專案共用一個 Cage 環境，也共用其中的工具、賬戶與 Linux 檔案系統。專案之間沒有獨立隔離。
 - 當前允許客機透過代理訪問公網 IPv4 TCP，DNS 透過同一代理傳送；公網 UDP、IPv6、ICMP，以及客機主動訪問主機和區域網的連線受到阻斷。依賴這些能力的工具可能無法使用。
 - 網路檢查展示當前配置和取樣證據，無法保證賬戶不會受到平臺限制，也不能代替完整的虛擬化安全審計。

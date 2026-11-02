@@ -6,7 +6,7 @@
 
 <img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
 
-[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Soo dejiso macOS](https://github.com/Lee-xeo/Claude-Cage/releases) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Wax ku darso](CONTRIBUTING.md)
+[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Soo dejiso abka](https://lee-xeo.github.io/Claude-Cage/so/#download) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Wax ku darso](CONTRIBUTING.md)
 
 ## Waan ka daalnay Anthropic
 
@@ -46,17 +46,17 @@ Waxa kaliya ee aad u baahan tahay waa barta ugu dambeysa ee wakiil shabakad la i
 
 ## Soo deji oo rakib
 
-Siideynta hore waa ay taageertaa **Apple Silicon Macs (M-series chips), oo ku shaqeeya macOS 14 ama wixii ka dambeeya**. Intel Macs, Windows, iyo Linux ayaan hadda la taageerin barnaamijyada Cage desktop.
+Cage wuxuu taageeraa macOS, Windows iyo Linux: Apple Silicon oo leh macOS 14+, Windows 10 22H2 / 11 x64 iyo Debian 12 / Ubuntu 24.04 x86_64. Windows iyo Linux weli waa la xaqiijinayaa. Helitaanka xirmooyinka, saxiixyada iyo tijaabooyinka waxaa lagu sheegay qoraallada sii-deynta. Intel Mac, Windows ARM64 iyo Linux ARM64 weli lama taageero. [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md).
 
-1. Furan [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases) oo dooro Silikoonka Apple `.dmg` xirmo rakibo ee sii deynta.
-2. Fur xirmada rakibaadda oo jiid **Cage** galay **Codsiyada**; ka dibna ka bilow Applications.
+1. Soo dejiso abka: [macOS / Windows / Linux](https://lee-xeo.github.io/Claude-Cage/so/#download).
+2. macOS: Fur xirmada rakibaadda oo jiid **Cage** galay **Codsiyada**; ka dibna ka bilow Applications. Windows: [Hagaha rakibidda](docs/windows.md#安装并开始工作) · Linux: [Hagaha rakibidda](docs/linux.md#安装并开始工作).
 3. Raac tilmaamaha app-ka si aad u habayso wakiilkaaga shabakad, bilaw deegaanka, oo aad u furto mashruuc.
 
 Rakibahu waxa ka mid ah bench-ka shaqada iyo xudunta wakiilka network. Isticmaalka maalinlaha ah uma baahna rakibida Go, Node.js, Docker, ama Clash. Daahfurka ugu horreeya wuxuu weli u baahan yahay isku xirka internetka si loo soo dejiyo sawirka Linux iyo aaladaha horumarinta. Cage ma bixiso adeeg wakiil shabakad ama akoon Claude.
 
 Nooca hadda: `0.1.1-alpha`. Koodhka isha, mareegaha, iyo sii daynta waa dadwayne. Tixraac qoraalada sii daynta kasta ee saxeexa rakibaha, notarization Apple, iyo baaxadda ansixinta. Ku rakibida mashiinka nadiifka ah, waafaqid ku saabsan Macs-ka jireed ee ku shaqeeya macOS 14, oggolaanshaha koontada Claude dhabta ah, iyo codsiyada moodeelka ayaa wali u baahan ansaxinta buuxda.
 
-Noocyada leh taageerada cusboonaysiinta app-ku waxay muujinayaan xakamaynta cusboonaysiinta ee geeska bidix ee hoose. Marka cusboonaysiinta la heli karo, aaladda fallaadha hoose waxay akhridaa 'Download update'. Markaad gujiso waxay soo dejisaa, xaqiijisaa, rakibtaa, oo dib u bilawdaa arjiga. Keydi oo jooji socodsiinta hawlaha marka hore. Cusboonaysiinta soo dejinta iyada oo loo marayo wakiilka shabakadda ee la xushay, iyada oo aan dib loogu laaban xiriir toos ah. Rakibaadda tooska ah waxay u baahan tahay saxeex isla daabacaha iyo xaqiijinta Apple. Noocyada soo socda waxay isticmaali karaan cusbooneysiinta app-ka. Faahfaahinta, eeg [Kor u qaad oo ka saar](docs/getting-started.md#升级与卸载).
+Cusboonaysiinta macOS iyo Windows waxay adeegsataa wakiilka la doortay, iyada oo aan loo noqon xiriir toos ah. Kaydi shaqada oo jooji hawlaha ka hor rakibidda. macOS wuxuu u baahan yahay saxiixa Developer ID ee isla daabacaha iyo xaqiijinta Apple; Windows wuxuu u baahan yahay Authenticode la aamini karo iyo isla furaha guud ee daabacaha. Nooca Windows ee aan saxiixnayn iyo Linux gacanta ayaa loo cusboonaysiiyaa. [Cusboonaysiin iyo saarid](docs/getting-started.md#升级与卸载).
 
 ## Ku bilow saddex tallaabo
 
@@ -70,11 +70,11 @@ Ku soo celi goobta shaqada oo dhagsii 'Bilow deegaanka Cage'. Haddii habaynta Gi
 
 ### 3. Fur mashruuc oo maamul Claude
 
-Guji 'Mashruuca Furan' si aad u dooratid galka Mac kaaga, fur terminal cusub, oo gal `claude`; dabadeed ogolaw akoonkaaga browserka Cage. Waxaad sidoo kale ku bilaabi kartaa goobta shaqada ee caadiga ah adigoon diyaarin mashruuc. Tallaabooyinka buuxa, eeg [Bilaabidda](docs/getting-started.md).
+Guji 'Mashruuca Furan' si aad u dooratid galka kombiyuutarka kaaga, fur terminal cusub, oo gal `claude`; dabadeed ogolaw akoonkaaga browserka Cage. Waxaad sidoo kale ku bilaabi kartaa goobta shaqada ee caadiga ah adigoon diyaarin mashruuc. Tallaabooyinka buuxa, eeg [Bilaabidda](docs/getting-started.md).
 
 ## Fahmo xadkan ka hor intaanad isticmaalin
 
-- Wax ka beddelka iyo tirtiridda mashaariicda la wadaago waxay si toos ah u saameeyaan faylasha Mac kaaga. Isticmaal xakamaynta nooca ama kaydinta. `.git` iyo xogta kale ee badan waxaa loo akhriyaa-kaliya si macquul ah; Git ku samee Mac.
+- Wax ka beddelka iyo tirtiridda mashaariicda la wadaago waxay si toos ah u saameeyaan faylasha kombiyuutarka kaaga. Isticmaal xakamaynta nooca ama kaydinta. `.git` iyo xogta kale ee badan waxaa loo akhriyaa-kaliya si macquul ah; Git ku samee kombiyuutarka.
 - Dhammaan mashruucyada waxay wadaagaan hal deegaan Cage, oo ay ku jiraan qalabkeeda, xisaabaadka, iyo nidaamka faylka Linux. Mashruucyadu maaha kuwo midba midka kale ka soocan.
 - Martidu hadda waxay marin u heli karaan IPV4 TCP dadweynaha iyada oo loo marayo wakiilka shabakadda, iyadoo DNS loo soo diray isla wakiilkii. UDP dadweynaha, IPv6, ICMP, iyo isku xidhka martida-bilaabatay ee martigeliyaha ama shabakada maxaliga ah waa la xannibay. Aaladaha ku xiran awoodahaan waxaa laga yaabaa inaysan shaqeynin.
 - Jeegaga shabakada waxay tusinaysaa qaabka hadda jira iyo cadaymaha la muunada ah. Ma dammaanad qaadi karaan in akoonku uu ka fogaanayo xannibaadaha goobta, mana beddelaan xisaab-xidhka amniga oo dhammaystiran.

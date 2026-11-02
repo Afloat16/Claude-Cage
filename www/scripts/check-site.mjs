@@ -28,8 +28,17 @@ for (const code of codes) {
   }
   assert.ok(!html.includes('/Users/'), `${code}: local developer path leaked`);
   assert.ok(html.includes(`href="${published.downloadURL}"`), `${code}: macOS download is missing`);
-  const windowsLinks = [...html.matchAll(/href="([^"]*windows-amd64-setup[^"]*)"/g)].map(match => match[1]);
+  assert.equal([...html.matchAll(/<a\b[^>]*\bdata-download-open(?:\s|>)/g)].length, 3, `${code}: all download entries must open the platform chooser`);
+  assert.ok(html.includes('aria-labelledby="platform-title"'), `${code}: platform dialog has no accessible title`);
+  for (const platform of ['macOS', 'Windows', 'Linux']) {
+    assert.ok(html.includes(`data-platform="${platform}"`), `${code}: missing ${platform} choice`);
+  }
+  const windowsLinks = [...html.matchAll(/href="([^"]*windows-amd64-setup\.exe)"/g)].map(match => match[1]);
   assert.deepEqual(windowsLinks, published.windowsDownloadURL ? [published.windowsDownloadURL, published.windowsDownloadURL] : [], `${code}: Windows download must match the verified optional release metadata`);
+  for (const [suffix, url] of [['linux-amd64.deb', published.linuxDownloadURL || published.linuxPreview?.downloadURL], ['windows-amd64-setup-unsigned.exe', published.windowsDownloadURL ? undefined : published.windowsPreview?.downloadURL]]) {
+    const links = [...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).filter(link => link.endsWith(suffix));
+    assert.deepEqual(links, url ? [url, url] : [], `${code}: ${suffix} must match verified metadata`);
+  }
 }
 assert.ok(!fs.existsSync(path.join(dist,'en/index.html')), 'Old English page still present');
 console.log(`Verified ${codes.length} README languages, dropdowns, directions and local assets.`);
