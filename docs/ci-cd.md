@@ -14,6 +14,8 @@ Cage 的日常推送会检查 macOS、Windows 和 Linux，并保存测试安装�
 
 在仓库的 [Actions 页面](https://github.com/Lee-xeo/Claude-Cage/actions) 打开本次运行，可在 Artifacts 中下载测试包。测试包沿用 `VERSION` 中的版本号，每次运行以提交 SHA 区分；macOS 包保留完整 App 权限，Windows 包明确标为未签名，Linux 输出 `.deb`。测试包不会进入应用更新源。
 
+Windows 的 NSIS 文件匹配按打包工具所在平台使用路径分隔符，Windows runner 和其他主机上的交叉打包共用一份安装脚本。Linux 原生验收在一次性 Debian 容器内以普通用户运行，容器放开 bubblewrap 所需的外层 AppArmor、seccomp 和挂载限制，并先验证命名空间可用；应用自身的 WebKit 沙箱保持开启。这些容器设置不进入发行包，也不改变用户主机的安全配置。
+
 官网文件的普通推送只做检查和构建。官网部署随显式发布流程完成，也可以由维护者明确运行网站部署工作流。
 
 ## 明确发版后的自动流程

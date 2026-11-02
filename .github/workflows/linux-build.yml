@@ -25,8 +25,9 @@ jobs:
         shell: bash
     container:
       image: debian:12
-      # Permit WebKit's own sandbox inside this disposable test container.
-      options: --security-opt seccomp=unconfined --security-opt systempaths=unconfined
+      # docker-default AppArmor denies bubblewrap's private mount namespace.
+      # Relax only this disposable outer container; WebKit keeps its sandbox.
+      options: --security-opt seccomp=unconfined --security-opt systempaths=unconfined --security-opt apparmor=unconfined
     steps:
       - name: Install build and test dependencies
         run: |
@@ -74,6 +75,7 @@ jobs:
           runuser -u cage -- go vet ./internal/managedproxy ./internal/workbench ./cmd/cage
       - name: Install, render native workbench, reinstall and remove
         run: |
+          runuser -u cage -- bwrap --unshare-user --unshare-pid --ro-bind / / --proc /proc --dev /dev -- true
           version=$(cat VERSION)
           bash scripts/test-linux-install.sh "_output/releases/$version/linux/Cage-$version-linux-amd64.deb"
       - name: Record release candidate identity
