@@ -29,6 +29,7 @@ import { SettingsPanel } from "./settings";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
+import { TerminalMenu } from "./terminal-menu";
 import { ClaudeDesktop } from "./claude-desktop";
 import { AccountProvider, AccountGate } from "./account";
 import { WorkspaceTabs } from "./workspace-tabs";
@@ -57,6 +58,7 @@ import { stopAndExit } from "./quit";
 function App() {
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [terminalChoice, setTerminalChoice] = useState(null);
+  const terminalTrigger = useRef(null);
   const appUpdates = useAppUpdates();
   const [recoveringEditor, setRecoveringEditor] = useState(false);
   const windowVisible = useWindowVisibility();
@@ -210,7 +212,10 @@ function App() {
       tabs.find((t) => t.kind !== "terminal");
     return tab ? select(tab.id) : newPage();
   };
-  const newTerminal = (path = workspace) => setTerminalChoice(path);
+  const newTerminal = (path = workspace, anchor = terminalTrigger.current) =>
+    setTerminalChoice((previous) =>
+      previous?.anchor === anchor ? null : { path, anchor },
+    );
   const createTerminal = async (path, kind) => {
     setTerminalChoice(null);
     setDesktopOpen(false);
@@ -228,7 +233,9 @@ function App() {
       setActive(tab.id);
     }
   };
-  const newTerminalHere = () => newTerminal(contentWorkspace);
+  const newTerminalHere = (event) =>
+    newTerminal(contentWorkspace, event?.currentTarget?.tagName === "BUTTON"
+      ? event.currentTarget : terminalTrigger.current);
   const openEditor = async (path = workspace) => {
     setDesktopOpen(false);
     setHome(false);
@@ -974,6 +981,7 @@ function App() {
                 />
                 <button
                   className="icon-button browser-new-tab"
+                  ref={terminalTrigger}
                   aria-label="新建网页"
                   title={shortcut("新建网页 ⌘T")}
                   disabled={!status.ready || busy}
@@ -1030,6 +1038,8 @@ function App() {
                   <button
                     className="icon-button"
                     aria-label="新建终端"
+                    aria-haspopup="menu"
+                    ref={terminalTrigger}
                     title={shortcut("新建终端 ⌘⇧↵")}
                     onClick={newTerminalHere}
                     disabled={!running || busy}
@@ -1168,6 +1178,7 @@ function App() {
                     </div>
                     <button
                       className="text-button"
+                      aria-haspopup="menu"
                       onClick={newTerminalHere}
                       disabled={busy}
                     >
@@ -1345,13 +1356,13 @@ function App() {
                       <button
                         className="primary"
                         disabled={busy || Boolean(connectionError)}
-                        onClick={() => {
+                        onClick={(event) => {
                           if (!running && setupProxy) openSettings("network");
                           else if (!running || !status.ready)
                             setHostGitOpen(true);
                           else if (status.environment_workspace)
                             setProjectDialog({ path: "" });
-                          else newTerminal();
+                          else newTerminal(workspace, event.currentTarget);
                         }}
                       >
                         {busy ? (
@@ -1383,7 +1394,7 @@ function App() {
                   </div>
                   {running && (
                     <div className="welcome-shortcuts">
-                      <button onClick={newTerminalHere} disabled={busy}>
+                      <button onClick={newTerminalHere} aria-haspopup="menu" disabled={busy}>
                         <TerminalSquare size={16} />
                         新建终端
                       </button>
@@ -1542,14 +1553,12 @@ function App() {
         />
       )}
       {terminalChoice !== null && (
-        <Modal title="新建终端" onClose={() => setTerminalChoice(null)}>
-          <p className="field-help">{terminalChoice}</p>
-          <div className="terminal-choice-buttons">
-            <button className="quiet-button" disabled={busy} onClick={() => createTerminal(terminalChoice, "shell")}><TerminalSquare size={18} />新建普通终端</button>
-            <button className="primary" disabled={busy} onClick={() => createTerminal(terminalChoice, "claude")}><TerminalSquare size={18} />新建 Claude 终端</button>
-          </div>
-          <p className="field-help">Claude 终端会自动运行设置中的启动命令。当前命令：<code>{settings.claude_terminal_command || "claude"}</code></p>
-        </Modal>
+        <TerminalMenu
+          choice={terminalChoice}
+          busy={busy}
+          onClose={() => setTerminalChoice(null)}
+          onSelect={(kind) => createTerminal(terminalChoice.path, kind)}
+        />
       )}
       {rename && (
         <Modal

@@ -1401,6 +1401,27 @@ svg {
   padding: 4px 10px 4px 24px;
   margin: 0;
 }
+.terminal-create-menu {
+  position: fixed;
+  right: auto;
+  min-width: 0;
+  width: 184px;
+  max-width: calc(100vw - 16px);
+  background: var(--paper);
+  box-shadow: 0 8px 24px #00000016;
+}
+.terminal-create-menu button {
+  gap: 10px;
+  white-space: nowrap;
+}
+.terminal-create-menu button:hover,
+.terminal-create-menu button:focus-visible {
+  background: var(--hover);
+}
+.terminal-create-menu svg {
+  color: var(--muted);
+  flex: none;
+}
 .sidebar-bottom {
   padding: 8px 0 12px;
   border-top: 1px solid var(--line);

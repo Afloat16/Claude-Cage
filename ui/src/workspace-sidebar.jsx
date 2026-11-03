@@ -172,13 +172,14 @@ export function WorkspaceSidebar({
                   className="icon-button"
                   aria-label={`在 ${project} 新建终端`}
                   title="新建终端"
+                  aria-haspopup="menu"
                   disabled={!running || busy}
-                  onClick={() => {
+                  onClick={(event) => {
                     setCollapsed((previous) => ({
                       ...previous,
                       [path]: false,
                     }));
-                    onNewTerminal(path);
+                    onNewTerminal(path, event.currentTarget);
                   }}
                 >
                   <Plus size={15} />

@@ -471,7 +471,7 @@ export function SettingsPanel({
                   />
                 </label>
                 <p className="field-help">
-                  选择“新建 Claude 终端”后，在所选项目中运行此命令，例如 claude --continue。
+                  选择“Claude 终端”后，在所选项目中运行此命令，例如 claude --continue。
                   留空使用 claude；保存后仅影响新建的 Claude 终端，退出 Claude 后可继续使用 shell。
                 </p>
                 <h4>键盘习惯</h4>
