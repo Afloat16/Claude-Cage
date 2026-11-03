@@ -66,7 +66,7 @@ export async function readClipboardContent() {
     const value = await native("clipboardReadContent");
     if (
       !value ||
-      (typeof value.png !== "string" && typeof value.text !== "string")
+      (typeof value.png !== "string" && typeof value.text !== "string" && typeof value.fileSelection !== "string")
     )
       throw new Error("剪贴板读取失败，请重新打开新版 Cage 后重试");
     return value;

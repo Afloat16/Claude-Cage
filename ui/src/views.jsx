@@ -12,14 +12,16 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import RFB from "../.generated/novnc/core/rfb.js";
 import { api, writeClipboard, nativeAvailable } from "./api";
-import { readClipboardContent, imagePayload, transferFiles, hasFiles, sendImage } from "./image-transfer";
+import { readClipboardContent, transferFiles, hasFiles, sendImage } from "./image-transfer";
+import { sendFiles, shellFilePaths } from "./file-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
+import { displayGeometry, displaySizeSync } from "./remote-display.mjs";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export const RemoteView = forwardRef(function RemoteView(
-  { visible, keyboard, tabId, onStatus, onFallback, desktop = false },
+  { visible, keyboard, tabId, onStatus, onFallback, desktop = false, zoom = 1 },
   ref,
 ) {
   const windowVisible = useWindowVisibility();
@@ -27,11 +29,14 @@ export const RemoteView = forwardRef(function RemoteView(
   const box = useRef(),
     rfb = useRef(),
     input = useRef(),
-    current = useRef({ visible, keyboard, onStatus, onFallback });
-  current.current = { visible: screenVisible, keyboard, tabId, onStatus, onFallback };
+    current = useRef({ visible, keyboard, onStatus, onFallback }),
+    displayResize = useRef();
+  current.current = { visible: screenVisible, keyboard, tabId, onStatus, onFallback, zoom };
   const failures = useRef(0);
   const [connection, setConnection] = useState("connecting"),
-    [attempt, setAttempt] = useState(0);
+    [attempt, setAttempt] = useState(0),
+    [sizeError, setSizeError] = useState(false);
+  useEffect(() => { displayResize.current?.update(); }, [zoom]);
   useImperativeHandle(ref, () => ({
     focus: () => rfb.current?.focus(),
     edit: (action) =>
@@ -49,9 +54,10 @@ export const RemoteView = forwardRef(function RemoteView(
     let disposed = false,
       client,
       resizeObserver,
-      resizeTimer,
+      sizeSync,
       reconnectTimer;
     setConnection("connecting");
+    setSizeError(false);
     const retry = () => {
       if (disposed) return;
       setConnection("disconnected");
@@ -80,20 +86,14 @@ export const RemoteView = forwardRef(function RemoteView(
           if (disposed) return;
           failures.current = 0;
           setConnection("connected");
-          const resize = () => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-              if (disposed) return;
-              const { width, height } = box.current.getBoundingClientRect();
-              if (width >= 320 && height >= 240)
-                api(desktop ? "/claude-desktop/resize" : "/browser/resize", {
-                  width: Math.min(desktop ? 4096 : 8192, Math.floor(width * 2)),
-                  height: Math.min(desktop ? 4096 : 8192, Math.floor(height * 2)),
-                }).catch(() =>
-                  current.current.onStatus("画面尺寸未能调整，请重新连接画面"),
-                );
-            }, 160);
-          };
+          sizeSync = displaySizeSync(
+            (size) => api(desktop ? "/claude-desktop/resize" : "/browser/resize", size),
+            { onError: () => setSizeError(true), onSuccess: () => setSizeError(false) },
+          );
+          const resize = () => sizeSync.update(displayGeometry(
+            box.current.getBoundingClientRect(), { desktop, zoom: current.current.zoom },
+          ));
+          displayResize.current = { update: resize, retry: () => sizeSync.retry() };
           resizeObserver = new ResizeObserver(resize);
           resizeObserver.observe(box.current);
           resize();
@@ -104,7 +104,9 @@ export const RemoteView = forwardRef(function RemoteView(
               return client.cagePasteContent(content,
                 (payload) => {
                   if (!valid()) throw new Error("输入目标已切换，请重新粘贴图片");
-                  return sendImage(payload, desktop ? "desktop" : "browser", id);
+                  return payload.files || payload.fileSelection
+                    ? sendFiles(payload, desktop ? "desktop" : "browser", id, { valid })
+                    : sendImage(payload, desktop ? "desktop" : "browser", id);
                 }, valid);
             },
             insertText: (text) => {
@@ -127,6 +129,9 @@ export const RemoteView = forwardRef(function RemoteView(
           if (disposed) return;
           input.current?.dispose();
           input.current = null;
+          sizeSync?.dispose();
+          resizeObserver?.disconnect();
+          displayResize.current = null;
           retry();
         });
         client.addEventListener("securityfailure", () => {
@@ -138,7 +143,8 @@ export const RemoteView = forwardRef(function RemoteView(
       });
     return () => {
       disposed = true;
-      clearTimeout(resizeTimer);
+      sizeSync?.dispose();
+      displayResize.current = null;
       clearTimeout(reconnectTimer);
       resizeObserver?.disconnect();
       input.current?.dispose();
@@ -156,6 +162,12 @@ export const RemoteView = forwardRef(function RemoteView(
   return (
     <div className={`remote-view ${visible ? "" : "concealed"}`}>
       <div className="remote-canvas" ref={box} />
+      {sizeError && connection === "connected" && (
+        <div className="remote-size-warning connection-banner" role="alert">
+          画面尺寸未能同步，显示比例可能不准确。
+          <button onClick={() => displayResize.current?.retry()}>重试调整</button>
+        </div>
+      )}
       {connection !== "connected" && (
         <div className="view-overlay">
           <RefreshCw className={connection === "connecting" ? "spin" : ""} />
@@ -253,6 +265,10 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
         if (error) throw error;
         if (disposed || !visibleRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
         let text = value.text || "";
+        if (value.files || value.fileSelection) {
+          const result = await sendFiles(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && ws.readyState === WebSocket.OPEN });
+          text = shellFilePaths(result.paths);
+        }
         if (value.png) {
           const result = await sendImage(value, "terminal", session.id);
           text = `'${result.path}' `;
@@ -261,7 +277,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
         // Honor xterm's bracketed-paste mode without enqueuing behind this job.
         emittingPaste = true;
         try { terminal.paste(text); } finally { emittingPaste = false; }
-        onStatus(value.png ? "图片已保存到 Cage，路径已插入终端" : "已粘贴");
+        onStatus(value.png || value.files || value.fileSelection ? "附件已保存到 Cage，路径已插入终端" : "已粘贴");
       }).catch((error) => { if (!disposed) onStatus(error.message); });
     };
     const host = box.current;
@@ -269,7 +285,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       if (!visibleRef.current) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const files = transferFiles(event.clipboardData);
-      if (files.length) files.forEach(file => receive(imagePayload(file)));
+      if (files.length) receive({ files });
       else if (event.clipboardData?.types.includes("text/plain")) receive({ text: event.clipboardData.getData("text/plain") });
     };
     const onDragOver = (event) => {
@@ -279,7 +295,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
     const onDrop = (event) => {
       if (!visibleRef.current || !hasFiles(event.dataTransfer)) return;
       event.preventDefault(); event.stopPropagation();
-      transferFiles(event.dataTransfer).forEach(file => receive(imagePayload(file)));
+      receive({ files: transferFiles(event.dataTransfer), kind: "drop" });
       terminal.focus();
     };
     host.addEventListener("paste", onPaste, true);

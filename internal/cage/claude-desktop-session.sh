@@ -47,7 +47,16 @@ keyring_unlocked || { echo '无法解锁已有密钥环，登录数据未修改�
 touch "$XDG_RUNTIME_DIR/keyring-ready"
 # RemoteView displays two framebuffer pixels per CSS pixel, as for Chromium.
 # Scale the application's layout too so controls retain their intended size.
-claude-desktop --force-device-scale-factor=2 &
+/usr/local/bin/cage-desktop-files &
+files_pid=$!
+for i in $(seq 1 100); do
+  kill -0 "$files_pid"
+  if [ -S "$XDG_RUNTIME_DIR/files.sock" ]; then break; fi
+  sleep .1
+done
+test -S "$XDG_RUNTIME_DIR/files.sock"
+export GTK_USE_PORTAL=1
+claude-desktop --force-device-scale-factor=2 --xdg-portal-required-version=3 &
 app_pid=$!
 # The service becomes ready only after the application has opened a window.
 for i in $(seq 1 200); do

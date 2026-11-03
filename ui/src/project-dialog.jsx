@@ -1,27 +1,23 @@
 import { isWindows, isMac } from "./platform.mjs";
-import React, { useEffect, useState } from "react";
-import { FolderOpen, LoaderCircle } from "lucide-react";
+import React, { useState } from "react";
+import { FolderOpen, LoaderCircle, Plus } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { Modal } from "./views";
+import { projectName } from "./workspace-state.mjs";
 
 export function ProjectDialog({
-  current,
   status,
   initialPath = "",
+  activate = true,
   onClose,
   onOpened,
 }) {
-  const [path, setPath] = useState(initialPath);
+  const projects = status.projects || [];
+  const [adding, setAdding] = useState(Boolean(initialPath) || projects.length === 0);
+  const [path, setPath] = useState(initialPath || status.workspace || projects[0] || "");
   const [error, setError] = useState("");
-  const [job, setJob] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const busy = submitting || Boolean(job) || Boolean(status.job?.running);
-  useEffect(() => {
-    if (!job || status.job?.id !== job || status.job.running) return;
-    setJob(null);
-    if (status.job.error) setError(status.job.error);
-    else onOpened(path.trim());
-  }, [status.job, job]);
+  const busy = submitting || Boolean(status.job?.running);
   const choose = async () => {
     try {
       const selected = await native("chooseFolder");
@@ -33,21 +29,24 @@ export function ProjectDialog({
       setError("未能选择文件夹，请直接填写路径。");
     }
   };
+  const add = () => {
+    setAdding(true);
+    setPath("");
+    setError("");
+    if (nativeAvailable()) void choose();
+  };
   const open = async (event) => {
     event.preventDefault();
     if (busy || !path.trim()) return;
-    if (path.trim() === current.workspace) {
-      onOpened(path.trim());
-      return;
-    }
     setSubmitting(true);
     setError("");
     try {
-      const result = await api("/settings", {
-        ...current,
+      const result = await api("/projects/open", {
         workspace: path.trim(),
+        add: adding,
+        activate,
       });
-      setJob(result.id);
+      await onOpened(result.workspace);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -56,14 +55,14 @@ export function ProjectDialog({
   };
   return (
     <Modal
-      title="打开项目"
+      title={activate ? "打开项目" : "选择工作项目"}
       onClose={busy ? undefined : onClose}
       footer={
         <>
           <span className="save-note">
             {busy
-              ? status.job?.message || "正在打开项目…"
-              : "选择本地文件夹作为项目"}
+              ? submitting ? "正在连接项目…" : status.job?.message
+              : adding ? "添加到 Cage 项目列表" : "使用已授权的 Cage 项目"}
           </span>
           <button disabled={busy} onClick={onClose}>
             取消
@@ -79,7 +78,7 @@ export function ProjectDialog({
             ) : (
               <FolderOpen size={15} />
             )}
-            打开项目
+            {activate ? "打开项目" : "使用此项目"}
           </button>
         </>
       }
@@ -89,9 +88,26 @@ export function ProjectDialog({
         className="modal-body project-form"
         onSubmit={open}
       >
-        <p>选择的目录会加入左侧项目列表，可在目录下新建终端。</p>
-        <label htmlFor="project-path">项目文件夹</label>
-        <div className="folder-input">
+        <p>{activate ? "选择已有项目，或添加一个本机项目文件夹。" : "从 Cage 项目列表选择工作目录。新项目由 Cage 授权并共享。"}</p>
+        {!adding && <>
+          <fieldset className="project-picker-list" disabled={busy}>
+            <legend>Cage 项目</legend>
+            {projects.map((project) => <label className={`project-picker-item ${path === project ? "selected" : ""}`} key={project}>
+              <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
+              <FolderOpen size={18} aria-hidden="true" />
+              <span>
+                <strong>{project === status.environment_directory ? "默认工作区" : projectName(project)}</strong>
+                <small>{project}</small>
+                {status.project_errors?.some((item) => item.path === project) && <small>需要重新连接，选择后重试</small>}
+              </span>
+            </label>)}
+          </fieldset>
+          <button type="button" className="quiet-button project-picker-add" onClick={add} disabled={busy}><Plus size={16} />添加本机项目…</button>
+        </>}
+        {adding && <>
+          {projects.length > 0 && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setPath(status.workspace || projects[0]); setError(""); }}>返回已有项目</button>}
+          <label htmlFor="project-path">新项目文件夹</label>
+          <div className="folder-input">
           <input
             id="project-path"
             autoFocus
@@ -110,7 +126,8 @@ export function ProjectDialog({
               选择文件夹…
             </button>
           )}
-        </div>
+          </div>
+        </>}
         <p className="field-help">
           这个文件夹中的改动会同步到本机。所有项目共用 Cage
           环境，已有终端和网页会保持运行。

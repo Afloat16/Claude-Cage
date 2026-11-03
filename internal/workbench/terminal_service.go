@@ -171,11 +171,8 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 	if input.Kind != "" && input.Kind != "shell" && input.Kind != "claude" {
 		return nil, errors.New("终端类型无效")
 	}
-	workspace, err := s.projectWorkspace(input.Workspace)
+	workspace, err := s.connectProject(input.Workspace, false)
 	if err != nil {
-		return nil, err
-	}
-	if err := s.ensureProjectShare(workspace); err != nil {
 		return nil, err
 	}
 	name := vmname.Name(s.environmentDir())

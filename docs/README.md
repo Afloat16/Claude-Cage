@@ -6,7 +6,7 @@
 
 | 你要做什么 | 从这里开始 |
 |---|---|
-| 安装、配置代理、打开第一个项目 | [开始使用](getting-started.md) |
+| 选择 macOS、Windows、Linux 安装包，配置代理并打开第一个项目 | [开始使用](getting-started.md) |
 | 查看快捷键、文件保存、关闭与退出行为 | [日常使用](getting-started.md#日常使用) |
 | 在 Windows 上安装、使用和更新 | [Windows 支持](windows.md) |
 | 在 Linux 上安装、使用和更新 | [Linux 支持](linux.md) |
@@ -26,6 +26,7 @@
 | 理解节点配置、代理核心与凭据归属 | [内置代理设计](design/managed-proxy.md) |
 | 构建签名、公证的 macOS 安装包 | [发布 macOS 安装包](releasing.md) |
 | 构建 Windows 安装包与执行平台验收 | [Windows 构建与验收](windows.md#维护者构建与验收) |
+| 构建 Linux 系统包与执行平台验收 | [Linux 构建与验收](linux.md#维护者构建与验收) |
 | 运行三平台 CI、配置签名和自动发布 | [CI/CD 指南](ci-cd.md) |
 | 发布 Release、验证公开附件与部署主页 | [公开发行与主页部署](public-releases.md) |
 

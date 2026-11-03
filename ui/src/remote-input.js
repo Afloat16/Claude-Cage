@@ -2,7 +2,6 @@ import { getKeycode, getKeysym } from "../.generated/novnc/core/input/util.js";
 import { writeClipboard, nativeAvailable } from "./api";
 import {
   readClipboardContent,
-  imagePayload,
   transferFiles,
   hasFiles,
 } from "./image-transfer";
@@ -294,7 +293,7 @@ export function installRemoteInput(
       event.stopImmediatePropagation();
       const files = transferFiles(event.clipboardData);
       if (files.length) {
-        for (const file of files) receive(imagePayload(file));
+        receive({ files, kind: "paste" });
       } else if (event.clipboardData.types.includes("text/plain"))
         paste(event.clipboardData.getData("text/plain"));
       else say("剪贴板中没有可粘贴的图片或文本");
@@ -310,8 +309,11 @@ export function installRemoteInput(
     if (!isActive() || !hasFiles(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
-    for (const file of transferFiles(event.dataTransfer))
-      receive(imagePayload(file));
+    const canvas = container.querySelector("canvas") || container;
+    const rect = canvas.getBoundingClientRect();
+    receive({ files: transferFiles(event.dataTransfer), kind: "drop",
+      x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height)) });
   });
   return {
     copy,

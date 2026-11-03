@@ -3,9 +3,11 @@ import { createHash } from "node:crypto";
 
 // A bounded RFB display over real browser WebSockets. Playwright's WebSocket
 // replacement lacks the prototype properties checked by the shipped noVNC.
-export async function startDisplay(upstream) {
+export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
   const stats = { connections: 0, closed: 0, frames: 0 };
   const sockets = new Set();
+  const displays = new Set();
+  let width = 640, height = 480;
   const server = http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
       res.writeHead(503); res.end("Unmocked fixture request"); return;
@@ -18,7 +20,7 @@ export async function startDisplay(upstream) {
     proxy.on("error", () => { res.writeHead(502); res.end(); });
   });
   server.on("upgrade", (req, socket) => {
-    if (req.url !== "/api/vnc") { socket.destroy(); return; }
+    if (!["/api/vnc", "/api/claude-desktop/vnc"].includes(req.url)) { socket.destroy(); return; }
     sockets.add(socket);
     stats.connections++;
     const key = createHash("sha1").update(req.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
@@ -33,7 +35,18 @@ export async function startDisplay(upstream) {
       if (header.length === 10) header.writeBigUInt64BE(BigInt(length), 2);
       socket.write(Buffer.concat([header, payload]));
     };
-    let wire = Buffer.alloc(0), rfb = Buffer.alloc(0), phase = 0, timer;
+    let wire = Buffer.alloc(0), rfb = Buffer.alloc(0), phase = 0, timer, frame;
+    const makeFrame = () => {
+      frame = Buffer.alloc(16 + width * height * 4);
+      frame.writeUInt16BE(1, 2); frame.writeUInt16BE(width, 8); frame.writeUInt16BE(height, 10);
+    };
+    const resize = () => {
+      const update = Buffer.alloc(16);
+      update.writeUInt16BE(1, 2); update.writeUInt16BE(width, 8); update.writeUInt16BE(height, 10);
+      update.writeInt32BE(-223, 12); // RFB DesktopSize pseudo-encoding.
+      send(update);
+      makeFrame();
+    };
     const consume = (data) => {
       rfb = Buffer.concat([rfb, data]);
       if (phase === 0 && rfb.length >= 12) { rfb = rfb.subarray(12); phase = 1; send(Buffer.from([1, 1])); }
@@ -42,18 +55,18 @@ export async function startDisplay(upstream) {
         phase = 3;
         const name = Buffer.from("Cage test display");
         const init = Buffer.alloc(24 + name.length);
-        init.writeUInt16BE(640, 0); init.writeUInt16BE(480, 2);
+        init.writeUInt16BE(width, 0); init.writeUInt16BE(height, 2);
         init.set([32, 24, 0, 1], 4);
         for (const offset of [8, 10, 12]) init.writeUInt16BE(255, offset);
         init.set([16, 8, 0], 14);
         init.writeUInt32BE(name.length, 20); name.copy(init, 24); send(init);
-        const frame = Buffer.alloc(16 + 640 * 480 * 4);
-        frame.writeUInt16BE(1, 2); frame.writeUInt16BE(640, 8); frame.writeUInt16BE(480, 10);
+        makeFrame();
+        displays.add(resize);
         timer = setInterval(() => {
           if (socket.writableLength > frame.length * 2) return;
           frame.fill(stats.frames % 255, 16);
           send(frame); stats.frames++;
-        }, 50);
+        }, frameInterval);
       }
       if (phase === 3) rfb = Buffer.alloc(0);
     };
@@ -76,13 +89,14 @@ export async function startDisplay(upstream) {
       }
     });
     socket.on("error", () => {});
-    socket.on("close", () => { clearInterval(timer); sockets.delete(socket); stats.closed++; });
+    socket.on("close", () => { clearInterval(timer); displays.delete(resize); sockets.delete(socket); stats.closed++; });
     send(Buffer.from("RFB 003.008\n"));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     stats,
+    resize(size) { width = size.width; height = size.height; for (const resize of displays) resize(); },
     close: async () => {
       for (const socket of sockets) socket.destroy();
       server.closeAllConnections();

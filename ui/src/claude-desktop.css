@@ -22,6 +22,26 @@
 .desktop-toolbar-spacer {
   flex: 1;
 }
+.desktop-display-size {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.desktop-display-size select {
+  width: auto;
+  padding: 5px 7px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+}
+@media (max-width: 900px) {
+  .desktop-display-size { font-size: 0; }
+  .desktop-display-size select { font-size: 12px; }
+}
 .desktop-screen {
   position: relative;
   flex: 1;

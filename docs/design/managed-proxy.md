@@ -18,7 +18,7 @@
 | 连接状态 | 查看核心是否就绪、当前实际节点、出口 IP/地区、实时速率和本次流量 | 区分核心未启动、节点连接失败、环境检查未通过及主动暂停 |
 | 诊断 | 查看连接和状态摘要，停止或重启 Cage 自己的核心，配置独立端口 | 不操作本机其他代理实例；重启期间关闭 Cage 外网；核心原始日志保存在私有目录，不向页面公开 |
 
-订阅支持含 `proxies` 或 `payload` 的 Clash/Mihomo YAML，也接受含内联节点的完整配置。只含远程 provider 的配置、Base64 列表和各类分享链接暂不支持，需提供节点订阅地址或先导出 YAML。支持 HTTP、SOCKS5、SS、SSR、VMess、VLESS、Trojan、Hysteria、Hysteria2、TUIC、AnyTLS；具体字段仍须由固定版本核心校验。代理链必须引用同一来源内的具体节点，选择分组和 DIRECT 链路会被拒绝。
+订阅支持含 `proxies` 或 `payload` 的 Clash/Mihomo YAML，也接受含内联节点的完整配置。只含远程 provider 的配置、Base64 列表和各类分享链接暂不支持，需提供节点订阅地址或先导出 YAML。支持 HTTP、SOCKS5、SS、SSR、VMess、VLESS、Trojan、Hysteria、Hysteria2、TUIC、AnyTLS、Mieru；Mieru 可使用 TCP/UDP 传输、端口范围、复用、握手模式和流量模式参数，具体字段仍须由固定版本核心校验。代理链必须引用同一来源内的具体节点，选择分组和 DIRECT 链路会被拒绝。
 
 每份导入内容最多 8 MiB，全部来源保存后的 JSON 总量最多 32 MiB。累计超限时拒绝保存并保留原文件，用户仍可查看或删除已有来源。
 

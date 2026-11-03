@@ -17,6 +17,7 @@ internal sealed class MainWindow : Form
     private int expectedPort;
     private bool controllerNeedsUpdate, allowQuit, bootstrapping, webFailed;
     private readonly CancellationTokenSource lifetime = new();
+    private readonly Dictionary<string, (string[] Paths, DateTime Expires)> fileSelections = new();
 
     public MainWindow()
     {
@@ -178,6 +179,25 @@ internal sealed class MainWindow : Form
         finally { bootstrapping = false; }
     }
 
+    private object RememberFiles(string[] paths)
+    {
+        if (paths.Length is 0 or > 100) throw new InvalidDataException("请选择 1 至 100 个文件");
+        foreach (var path in paths)
+        {
+            if (!Path.IsPathFullyQualified(path) || path.StartsWith(@"\\", StringComparison.Ordinal)) throw new InvalidDataException("请选择本机文件");
+            var file = new FileInfo(path);
+            if (!file.Exists || (file.Attributes & (FileAttributes.Directory | FileAttributes.ReparsePoint)) != 0)
+                throw new InvalidDataException("请选择普通文件，暂不支持文件夹或链接");
+            if (file.Length > 2L * 1024 * 1024 * 1024) throw new InvalidDataException("每个文件不能超过 2 GB");
+        }
+        var now = DateTime.UtcNow;
+        foreach (var key in fileSelections.Where(item => item.Value.Expires <= now).Select(item => item.Key).ToArray()) fileSelections.Remove(key);
+        if (fileSelections.Count >= 16) fileSelections.Remove(fileSelections.MinBy(item => item.Value.Expires).Key);
+        var selection = Guid.NewGuid().ToString();
+        fileSelections[selection] = (paths, now.AddMinutes(10));
+        return new { fileSelection = selection, count = paths.Length };
+    }
+
     private async void Receive(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         // CoreWebView2.WebMessageReceived is top-document only. Frame messages
@@ -245,7 +265,8 @@ internal sealed class MainWindow : Form
                     result = response.Data; break;
                 }
                 case "clipboardReadContent":
-                    if (Clipboard.ContainsImage())
+                    if (Clipboard.ContainsFileDropList()) result = RememberFiles(Clipboard.GetFileDropList().Cast<string>().ToArray());
+                    else if (Clipboard.ContainsImage())
                     {
                         using var clipboardImage = Clipboard.GetImage() ?? throw new InvalidDataException("无法读取剪贴板图片");
                         if ((long)clipboardImage.Width * clipboardImage.Height > 40_000_000) throw new InvalidDataException("图片不能超过 4000 万像素");
@@ -256,6 +277,24 @@ internal sealed class MainWindow : Form
                     }
                     else result = new { text = Clipboard.ContainsText() ? Clipboard.GetText() : "" };
                     break;
+                case "chooseUploadFiles":
+                    using (var picker = new OpenFileDialog { Title = "选择本机文件", Multiselect = request.TryGetProperty("multiple", out var multiple) && multiple.ValueKind == JsonValueKind.True, CheckFileExists = true })
+                        result = picker.ShowDialog(this) == DialogResult.OK ? RememberFiles(picker.FileNames) : new { canceled = true };
+                    break;
+                case "uploadHostFiles":
+                {
+                    var target = request.Text("target");
+                    var uploadID = request.Text("id");
+                    if (target is not ("browser" or "desktop" or "terminal") || !(target == "terminal" ? System.Text.RegularExpressions.Regex.IsMatch(uploadID, "^[a-f0-9]{16}$") : Guid.TryParse(uploadID, out _))) throw new InvalidDataException("文件上传目标无效");
+                    if (!fileSelections.Remove(request.Text("selection"), out var selected) || selected.Expires <= DateTime.UtcNow)
+                        throw new InvalidDataException("文件选择已过期，请重新复制或选择文件");
+                    var arguments = new List<string> { "upload-files", "--json", target, uploadID };
+                    arguments.AddRange(selected.Paths);
+                    var response = await Backend.Json(arguments.ToArray(), lifetime.Token, TimeSpan.FromMinutes(30));
+                    if (response.Exit != 0) throw new IOException(response.Data.Text("message"));
+                    result = response.Data;
+                    break;
+                }
                 case "clipboardWrite":
                     if (request.Text("text") is { Length: > 0 } text) Clipboard.SetText(text); else Clipboard.Clear();
                     result = true; break;
@@ -293,7 +332,7 @@ internal sealed class MainWindow : Form
           });
           const cage = {postMessage(request) { return new Promise((resolve, reject) => {
             const id = crypto.randomUUID();
-            const timer = setTimeout(() => { pending.delete(id); reject(new Error('原生操作超时，请重试')); }, 240000);
+            const timer = setTimeout(() => { pending.delete(id); reject(new Error('原生操作超时，请重试')); }, request.action === 'uploadHostFiles' || request.action === 'chooseUploadFiles' ? 1800000 : 240000);
             pending.set(id, {resolve, reject, timer}); chrome.webview.postMessage({id, request});
           }); }};
           Object.defineProperty(window, 'webkit', {value: {messageHandlers: {cage}}, writable: false});

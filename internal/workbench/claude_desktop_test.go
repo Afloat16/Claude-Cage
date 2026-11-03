@@ -18,7 +18,7 @@ func TestClaudeDesktopControlBoundary(t *testing.T) {
 			t.Fatalf("%s must require running VM: %d", path, w.Code)
 		}
 	}
-	for _, body := range []string{`{"width":1,"height":1000}`, `{"width":5000,"height":1000}`, `{"width":"1024;command","height":768}`} {
+	for _, body := range []string{`{"width":1,"height":1000}`, `{"width":8193,"height":1000}`, `{"width":1000,"height":8193}`, `{"width":"1024;command","height":768}`} {
 		if w := request(s, "POST", "/api/claude-desktop/resize", s.origin, body, true); w.Code != 400 {
 			t.Fatalf("invalid geometry: %d", w.Code)
 		}

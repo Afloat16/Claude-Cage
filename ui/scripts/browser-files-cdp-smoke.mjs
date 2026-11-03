@@ -37,8 +37,8 @@ const server = http.createServer(async (request, response) => {
     return;
   }
   response.setHeader("Content-Type", "text/html;charset=utf-8");
-  response.end(`<label>上传文件<input type="file" multiple></label><p id="names"></p><button>发送附件</button><a href="/download">下载测试视频</a><script>
-  const input=document.querySelector('input');input.onchange=()=>document.querySelector('#names').textContent=Array.from(input.files).map(f=>f.name).join(',');
+  response.end(`<label>上传文件<input type="file" multiple></label><p id="names"></p><div id="dropzone" contenteditable="true" style="height:160px">拖入附件</div><button>发送附件</button><a href="/download">下载测试视频</a><script>
+  const zone=document.querySelector('#dropzone'); zone.ondragover=e=>e.preventDefault(); zone.ondrop=async e=>{e.preventDefault(); for(const file of e.dataTransfer.files) await fetch('/received?name='+encodeURIComponent(file.name),{method:'POST',body:file}); zone.textContent='附件完成'}; const input=document.querySelector('input');input.onchange=()=>document.querySelector('#names').textContent=Array.from(input.files).map(f=>f.name).join(',');
   document.querySelector('button').onclick=async()=>{for(const file of input.files)await fetch('/received?name='+encodeURIComponent(file.name),{method:'POST',body:file});document.querySelector('button').textContent='发送完成'};
   </script>`);
 });
@@ -111,6 +111,20 @@ try {
   await page.reload();
   await assert.rejects(uploads.finish(request.id), /关闭/);
 
+  for (const kind of ["drop", "paste"]) {
+    await page.locator("#dropzone").focus();
+    const box = await page.locator("#dropzone").boundingBox();
+    const viewport = page.viewportSize();
+    const batch = uploads.start("tab-1", "session-1", { kind, x: (box.x + box.width / 2) / viewport.width, y: (box.y + box.height / 2) / viewport.height });
+    await uploads.receive(batch.id, `原视频-${kind}.mp4`, Readable.from([bytes]));
+    await uploads.receive(batch.id, `中文-${kind}.txt`, Readable.from([Buffer.from("保留原文件🙂")]));
+    await uploads.finish(batch.id);
+    await waitFor(() => received.length === (kind === "drop" ? 4 : 6));
+    assert.deepEqual(received.at(-2).bytes, bytes);
+    assert.equal(received.at(-2).name, `原视频-${kind}.mp4`);
+    assert.equal(received.at(-1).bytes.toString(), "保留原文件🙂");
+  }
+
   const workspace = join(directory, "workspace");
   await mkdir(workspace);
   const downloads = new DownloadManager({
@@ -138,7 +152,7 @@ try {
   assert.deepEqual(await readFile(downloads.snapshot()[0].path), bytes);
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: real Chromium chooser interception, 8 MB binary + Unicode file upload, cancel preserves selection, navigation cancels stale chooser, download progress and exact saved bytes",
+    "PASS: real Chromium chooser interception, 8 MB binary + Unicode chooser/drop/paste uploads, cancel preserves selection, navigation cancels stale chooser, download progress and exact saved bytes",
   );
 } finally {
   await browser.close();

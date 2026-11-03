@@ -32,16 +32,29 @@ export class UploadManager {
       multiple: event.mode === "selectMultiple",
       files: [],
       busy: false,
+      kind: "chooser",
     });
     this.changed();
   }
 
   snapshot() {
-    return [...this.requests.values()].map(({ id, tabId, multiple }) => ({
+    return [...this.requests.values()].map(({ id, tabId, multiple, kind }) => ({
       id,
       tabId,
       multiple,
+      kind,
     }));
+  }
+
+  start(tabId, sessionId, { kind, x, y }) {
+    if (!["drop", "paste"].includes(kind)) throw new Error("文件传递方式无效");
+    if (kind === "drop" && ![x, y].every(v => Number.isFinite(v) && v >= 0 && v <= 1))
+      throw new Error("拖入位置无效");
+    this.cancelTab(tabId, false);
+    const id = randomUUID();
+    this.requests.set(id, { id, tabId, sessionId, kind, x, y, multiple: true, files: [], busy: false });
+    this.changed();
+    return { id };
   }
 
   request(id) {
@@ -90,11 +103,27 @@ export class UploadManager {
       throw new Error("请先选择并传递文件");
     request.busy = true;
     try {
-      await this.cdp(
-        "DOM.setFileInputFiles",
-        { backendNodeId: request.node, files: request.files },
-        request.sessionId,
-      );
+      if (request.kind === "chooser") {
+        await this.cdp("DOM.setFileInputFiles", { backendNodeId: request.node, files: request.files }, request.sessionId);
+      } else {
+        const { result, exceptionDetails } = await this.cdp("Runtime.evaluate", {
+          expression: `(() => {
+            const e = document.activeElement, r = e?.getBoundingClientRect();
+            return { width: innerWidth, height: innerHeight,
+              x: r?.width ? Math.max(0, Math.min(innerWidth - 1, r.left + r.width / 2)) : innerWidth / 2,
+              y: r?.height ? Math.max(0, Math.min(innerHeight - 1, r.top + r.height / 2)) : innerHeight / 2 };
+          })()`, returnByValue: true,
+        }, request.sessionId);
+        if (exceptionDetails || !result?.value) throw new Error("无法确定文件接收位置");
+        const viewport = result.value;
+        const x = request.kind === "drop" ? Math.min(viewport.width - 1, request.x * viewport.width) : viewport.x;
+        const y = request.kind === "drop" ? Math.min(viewport.height - 1, request.y * viewport.height) : viewport.y;
+        for (const type of ["dragEnter", "dragOver", "drop"]) {
+          if (this.requests.get(id) !== request) throw new Error("上传已取消");
+          await this.cdp("Input.dispatchDragEvent", { type, x, y, data: { items: [], files: request.files, dragOperationsMask: 1 } }, request.sessionId);
+        }
+      }
+      if (this.requests.get(id) !== request) throw new Error("上传已取消");
       this.requests.delete(id);
       // Chromium File objects can read lazily. Retain bytes until the document
       // is replaced or the tab closes, rather than deleting during submission.

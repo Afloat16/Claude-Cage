@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #ifndef CAGE_VERSION
 #define CAGE_VERSION "development"
@@ -25,6 +26,8 @@ typedef struct {
     gboolean initial_dark;
 } Cage;
 static Cage app;
+typedef struct { GPtrArray *paths; gint64 expires; } FileSelection;
+static GHashTable *file_selections;
 static void bootstrap(const char *option);
 static void show_error(const char *message);
 
@@ -288,6 +291,83 @@ static void clipboard_content_image(GtkClipboard *clipboard, GdkPixbuf *image, g
     g_free(buffer);
     pending_free(pending);
 }
+static void file_selection_free(gpointer data) {
+    FileSelection *selection = data;
+    g_ptr_array_unref(selection->paths);
+    g_free(selection);
+}
+static char *remember_files(GPtrArray *paths, GError **error) {
+    if (!paths->len || paths->len > 100) {
+        g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "请选择 1 至 100 个文件。");
+        return NULL;
+    }
+    for (guint i = 0; i < paths->len; i++) {
+        const char *path = g_ptr_array_index(paths, i);
+        GStatBuf info;
+        if (!g_path_is_absolute(path) || g_lstat(path, &info) != 0 || !S_ISREG(info.st_mode)) {
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "请选择本机普通文件，暂不支持文件夹或链接。");
+            return NULL;
+        }
+        if (info.st_size > 2LL * 1024 * 1024 * 1024) {
+            g_set_error_literal(error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "每个文件不能超过 2 GB。");
+            return NULL;
+        }
+    }
+    if (!file_selections) file_selections = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, file_selection_free);
+    gint64 now = g_get_monotonic_time();
+    GHashTableIter iter; gpointer key, value;
+    g_hash_table_iter_init(&iter, file_selections);
+    while (g_hash_table_iter_next(&iter, &key, &value))
+        if (((FileSelection *)value)->expires <= now) g_hash_table_iter_remove(&iter);
+    if (g_hash_table_size(file_selections) >= 16) {
+        gpointer oldest_key = NULL; gint64 oldest_time = G_MAXINT64;
+        g_hash_table_iter_init(&iter, file_selections);
+        while (g_hash_table_iter_next(&iter, &key, &value)) {
+            if (((FileSelection *)value)->expires < oldest_time) { oldest_key = key; oldest_time = ((FileSelection *)value)->expires; }
+        }
+        g_hash_table_remove(file_selections, oldest_key);
+    }
+    FileSelection *selection = g_new0(FileSelection, 1);
+    selection->paths = g_ptr_array_ref(paths); selection->expires = now + 600 * G_USEC_PER_SEC;
+    char *id = g_uuid_string_random();
+    g_hash_table_insert(file_selections, id, selection);
+    return g_strdup_printf("{\"fileSelection\":\"%s\",\"count\":%u}", id, paths->len);
+}
+static void reply_selected_uris(char **uris, PendingReply *pending) {
+    GPtrArray *paths = g_ptr_array_new_with_free_func(g_free);
+    GError *error = NULL;
+    for (guint i = 0; uris[i]; i++) {
+        char *hostname = NULL;
+        char *path = g_filename_from_uri(uris[i], &hostname, NULL);
+        if (!path || (hostname && *hostname && strcmp(hostname, "localhost"))) {
+            g_free(path); g_free(hostname);
+            g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_ARGUMENT, "请选择本机文件。");
+            break;
+        }
+        g_free(hostname); g_ptr_array_add(paths, path);
+    }
+    char *json = error ? NULL : remember_files(paths, &error);
+    if (error) reply_error(pending->reply, error->message);
+    else reply_json(pending->reply, pending->context, json);
+    g_free(json); g_clear_error(&error); g_ptr_array_unref(paths); pending_free(pending);
+}
+static void clipboard_gnome_files(GtkClipboard *clipboard, GtkSelectionData *selection, gpointer data) {
+    gint length = gtk_selection_data_get_length(selection);
+    if (length <= 0) { gtk_clipboard_request_image(clipboard, clipboard_content_image, data); return; }
+    if (length > MAX_MESSAGE) {
+        PendingReply *pending = data; reply_error(pending->reply, "剪贴板文件列表过大。"); pending_free(pending); return;
+    }
+    char *text = g_strndup((const char *)gtk_selection_data_get_data(selection), length);
+    char *start = strchr(text, '\n');
+    char **uris = start ? g_uri_list_extract_uris(start + 1) : NULL;
+    if (uris && uris[0]) reply_selected_uris(uris, data);
+    else { PendingReply *pending = data; reply_error(pending->reply, "剪贴板文件列表无效，请重新复制文件。"); pending_free(pending); }
+    g_strfreev(uris); g_free(text);
+}
+static void clipboard_file_uris(GtkClipboard *clipboard, gchar **uris, gpointer data) {
+    if (uris && uris[0]) reply_selected_uris(uris, data);
+    else gtk_clipboard_request_contents(clipboard, gdk_atom_intern_static_string("x-special/gnome-copied-files"), clipboard_gnome_files, data);
+}
 static void session_refreshed(JsonObject *object, const GError *error, gpointer data) {
     PendingReply *pending = data;
     const char *url = text_member(object, "url");
@@ -472,7 +552,43 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
     } else if (!strcmp(name, "clipboardRead")) {
         gtk_clipboard_request_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), clipboard_received, pending_reply(reply, context));
     } else if (!strcmp(name, "clipboardReadContent")) {
-        gtk_clipboard_request_image(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), clipboard_content_image, pending_reply(reply, context));
+        gtk_clipboard_request_uris(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), clipboard_file_uris, pending_reply(reply, context));
+    } else if (!strcmp(name, "chooseUploadFiles")) {
+        if (app.picker_open) reply_error(reply, "请先完成当前文件窗口。");
+        else {
+            app.picker_open = TRUE;
+            GtkWidget *dialog = gtk_file_chooser_dialog_new("选择本机文件", GTK_WINDOW(app.window), GTK_FILE_CHOOSER_ACTION_OPEN,
+                "取消", GTK_RESPONSE_CANCEL, "选择", GTK_RESPONSE_ACCEPT, NULL);
+            JsonNode *multiple = json_object_get_member(request, "multiple");
+            gtk_file_chooser_set_select_multiple(GTK_FILE_CHOOSER(dialog), multiple && JSON_NODE_HOLDS_VALUE(multiple) && json_node_get_value_type(multiple) == G_TYPE_BOOLEAN && json_node_get_boolean(multiple));
+            gtk_file_chooser_set_local_only(GTK_FILE_CHOOSER(dialog), TRUE);
+            if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
+                GSList *list = gtk_file_chooser_get_filenames(GTK_FILE_CHOOSER(dialog));
+                GPtrArray *paths = g_ptr_array_new_with_free_func(g_free);
+                for (GSList *item = list; item; item = item->next) g_ptr_array_add(paths, item->data);
+                g_slist_free(list);
+                GError *error = NULL; char *json = remember_files(paths, &error);
+                if (error) reply_error(reply, error->message); else reply_json(reply, context, json);
+                g_free(json); g_clear_error(&error); g_ptr_array_unref(paths);
+            } else reply_json(reply, context, "{\"canceled\":true}");
+            gtk_widget_destroy(dialog); app.picker_open = FALSE;
+        }
+    } else if (!strcmp(name, "uploadHostFiles")) {
+        const char *target = text_member(request, "target"), *id = text_member(request, "id"), *token = text_member(request, "selection");
+        FileSelection *selected = file_selections ? g_hash_table_lookup(file_selections, token) : NULL;
+        if (!(strcmp(target, "terminal") == 0 ? g_regex_match_simple("^[a-f0-9]{16}$", id, 0, 0) : g_uuid_string_is_valid(id)) || (strcmp(target, "browser") && strcmp(target, "desktop") && strcmp(target, "terminal"))) reply_error(reply, "文件上传目标无效。");
+        else if (!selected || selected->expires <= g_get_monotonic_time()) {
+            if (file_selections) g_hash_table_remove(file_selections, token);
+            reply_error(reply, "文件选择已过期，请重新复制或选择文件。");
+        } else {
+            GPtrArray *paths = g_ptr_array_ref(selected->paths);
+            g_hash_table_remove(file_selections, token);
+            const char **args = g_new0(const char *, paths->len + 6);
+            args[0] = app.backend; args[1] = "upload-files"; args[2] = "--json"; args[3] = target; args[4] = id;
+            for (guint i = 0; i < paths->len; i++) args[i + 5] = g_ptr_array_index(paths, i);
+            backend_arguments(args, 1800, browser_file_finished, pending_reply(reply, context));
+            g_free(args); g_ptr_array_unref(paths);
+        }
     } else if (!strcmp(name, "clipboardWrite")) {
         const char *text = text_member(request, "text");
         GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);

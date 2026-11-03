@@ -179,13 +179,13 @@ func Parse(data []byte, sourceID string) ([]Node, error) {
 	if len(proxies) == 0 || len(proxies) > 3000 {
 		return nil, errors.New("配置需要包含 1–3000 个 proxies 节点；仅含远程 provider 的配置请改为导入节点订阅链接")
 	}
-	allowed := strings.Fields("name type server port password username cipher uuid alterId network tls udp skip-cert-verify servername sni alpn client-fingerprint fingerprint ws-opts grpc-opts http-opts h2-opts reality-opts packet-encoding flow encryption obfs obfs-password auth auth-str up down ports hop-interval recv-window-conn recv-window disable-mtu-discovery fast-open protocol protocol-param obfs-param plugin plugin-opts dialer-proxy smux ip-version tfo mptcp certificate-fingerprint idle-session-check-interval idle-session-timeout min-idle-session global-padding authenticated-length heartbeat-interval reduce-rtt request-timeout max-open-streams max-udp-relay-packet-size congestion-controller udp-relay-mode zero-rtt udp-over-stream udp-over-tcp udp-over-tcp-version ech-opts client-id token")
+	allowed := strings.Fields("name type server port password username cipher uuid alterId network tls udp skip-cert-verify servername sni alpn client-fingerprint fingerprint ws-opts grpc-opts http-opts h2-opts reality-opts packet-encoding flow encryption obfs obfs-password auth auth-str up down ports hop-interval recv-window-conn recv-window disable-mtu-discovery fast-open protocol protocol-param obfs-param plugin plugin-opts dialer-proxy smux ip-version tfo mptcp certificate-fingerprint idle-session-check-interval idle-session-timeout min-idle-session global-padding authenticated-length heartbeat-interval reduce-rtt request-timeout max-open-streams max-udp-relay-packet-size congestion-controller udp-relay-mode zero-rtt udp-over-stream udp-over-tcp udp-over-tcp-version ech-opts client-id token transport port-range multiplexing handshake-mode traffic-pattern")
 	keys := map[string]bool{}
 	for _, k := range allowed {
 		keys[k] = true
 	}
 	types := map[string]bool{}
-	for _, k := range strings.Fields("http socks5 ss ssr vmess vless trojan hysteria hysteria2 tuic anytls") {
+	for _, k := range strings.Fields("http socks5 ss ssr vmess vless trojan hysteria hysteria2 tuic anytls mieru") {
 		types[k] = true
 	}
 	names := map[string]string{}
@@ -195,7 +195,7 @@ func Parse(data []byte, sourceID string) ([]Node, error) {
 		typ, _ := p["type"].(string)
 		server, _ := p["server"].(string)
 		if strings.TrimSpace(name) == "" || len(name) > 240 || names[name] != "" || !types[typ] || server == "" || len(server) > 253 {
-			return nil, errors.New("节点名称重复、服务器缺失或协议暂不支持；支持 HTTP/SOCKS5/SS/SSR/VMess/VLESS/Trojan/Hysteria/TUIC/AnyTLS")
+			return nil, errors.New("节点名称重复、服务器缺失或协议暂不支持；支持 HTTP/SOCKS5/SS/SSR/VMess/VLESS/Trojan/Hysteria/TUIC/AnyTLS/Mieru")
 		}
 		for k := range p {
 			if !keys[k] {

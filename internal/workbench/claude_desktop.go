@@ -167,7 +167,7 @@ func (s *Server) claudeDesktopResize(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &input) {
 		return
 	}
-	if input.Width < 320 || input.Height < 240 || input.Width > 4096 || input.Height > 4096 {
+	if input.Width < 320 || input.Height < 240 || input.Width > 8192 || input.Height > 8192 {
 		http.Error(w, "画面尺寸无效", 400)
 		return
 	}

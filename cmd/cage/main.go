@@ -77,6 +77,18 @@ func run() int {
 	if args[0] == "app-update" {
 		return appupdate.Run(path, args[1:], os.Stdout)
 	}
+	if args[0] == "upload-files" {
+		if len(args) < 5 || args[1] != "--json" {
+			return fail(fmt.Errorf("upload-files --json browser|desktop|terminal ID PATH..."))
+		}
+		result, err := workbench.UploadHostFiles(path, args[2], args[3], args[4:])
+		if err != nil {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
+			return 1
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(result)
+		return 0
+	}
 	if args[0] == "browser-file" {
 		if len(args) < 4 || len(args) > 5 || args[1] != "--json" {
 			return fail(fmt.Errorf("browser-file --json save|open|reveal ID [destination]"))

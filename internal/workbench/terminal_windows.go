@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -139,10 +140,17 @@ func (p *windowsTerminal) closeConsole() {
 func (p *windowsTerminal) Close() error {
 	p.once.Do(func() {
 		p.input.Close()
-		p.output.Close()
-		// Closing a ConPTY can wait for output delivery. The reader is closed
-		// first, so shutdown never waits on the WebSocket consumer.
+		// Windows Server 2022 can wait for the final console output during
+		// ClosePseudoConsole. Keep draining even when the session reader has
+		// stopped; closing the output pipe first can deadlock console teardown.
+		drained := make(chan struct{})
+		go func() {
+			_, _ = io.Copy(io.Discard, p.output)
+			close(drained)
+		}()
 		p.closeConsole()
+		p.output.Close()
+		<-drained
 	})
 	return nil
 }

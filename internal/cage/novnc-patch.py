@@ -96,7 +96,7 @@ replace_once('    clipboardPasteFrom(text) {', '''    // Cage: serialize the cli
             const {value, error} = await pending;
             if (error) throw error;
             if (!valid()) throw new Error('Input target changed');
-            if (value.png) return this._cageRunInput(() => pasteImage(value));
+            if (value.png || value.files || value.fileSelection) return this._cageRunInput(() => pasteImage(value));
             return this._cagePasteText(value.text || '');
         });
     }

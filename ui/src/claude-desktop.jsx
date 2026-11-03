@@ -6,12 +6,17 @@ import {
   Power,
   RefreshCw,
 } from "lucide-react";
+import { BrowserUploads } from "./browser-uploads";
+import { ProjectDialog } from "./project-dialog";
 import { api } from "./api";
 import { RemoteView } from "./views";
 import "./claude-desktop.css";
 
+const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+
 export function ClaudeDesktop({
   status,
+  onProjectOpened,
   visible,
   remoteRef,
   onStatus,
@@ -21,6 +26,15 @@ export function ClaudeDesktop({
   onExpand,
   sidebarCollapsed,
 }) {
+  const [uploads, setUploads] = useState([]);
+  const [closedChooser, setClosedChooser] = useState("");
+  const directoryRequest = uploads.find((item) => item.directory && item.id !== closedChooser);
+  const [zoom, setZoom] = useState(() => {
+    try {
+      const value = Number(localStorage.getItem("cage-desktop-zoom"));
+      return desktopZooms.includes(value) ? value : 1;
+    } catch { return 1; }
+  });
   const [desktop, setDesktop] = useState(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -50,6 +64,17 @@ export function ClaudeDesktop({
       setSubmitting(false);
     }
   };
+  useEffect(() => {
+    if (!visible || !desktop?.running || !status.ready) { setUploads([]); return; }
+    let disposed = false;
+    const poll = async () => {
+      try { const value = await api("/input/files/desktop/requests"); if (!disposed) setUploads(value.uploads || []); }
+      catch { if (!disposed) setUploads([]); }
+    };
+    void poll();
+    const timer = setInterval(poll, 1500);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [visible, desktop?.running, status.ready]);
   useEffect(() => {
     if (!status.vm_running || status.job?.running) return;
     let disposed = false;
@@ -81,6 +106,21 @@ export function ClaudeDesktop({
   }, [status.job]);
   return (
     <section className="claude-desktop-view" aria-label="Claude Desktop">
+      <BrowserUploads requests={uploads} onStatus={onStatus} />
+      {directoryRequest && <ProjectDialog
+        key={directoryRequest.id}
+        status={status}
+        activate={false}
+        onClose={() => {
+          setClosedChooser(directoryRequest.id);
+          void api("/input/files/cancel", { target: "desktop", id: directoryRequest.id }).catch((e) => onStatus(e.message));
+        }}
+        onOpened={async (workspace) => {
+          await api("/input/files/directory", { target: "desktop", id: directoryRequest.id, workspace });
+          setClosedChooser(directoryRequest.id);
+          await onProjectOpened(workspace);
+        }}
+      />}
       <header className="claude-desktop-toolbar">
         {sidebarCollapsed && (
           <button
@@ -97,6 +137,18 @@ export function ClaudeDesktop({
           {desktop?.version ? `v${desktop.version}` : "Linux"}
         </span>
         <span className="desktop-toolbar-spacer" />
+        {desktop?.running && (
+          <label className="desktop-display-size">
+            显示大小
+            <select aria-label="Desktop 显示大小" value={zoom} onChange={(event) => {
+              const value = Number(event.target.value);
+              setZoom(value);
+              try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
+            }}>
+              {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? "（默认）" : ""}</option>)}
+            </select>
+          </label>
+        )}
         {desktop?.running && (
           <button
             className="quiet-button"
@@ -146,6 +198,7 @@ export function ClaudeDesktop({
           <RemoteView
             ref={remoteRef}
             desktop
+            zoom={zoom}
             visible={visible}
             keyboard={status.keyboard}
             onStatus={onStatus}

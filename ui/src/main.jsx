@@ -770,6 +770,7 @@ function App() {
   };
   const openedProject = async (path) => {
     await refreshSettings();
+    await refreshStatus.current?.();
     setSelectedProject(path);
     setProjectDialog(null);
     setHome(true);
@@ -1202,6 +1203,7 @@ function App() {
           )}
           <main className="workspace">
             {desktopOpen && <ClaudeDesktop
+              onProjectOpened={() => refreshStatus.current?.()}
               status={status} visible={!settingsOpen} remoteRef={remote}
               onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}
               onConfirm={confirm} onDetails={() => setDetails(true)}
@@ -1275,9 +1277,7 @@ function App() {
                       : running
                         ? !status.ready
                           ? "Cage 环境正在连接"
-                          : status.environment_workspace
-                            ? "Cage 环境已就绪"
-                            : project
+                          : "Cage 环境已就绪"
                         : setupProxy
                           ? "为 Claude 准备独立工作区"
                           : "先启动 Cage 环境"}
@@ -1321,7 +1321,7 @@ function App() {
                         size={24}
                       />
                       <span>
-                        <strong>{running ? project : "Cage 隔离环境"}</strong>
+                        <strong>Cage 隔离环境</strong>
                         <small>
                           {running
                             ? runtimeLabel
@@ -1524,7 +1524,6 @@ function App() {
       <BrowserUploads requests={status.ready ? browser.uploads : []} onStatus={notify} />
       {settingsOpen && (
         <SettingsPanel
-          current={settings}
           status={status}
           initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}

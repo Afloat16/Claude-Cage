@@ -406,10 +406,7 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 	// A project is a live directory grant in the same VM, never a lifecycle change.
 	if v.Preferences.Workspace != "" && s.vmRunning() {
 		s.setMessage("正在连接项目文件夹…")
-		if err = s.ensureProjectShare(v.Preferences.Workspace); err != nil {
-			return err
-		}
-		if err = s.rememberSharedProject(v.Preferences.Workspace); err != nil {
+		if _, err = s.connectProject(v.Preferences.Workspace, true); err != nil {
 			return err
 		}
 	}

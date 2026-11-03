@@ -155,6 +155,8 @@ func TestImportRejectsFilesDirectAndCycles(t *testing.T) {
 		`proxies: [{name: test, type: socks5, server: example.com, port: 80, dialer-proxy: DIRECT}]`,
 		`proxies: [{name: test, type: socks5, server: example.com, port: 80, dialer-proxy: test}]`,
 		`proxies: [{name: test, type: http, server: example.com, port: 80, ws-opts: {private-key: /etc/passwd}}]`,
+		`proxies: [{name: test, type: mieru, server: example.com, port: 443, transport: TCP, username: test-user, password: test-password, interface-name: en0}]`,
+		`proxies: [{name: test, type: mieru, server: example.com, port: 443, transport: TCP, username: test-user, password: test-password, tls-opts: {ca: /etc/passwd}}]`,
 		`proxies: [{name: duplicate, type: http, server: a, port: 80}, {name: duplicate, type: http, server: b, port: 80}]`,
 	} {
 		if _, err := Parse([]byte(nodes), "test"); err == nil {
@@ -169,6 +171,93 @@ func TestAnyTLSIdleSessionOptionsRemainCompatible(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestMieruMixedSubscription(t *testing.T) {
+	// Match the reported subscription's mix without using account credentials.
+	var data strings.Builder
+	data.WriteString("proxies:\n")
+	for i := 0; i < 113; i++ {
+		fmt.Fprintf(&data, "  - {name: vless-%d, type: vless, server: example.com, port: 443, uuid: 00000000-0000-4000-8000-000000000001}\n", i)
+	}
+	for i := 0; i < 19; i++ {
+		fmt.Fprintf(&data, "  - {name: mieru-%d, type: mieru, server: example.com, port: 443, username: test-user, password: test-password, transport: TCP, udp: true}\n", i)
+	}
+	profile := t.TempDir()
+	s, err := Load(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Import("mixed", "", []byte(data.String()), "source", 24, ""); err != nil {
+		t.Fatal(err)
+	}
+	if s.Count() != 132 {
+		t.Fatalf("imported %d nodes, want 132", s.Count())
+	}
+	s.Selected = s.Sources[0].Nodes[113].ID
+	if err := s.Save(profile); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, ok := loaded.Find(s.Selected)
+	if !ok || node.Type != "mieru" || node.Config["transport"] != "TCP" || node.Config["username"] != "test-user" || node.Config["password"] != "test-password" || node.Config["udp"] != false {
+		t.Fatal("Mieru options or Cage UDP boundary lost during persistence")
+	}
+	other, err := Parse([]byte(data.String()), "source")
+	if err != nil || other[113].ID != node.ID {
+		t.Fatal("refresh changed Mieru node identity", err)
+	}
+	checkMieruRuntime(t, profile, loaded)
+}
+
+func TestMieruTransportOptions(t *testing.T) {
+	for _, root := range []string{"proxies", "payload"} {
+		t.Run(root, func(t *testing.T) {
+			s, err := Load(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := root + `: [{name: mieru-udp, type: mieru, server: example.com, port-range: 8000-8010, username: test-user, password: test-password, transport: UDP, multiplexing: MULTIPLEXING_LOW, handshake-mode: HANDSHAKE_STANDARD}]`
+			if err := s.Import("mieru", "", []byte(data), "source", 0, ""); err != nil {
+				t.Fatal(err)
+			}
+			s.Selected = s.Sources[0].Nodes[0].ID
+			checkMieruRuntime(t, t.TempDir(), s)
+		})
+	}
+}
+
+func checkMieruRuntime(t *testing.T, profile string, s Store) {
+	t.Helper()
+	b, err := s.Runtime(profile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var config struct {
+		Proxies []map[string]any `yaml:"proxies"`
+	}
+	if err := yaml.Unmarshal(b, &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Proxies) != s.Count() {
+		t.Fatal("runtime lost imported nodes")
+	}
+	for _, node := range config.Proxies {
+		if node["type"] == "mieru" && (node["transport"] == nil || node["udp"] != false) {
+			t.Fatal("runtime lost Mieru transport or enabled guest UDP")
+		}
+	}
+	// Run the compiled test binary beside the bundled mihomo to exercise the
+	// same candidate-config validation used by subscription import and refresh.
+	if os.Getenv("CAGE_PROXY_INTEGRATION") == "1" {
+		if err := Validate(context.Background(), profile, s); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
 func TestRefreshIdentityAndInvalidUpdatePreserveNodes(t *testing.T) {
 	s, _ := Load(t.TempDir())
 	if err := s.Import("test", "https://example.com/sub?secret=x", []byte(testNodes), "source", 24, ""); err != nil {

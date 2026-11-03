@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,6 +18,76 @@ import (
 	"github.com/sylvinus/agent-vm/internal/mounts"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
+
+// connectProject is the shared project entry point. Callers hold the lifecycle
+// lock. Consumers may reconnect an existing grant; only adding a project grants
+// access to a new host directory.
+func (s *Server) connectProject(path string, add bool) (string, error) {
+	if path == "" {
+		path = s.workspace()
+	}
+	path, err := validateWorkspace(path, s.profile)
+	if err != nil {
+		return "", err
+	}
+	if !add {
+		if path, err = s.projectWorkspace(path); err != nil {
+			return "", err
+		}
+	}
+	if err = s.ensureProjectShare(path); err != nil {
+		return "", err
+	}
+	if add {
+		if err = s.rememberSharedProject(path); err != nil {
+			return "", err
+		}
+	}
+	return path, nil
+}
+
+func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Workspace string `json:"workspace"`
+		Add       bool   `json:"add"`
+		Activate  bool   `json:"activate"`
+	}
+	if !readJSON(w, r, &input) {
+		return
+	}
+	if input.Workspace == "" {
+		http.Error(w, "请选择项目文件夹", 400)
+		return
+	}
+	if !s.op.TryLock() {
+		http.Error(w, "另一个操作仍在进行，请稍候", 409)
+		return
+	}
+	defer s.op.Unlock()
+	s.mu.Lock()
+	ready, closing, preferences := s.ready, s.closing, s.preferences
+	s.mu.Unlock()
+	if closing || !ready || s.busy() {
+		http.Error(w, "环境尚未就绪或正在处理其他操作，请稍后重试", 409)
+		return
+	}
+	workspace, err := s.connectProject(input.Workspace, input.Add)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	if input.Activate {
+		preferences.Workspace = workspace
+		if err = writePrivate(filepath.Join(s.profile, "workbench.json"), preferences); err != nil {
+			requestError(w, err)
+			return
+		}
+		s.mu.Lock()
+		s.preferences.Workspace = workspace
+		s.mu.Unlock()
+	}
+	jsonReply(w, map[string]string{"workspace": workspace})
+}
 
 type projectTransport struct {
 	io.ReadCloser

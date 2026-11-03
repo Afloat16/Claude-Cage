@@ -16,6 +16,8 @@ const download = {
 };
 const fixture = await createWorkbench({
   nativeRequest: async (body) => {
+    if (body.action === "chooseUploadFiles") { nativeCalls.push(body); return { fileSelection: "fixture-selection", count: 2 }; }
+    if (body.action === "uploadHostFiles") { nativeCalls.push(body); assert.equal(body.target, "browser"); assert.equal(body.id, chooser); assert.equal(body.selection, "fixture-selection"); return {ok:true}; }
     if (body.action === "saveBrowserDownload") {
       nativeCalls.push(body);
       if (cancelSave) return { canceled: true };
@@ -85,21 +87,9 @@ try {
     state: "saved",
     path: "/Users/test/Cage/Downloads/video.mp4",
   });
-  const first = Buffer.alloc(1024 * 1024, 217),
-    second = Buffer.from("附件正文🙂");
-  await page.getByLabel("选择本机文件").setInputFiles([
-    { name: "参考视频.mp4", mimeType: "video/mp4", buffer: first },
-    { name: "参考.txt", mimeType: "text/plain", buffer: second },
-  ]);
-  await page
-    .getByRole("dialog", { name: "上传本机文件" })
-    .waitFor({ state: "hidden" });
-  assert.deepEqual(
-    uploads.map((item) => item.name),
-    ["参考视频.mp4", "参考.txt"],
-  );
-  assert.deepEqual(uploads[0].bytes, first);
-  assert.deepEqual(uploads[1].bytes, second);
+  await page.getByRole("button", { name: "选择本机文件", exact: true }).click();
+  await page.getByRole("dialog", { name: "上传本机文件" }).waitFor({ state: "hidden" });
+  assert.ok(nativeCalls.some(call => call.action === "uploadHostFiles"));
   await poll(() =>
     nativeCalls.some((call) => call.action === "saveBrowserDownload"),
   );
@@ -142,7 +132,7 @@ try {
     .getByRole("dialog", { name: "浏览器下载" })
     .getByRole("button", { name: "关闭面板" })
     .click();
-  selections = [{ id: chooser, tabId: "tab-1", multiple: false }];
+  selections = [{ id: "a8af5851-5837-45ca-a820-1a2565bc7ec6", tabId: "tab-1", multiple: false }];
   await page
     .getByRole("dialog", { name: "上传本机文件" })
     .getByRole("button", { name: "取消上传" })
@@ -171,7 +161,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: workbench native-file input with exact binary POST, multiple files, cancel, deferred Save As, canceled Save As keeps fallback, saved path, Open/Reveal IDs",
+    "PASS: workbench native picker with opaque selection handle, multiple files, cancel, deferred Save As, canceled Save As keeps fallback, saved path, Open/Reveal IDs",
   );
 } finally {
   await browser.close();

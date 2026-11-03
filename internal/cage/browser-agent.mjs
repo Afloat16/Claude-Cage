@@ -461,7 +461,16 @@ const server = http.createServer(async (req, res) => {
       if (text.length > (req.url === "/paste-image" ? 28 * 1024 * 1024 : 65536)) throw new Error("Request too large");
     }
     const input = JSON.parse(text || "{}");
-    if (req.url === "/upload-finish") { res.end(JSON.stringify(await uploads.finish(input.id))); return; }
+    if (req.url === "/upload-start" || req.url === "/upload-finish") {
+      const result = await mutate(async () => {
+        const tabId = req.url === "/upload-start" ? input.id : uploads.request(input.id).tabId;
+        if (!targets.has(tabId) || activeId !== tabId) throw new Error("文件接收网页已切换，请返回原网页重试");
+        return req.url === "/upload-start"
+          ? uploads.start(tabId, await session(tabId), input)
+          : uploads.finish(input.id);
+      });
+      res.end(JSON.stringify(result)); return;
+    }
     if (req.url === "/upload-cancel") { uploads.cancel(input.id); res.end('{"ok":true}'); return; }
     if (req.url === "/download-retry") {
       res.end(JSON.stringify(downloads.retry(input.id)));

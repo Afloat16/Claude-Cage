@@ -488,6 +488,13 @@ button.large {
   width: 100% !important;
   height: 100% !important;
 }
+.remote-size-warning {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+}
 .remote-text-input {
   width: 1px;
   height: 24px;
@@ -1678,7 +1685,7 @@ svg {
   font-size: 0.9286rem;
   font-weight: 500;
 }
-.project-form input {
+.project-form input:not([type="radio"]) {
   border: 1px solid var(--line);
   background: var(--paper);
   border-radius: 7px;
@@ -1697,6 +1704,60 @@ svg {
   color: var(--muted);
   margin: 0;
   font-size: 0.8571rem;
+}
+.project-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.project-picker-list legend {
+  font-size: 0.8571rem;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+.project-picker-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+.project-picker-item.selected {
+  border-color: var(--accent);
+  background: var(--paper);
+}
+.project-picker-item input {
+  flex: none;
+  accent-color: var(--accent);
+}
+.project-picker-item svg {
+  flex: none;
+  color: var(--muted);
+}
+.project-picker-item span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+.project-picker-item strong {
+  font-size: 0.9286rem;
+  font-weight: 500;
+}
+.project-picker-item small {
+  color: var(--muted);
+  font-size: 0.7857rem;
+  overflow-wrap: anywhere;
+}
+.project-picker-add {
+  align-self: flex-start;
 }
 .settings-page {
   position: fixed;

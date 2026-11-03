@@ -10,6 +10,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     private var expectedPort = 0
     private var allowQuit = false
     private var nativeFilePanelOpen = false
+    private var fileSelections: [String: (paths: [String], expires: Date)] = [:]
     private var loading: NSTextField!
     private var retry: NSButton!
     private var backdrop: NSVisualEffectView!
@@ -232,18 +233,40 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         }
     }
     private func browserFile(_ operation: String, id: String, path: String? = nil, reply: @escaping (Any?, String?) -> Void) {
-        guard UUID(uuidString: id) != nil, let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else { reply(nil,"下载标识无效"); return }
+        guard UUID(uuidString: id) != nil else { reply(nil,"下载标识无效"); return }
+        fileCommand(["browser-file", "--json", operation, id] + (path.map { [$0] } ?? []), reply: reply)
+    }
+    private func fileCommand(_ arguments: [String], reply: @escaping (Any?, String?) -> Void) {
+        guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else { reply(nil,"无法找到文件传递组件"); return }
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(); process.executableURL = executable
-            process.arguments = ["browser-file", "--json", operation, id] + (path.map { [$0] } ?? [])
+            process.arguments = arguments
             let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
             do {
                 try process.run()
+                let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 1800, execute: timeout)
+                defer { timeout.cancel() }
                 let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-                guard data.count <= 65536, let result = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw CageUpdateError("下载操作未返回有效结果") }
-                DispatchQueue.main.async { reply(process.terminationStatus == 0 ? result : nil, process.terminationStatus == 0 ? nil : result["message"] as? String ?? "下载操作失败") }
+                guard data.count <= 65536, let result = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw CageUpdateError("文件操作未返回有效结果") }
+                DispatchQueue.main.async { reply(process.terminationStatus == 0 ? result : nil, process.terminationStatus == 0 ? nil : result["message"] as? String ?? "文件操作失败") }
             } catch { DispatchQueue.main.async { reply(nil,error.localizedDescription) } }
         }
+    }
+    private func rememberFiles(_ urls: [URL]) throws -> [String: Any] {
+        guard !urls.isEmpty, urls.count <= 100 else { throw CageUpdateError("请选择 1 至 100 个文件") }
+        for url in urls {
+            guard url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost" else { throw CageUpdateError("请选择本机文件") }
+            let values = try url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+            guard values.isRegularFile == true, values.isSymbolicLink != true else { throw CageUpdateError("请选择普通文件，暂不支持文件夹或链接") }
+            guard let size = values.fileSize, size <= 2 * 1024 * 1024 * 1024 else { throw CageUpdateError("每个文件不能超过 2 GB") }
+        }
+        let now = Date()
+        fileSelections = fileSelections.filter { $0.value.expires > now }
+        if fileSelections.count >= 16, let oldest = fileSelections.min(by: { $0.value.expires < $1.value.expires }) { fileSelections.removeValue(forKey: oldest.key) }
+        let id = UUID().uuidString
+        fileSelections[id] = (urls.map(\.path), now.addingTimeInterval(600))
+        return ["fileSelection": id, "count": urls.count]
     }
     private func showError(_ text: String) { loading.stringValue = text; loading.isHidden = false; retry.isHidden = false; webView.isHidden = true }
     private func applyAppearance(_ value: [String:Any]) {
@@ -303,7 +326,10 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         case "clipboardRead": replyHandler(NSPasteboard.general.string(forType:.string) ?? "",nil)
         case "clipboardReadContent":
             let board = NSPasteboard.general
-            if let image = NSImage(pasteboard: board), let tiff = image.tiffRepresentation,
+            if let urls = board.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
+                do { replyHandler(try rememberFiles(urls), nil) }
+                catch { replyHandler(nil, error.localizedDescription) }
+            } else if let image = NSImage(pasteboard: board), let tiff = image.tiffRepresentation,
                let bitmap = NSBitmapImageRep(data: tiff) {
                 guard bitmap.pixelsWide > 0, bitmap.pixelsHigh > 0,
                       bitmap.pixelsWide <= 40_000_000 / bitmap.pixelsHigh,
@@ -312,6 +338,27 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 }
                 replyHandler(["png":png.base64EncodedString()],nil)
             } else { replyHandler(["text":board.string(forType:.string) ?? ""],nil) }
+        case "chooseUploadFiles":
+            guard !nativeFilePanelOpen else { replyHandler(nil,"请先完成当前文件窗口"); return }
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = false; panel.canChooseFiles = true
+            panel.allowsMultipleSelection = body["multiple"] as? Bool ?? false
+            panel.title = "选择本机文件"; panel.prompt = "选择"
+            nativeFilePanelOpen = true
+            panel.beginSheetModal(for: window) { response in
+                self.nativeFilePanelOpen = false
+                guard response == .OK else { replyHandler(["canceled":true],nil); return }
+                do { replyHandler(try self.rememberFiles(panel.urls), nil) }
+                catch { replyHandler(nil, error.localizedDescription) }
+            }
+        case "uploadHostFiles":
+            guard let selection = body["selection"] as? String,
+                  let target = body["target"] as? String, ["browser", "desktop", "terminal"].contains(target),
+                  let id = body["id"] as? String, (target == "terminal" ? id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil : UUID(uuidString: id) != nil),
+                  let files = fileSelections.removeValue(forKey: selection), files.expires > Date() else {
+                replyHandler(nil,"文件选择已过期，请重新复制或选择文件"); return
+            }
+            fileCommand(["upload-files", "--json", target, id] + files.paths, reply: replyHandler)
         case "clipboardWrite":
             guard let text = body["text"] as? String else { replyHandler(nil,"缺少文本"); return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType:.string); replyHandler(true,nil)

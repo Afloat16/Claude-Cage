@@ -73,11 +73,8 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 			if closing {
 				return nil, errJobsClosed
 			}
-			workspace, err := s.projectWorkspace(input.Workspace)
+			workspace, err := s.connectProject(input.Workspace, false)
 			if err != nil {
-				return nil, browserInputError{err}
-			}
-			if err := s.ensureProjectShare(workspace); err != nil {
 				return nil, browserInputError{err}
 			}
 			input.Workspace = guestPath(workspace)
