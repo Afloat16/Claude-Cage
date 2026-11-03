@@ -206,6 +206,13 @@ export async function createWorkbench({
       result = state.settings;
     else if (path === "/status")
       result = { ...state.status, workspace: state.settings.workspace };
+    else if (path === "/projects/open") {
+      if (state.failJob) return route.fulfill({ status: 400, body: "项目文件夹连接失败，原项目保持不变" });
+      if (!body.add && !state.status.projects.includes(body.workspace)) return route.fulfill({ status: 400, body: "请选择已授权的项目" });
+      if (body.add && !state.status.projects.includes(body.workspace)) state.status.projects.push(body.workspace);
+      if (body.activate) state.settings.workspace = body.workspace;
+      result = { workspace: body.workspace };
+    }
     else if (path === "/settings") {
       state.saves.push(body);
       if (state.failSave)

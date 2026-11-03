@@ -28,13 +28,13 @@ try {
     .getByRole("navigation", { name: "主导航" })
     .getByRole("button", { name: /^打开项目/ })
     .click();
-  await page.getByRole("button", { name: "选择文件夹…", exact: true }).click();
+  await page.getByRole("button", { name: "添加本机项目…", exact: true }).click();
   await page.waitForFunction(
     (path) => document.getElementById("project-path")?.value === path,
     state.chosenFolder,
   );
   assert.equal(
-    await page.getByLabel("项目文件夹", { exact: true }).inputValue(),
+    await page.getByLabel("新项目文件夹", { exact: true }).inputValue(),
     state.chosenFolder,
   );
   state.failJob = true;
@@ -49,7 +49,7 @@ try {
     .filter({ hasText: "项目文件夹连接失败" })
     .waitFor();
   assert.equal(
-    await page.getByLabel("项目文件夹", { exact: true }).inputValue(),
+    await page.getByLabel("新项目文件夹", { exact: true }).inputValue(),
     state.chosenFolder,
   );
   assert.ok(state.settings.workspace.endsWith(".claude-cage-workspace"));
@@ -255,8 +255,9 @@ try {
     .getByRole("navigation", { name: "主导航" })
     .getByRole("button", { name: /^打开项目/ })
     .click();
+  await page.getByRole("button", { name: "添加本机项目…", exact: true }).click();
   await page
-    .getByLabel("项目文件夹", { exact: true })
+    .getByLabel("新项目文件夹", { exact: true })
     .fill("/Users/shihao/Projects/another-project");
   await page
     .getByRole("dialog")
