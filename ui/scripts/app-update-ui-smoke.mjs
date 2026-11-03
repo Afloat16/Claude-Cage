@@ -80,3 +80,16 @@ try {
   await fs.writeFile(`${output}/checks.json`, JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally { await browser.close(); }
+
+const recovered = await createWorkbench({ nativeRequest: async body => {
+  if (body.action !== "appUpdate") return null;
+  return body.operation === "status"
+    ? { phase: "failed", message: "新版本工作台未能就绪，已恢复原应用", retryable: true }
+    : { phase: "current", currentVersion: "0.1.3-alpha.1" };
+} });
+try {
+  await recovered.page.getByRole("alert").filter({ hasText: "已恢复原应用" }).waitFor();
+  assert.equal(await recovered.page.locator(".app-update-button").count(), 0, "rollback failure stays visible without advertising an unavailable update");
+  assert.deepEqual(recovered.errors, []);
+  console.log("PASS: persisted update failure remains visible while the startup check completes");
+} finally { await recovered.browser.close(); }

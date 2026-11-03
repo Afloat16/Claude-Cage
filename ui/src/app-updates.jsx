@@ -8,6 +8,7 @@ const retryInterval = 5 * 60 * 1000;
 
 export function useAppUpdates() {
   const [state, setState] = useState({ phase: "idle", message: "" });
+  const [startupFailure, setStartupFailure] = useState("");
   const current = useRef(state);
   current.current = state;
   const requestPending = useRef(false);
@@ -46,6 +47,7 @@ export function useAppUpdates() {
       try {
         const next = await native("appUpdate", { operation: "status" });
         if (!live) return;
+        if (next?.phase === "failed") setStartupFailure(next.message || "上次应用更新未完成");
         if (next?.phase) { current.current = next; setState(next); }
         if (!next || ["idle", "current", "failed"].includes(next.phase)) void run("check");
       } catch (error) {
@@ -62,11 +64,16 @@ export function useAppUpdates() {
       document.removeEventListener("visibilitychange", check);
     };
   }, [available, run]);
-  return { state, run, available };
+  useEffect(() => {
+    if (!startupFailure) return;
+    const timer = setTimeout(() => setStartupFailure(""), 8000);
+    return () => clearTimeout(timer);
+  }, [startupFailure]);
+  return { state, run, available, startupFailure };
 }
 
 export function AppUpdateButton({ updates }) {
-  const { state, run, available } = updates;
+  const { state, run, available, startupFailure } = updates;
   const busy = activePhases.has(state.phase);
   const failed = state.phase === "failed";
   const visible = state.latestVersion && ["available", "ready", "failed", ...activePhases].includes(state.phase);
@@ -84,7 +91,7 @@ export function AppUpdateButton({ updates }) {
     const timer = setTimeout(() => setFailure(""), 8000);
     return () => clearTimeout(timer);
   }, [failure]);
-  if (!available || !visible) return null;
+  if (!available || (!visible && !startupFailure)) return null;
   const downloading = state.phase === "downloading";
   const percent = state.totalBytes > 0
     ? Math.max(0, Math.min(100, Math.floor((state.receivedBytes || 0) / state.totalBytes * 100)))
@@ -99,7 +106,7 @@ export function AppUpdateButton({ updates }) {
   const circumference = 2 * Math.PI * 15;
   return (
     <>
-      <button
+      {visible && <button
         className={`app-update-button${busy ? " busy" : ""}${failed ? " failed" : ""}`}
         aria-label={label}
         title={hint}
@@ -118,8 +125,8 @@ export function AppUpdateButton({ updates }) {
             {downloading && percent !== null && <span className="app-update-percent">{percent}%</span>}
           </>
         ) : failed ? <RefreshCw size={20} /> : <ArrowDownToLine size={22} />}
-      </button>
-      {failure && <div className="app-update-error" role="alert">{failure}。可点击更新按钮重试。</div>}
+      </button>}
+      {(failure || startupFailure) && <div className="app-update-error" role="alert">{failure || startupFailure}{visible ? "。可点击更新按钮重试。" : ""}</div>}
     </>
   );
 }
