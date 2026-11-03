@@ -14,7 +14,10 @@ const { browser, page, state, errors } = await createWorkbench();
 const checks = [];
 const shot = (name) =>
   page.screenshot({ path: output + name + ".png", animations: "disabled" });
-const settings = () => page.getByRole("button", { name: /^设置/ }).click();
+const settings = async () => {
+  await page.getByRole("button", { name: /^设置/ }).click();
+  await page.getByRole("navigation", { name: "设置分组" }).getByRole("button", { name: "通用", exact: true }).click();
+};
 const tabs = () => page.getByRole("tablist", { name: "浏览器标签页" });
 try {
   await shot("main");
@@ -63,7 +66,7 @@ try {
   assert.equal(state.settings.workspace, state.chosenFolder);
   await page.reload();
   await page
-    .getByRole("heading", { name: "design-lab", exact: true })
+    .getByRole("heading", { name: "Cage 环境已就绪", exact: true })
     .waitFor();
   await page
     .getByRole("region", { name: "项目 design-lab", exact: true })
@@ -87,12 +90,13 @@ try {
   assert.equal(await page.getByText("最近项目", { exact: true }).count(), 0);
   checks.push("真实目录列表刷新读回、不使用本地历史、项目打开失败保留路径");
   await page
-    .getByRole("heading", { name: "design-lab", exact: true })
+    .getByRole("heading", { name: "Cage 环境已就绪", exact: true })
     .waitFor();
   await page
     .getByRole("button", { name: "新建终端", exact: true })
     .first()
     .click();
+  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
   await page.getByRole("button", { name: "管理 终端 1", exact: true }).click();
   await page.getByRole("menuitem", { name: "重命名标签" }).click();
@@ -277,6 +281,7 @@ try {
   await page
     .getByRole("button", { name: "在 another-project 新建终端", exact: true })
     .click();
+  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
   await page
     .getByRole("region", { name: "项目 another-project", exact: true })
     .getByRole("tab", { name: "终端 2", exact: true })
@@ -288,6 +293,7 @@ try {
   await page
     .getByRole("button", { name: "在 design-lab 新建终端", exact: true })
     .click();
+  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
   await page
     .getByRole("region", { name: "项目 design-lab", exact: true })
     .getByRole("tab", { name: "终端 3", exact: true })

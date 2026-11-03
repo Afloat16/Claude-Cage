@@ -1524,6 +1524,7 @@ function App() {
       <BrowserUploads requests={status.ready ? browser.uploads : []} onStatus={notify} />
       {settingsOpen && (
         <SettingsPanel
+          current={settings}
           status={status}
           initialSection={settingsSection}
           onClose={() => setSettingsOpen(false)}
