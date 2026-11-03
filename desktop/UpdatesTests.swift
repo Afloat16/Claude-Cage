@@ -22,8 +22,12 @@ enum UpdatesTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cage-updates-test-" + UUID().uuidString)
         try CageUpdateFiles.privateDirectory(root)
         defer { try? FileManager.default.removeItem(at: root) }
+        // Exercise the production lipo invocation against a real Mach-O binary.
+        // lipo consumes every argument after -verify_arch as an architecture.
+        try CageUpdateFiles.verifyArchitecture(URL(fileURLWithPath: CommandLine.arguments[0]))
         let hashFile = root.appendingPathComponent("content")
         try CageUpdateFiles.write(Data("abc".utf8), to: hashFile)
+        try rejects("non-Mach-O executable refused") { try CageUpdateFiles.verifyArchitecture(hashFile) }
         let hash = try CageUpdateFiles.digest(hashFile)
         try expect(hash == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", "stream digest")
         let permissions = try FileManager.default.attributesOfItem(atPath: hashFile.path)
@@ -114,7 +118,7 @@ enum UpdatesTests {
                 if let value = savedEnvironment[key] { setenv(key, value, 1) } else { unsetenv(key) }
             }
         }
-        let updater = CageAppUpdater(bundleURL: old, onChange: { _ in }, confirmStop: { $0(false) }, quit: {}, reconnect: {})
+        let updater = CageAppUpdater(bundleURL: old, onChange: { _ in }, quit: {}, reconnect: {})
         try expect(updater.awaitingInitialWorkbench, "newly installed uninitialized window permits native rollback termination")
         updater.markLaunchReady()
         try expect(!updater.awaitingInitialWorkbench, "initialized workbench keeps ordinary quit confirmation")
@@ -123,13 +127,15 @@ enum UpdatesTests {
         if CommandLine.arguments.count == 2 {
             let signed = URL(fileURLWithPath: CommandLine.arguments[1])
             let team = try CageUpdateFiles.signingInfo(signed, bundle: true)
+            let version = Bundle(url: signed)?.object(forInfoDictionaryKey: "CageVersion") as? String ?? ""
+            try CageUpdateFiles.verifyApp(signed, version: version, team: team, gatekeeper: false)
             try rejects("different publisher refused") { _ = try CageUpdateFiles.signingInfo(signed, bundle: true, expectedTeam: "AAAAAAAAAA") }
             let tampered = root.appendingPathComponent("tampered.app")
             try FileManager.default.copyItem(at: signed, to: tampered)
             let plist = tampered.appendingPathComponent("Contents/Info.plist")
             try Data("tampered".utf8).write(to: plist)
             try rejects("real signature tampering refused") { _ = try CageUpdateFiles.signingInfo(tampered, bundle: true, expectedTeam: team) }
-            print("PASS: real Developer ID signature, wrong publisher, and tampered App checks")
+            print("PASS: real App architecture and Developer ID signature, wrong publisher, and tampered App checks")
         }
         print("PASS: versions, private files, containment, replacement/double-failure rollback, process cancellation, and temporary image cleanup")
     }

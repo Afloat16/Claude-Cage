@@ -155,6 +155,9 @@ enum CageUpdateFiles {
         if let expectedTeam, actual != expectedTeam { throw CageUpdateError("更新应用的发布者不匹配") }
         return actual
     }
+    static func verifyArchitecture(_ executable: URL, validation: CageUpdateValidation? = nil) throws {
+        _ = try run("/usr/bin/lipo", [executable.path, "-verify_arch", "arm64"], validation: validation)
+    }
     static func verifyApp(_ url: URL, version: String, team: String, gatekeeper: Bool = true, validation: CageUpdateValidation? = nil) throws {
         try validation?.checkCancellation()
         let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
@@ -170,7 +173,7 @@ enum CageUpdateFiles {
                   (1...3).contains(parts.count), ProcessInfo.processInfo.isOperatingSystemAtLeast(OperatingSystemVersion(majorVersion: parts[0], minorVersion: parts.count > 1 ? parts[1] : 0, patchVersion: parts.count > 2 ? parts[2] : 0)) else { throw CageUpdateError("此更新需要更高版本的 macOS") }
         }
         _ = try signingInfo(url, bundle: true, expectedTeam: team)
-        _ = try run("/usr/bin/lipo", ["-verify_arch", "arm64", url.appendingPathComponent("Contents/MacOS/Cage").path], validation: validation)
+        try verifyArchitecture(url.appendingPathComponent("Contents/MacOS/Cage"), validation: validation)
         for name in ["cage", "mihomo", "CageUpdateInstaller"] {
             let nested = url.appendingPathComponent("Contents/Resources/\(name)")
             guard FileManager.default.fileExists(atPath: nested.path) else { throw CageUpdateError("更新包缺少必要的应用组件") }
@@ -225,7 +228,6 @@ final class CageAppUpdater {
     private let bundleURL: URL
     private let root: URL
     private let onChange: ([String: Any]) -> Void
-    private let confirmStop: (@escaping (Bool) -> Void) -> Void
     private let quit: () -> Void
     private let reconnect: () -> Void
     private var state: [String: Any]
@@ -240,9 +242,9 @@ final class CageAppUpdater {
     private var waitingForTermination = false
     private var installationCommitted = false
 
-    init(bundleURL: URL, onChange: @escaping ([String: Any]) -> Void, confirmStop: @escaping (@escaping (Bool) -> Void) -> Void, quit: @escaping () -> Void, reconnect: @escaping () -> Void) {
+    init(bundleURL: URL, onChange: @escaping ([String: Any]) -> Void, quit: @escaping () -> Void, reconnect: @escaping () -> Void) {
         self.bundleURL = bundleURL.resolvingSymlinksInPath()
-        self.onChange = onChange; self.confirmStop = confirmStop; self.quit = quit; self.reconnect = reconnect
+        self.onChange = onChange; self.quit = quit; self.reconnect = reconnect
         let path = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/config.json").path
         root = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("updates", isDirectory: true)
         let version = Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "CageVersion") as? String ?? "开发版本"
@@ -466,10 +468,7 @@ final class CageAppUpdater {
                             self.quit()
                         } catch { self.abortInstaller(); self.failure("无法开始安装，原应用已保留"); self.reconnect() }
                     case "stop_required" where !stop:
-                        self.confirmStop { confirmed in
-                            if confirmed { self.prepareEnvironment(stop: true) }
-                            else { self.abortInstaller(); self.change(["phase": "ready", "message": "更新已下载，保存工作后可继续安装", "retryable": true]) }
-                        }
+                        self.prepareEnvironment(stop: true)
                     default:
                         self.abortInstaller(); self.failure(result["message"] as? String ?? "环境未能安全停止，更新未安装")
                     }

@@ -10,16 +10,15 @@ internal sealed class AppUpdater : IDisposable
     public static string Version => typeof(AppUpdater).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "development";
     public static string Root => Path.Combine(Backend.Root, "updates");
     private readonly Action<Dictionary<string, object?>> changed;
-    private readonly Func<bool> confirmStop;
     private readonly Action quit, reconnect;
     private readonly Dictionary<string, object?> state = new() { ["phase"] = "idle", ["currentVersion"] = Version, ["message"] = "" };
     private CancellationTokenSource? cancellation;
     private InstallPlan? prepared;
     private bool committed;
 
-    public AppUpdater(Action<Dictionary<string, object?>> changed, Func<bool> confirmStop, Action quit, Action reconnect)
+    public AppUpdater(Action<Dictionary<string, object?>> changed, Action quit, Action reconnect)
     {
-        this.changed = changed; this.confirmStop = confirmStop; this.quit = quit; this.reconnect = reconnect;
+        this.changed = changed; this.quit = quit; this.reconnect = reconnect;
         try
         {
             var result = Path.Combine(Root, "last-result.json");
@@ -140,7 +139,6 @@ internal sealed class AppUpdater : IDisposable
             var (exit, data) = await Backend.Json(["prepare-update", "--json"], token);
             if (data.Text("status") == "stop_required")
             {
-                if (!confirmStop()) { Change("ready", "更新已下载，保存工作后可继续安装", true); return; }
                 (exit, data) = await Backend.Json(["prepare-update", "--json", "--stop"], token);
             }
             if (exit != 0 || data.Text("status") != "prepared") throw new IOException(data.Text("message") is { Length: > 0 } detail ? detail : "环境未能安全停止");

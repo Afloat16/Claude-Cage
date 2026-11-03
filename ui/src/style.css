@@ -517,22 +517,31 @@ button.large {
   gap: 6px;
 }
 .sidebar-footer-actions > .sidebar-link { flex: 1; min-width: 0; }
-.app-update-button { position: relative; flex: 0 0 auto; }
-.app-update-button.available { color: var(--accent, #267455); }
-.update-available-dot {
-  position: absolute;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-  right: 4px;
-  top: 4px;
+.app-update-button {
+  position: relative; flex: 0 0 36px; width: 36px; height: 36px; padding: 0;
+  display: grid; place-items: center; border: 0; border-radius: 50%;
+  background: #b78a00; color: #fff; cursor: pointer;
 }
-.app-update-details { min-width: min(340px, 65vw); padding: 18px 24px 24px; }
-.app-update-details dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 20px; }
-.app-update-details dt { color: var(--muted); }
-.app-update-details dd { margin: 0; }
-.app-update-details progress { width: 100%; accent-color: var(--accent, #267455); }
+.app-update-button:hover:not(:disabled) { background: #a17900; }
+.app-update-button:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.app-update-button:disabled { opacity: 1; cursor: progress; }
+.app-update-ring { position: absolute; inset: 0; width: 36px; height: 36px; transform: rotate(-90deg); }
+.app-update-ring circle { fill: none; stroke-width: 2; }
+.app-update-ring-track { stroke: #ffffff40; }
+.app-update-ring-value { stroke: currentColor; stroke-linecap: round; transition: stroke-dashoffset 0.18s linear; }
+.app-update-ring.indeterminate { animation: app-update-turn 1s linear infinite; }
+.app-update-percent { font-size: 10px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1; }
+.app-update-error {
+  position: fixed; left: 18px; bottom: 82px; z-index: 50;
+  max-width: min(380px, calc(100vw - 36px)); padding: 12px 16px;
+  border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink);
+  box-shadow: 0 8px 24px #00000018; font-size: 13px; line-height: 1.6;
+}
+@keyframes app-update-turn { to { transform: rotate(270deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .app-update-ring.indeterminate { animation: none; }
+  .app-update-ring-value { transition: none; }
+}
 .browser-download-list { min-width: min(400px, 70vw); max-height: 55vh; overflow: auto; padding: 4px 24px 20px; }
 .browser-download-item { padding: 12px 0; border-bottom: 1px solid var(--border, #dedede); overflow-wrap: anywhere; }
 .browser-download-item p { margin: 5px 0; font-size: 12px; color: var(--muted); }

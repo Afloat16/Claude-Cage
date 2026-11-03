@@ -52,7 +52,7 @@ internal sealed class MainWindow : Form
         trayMenu.Items.Add("退出 Cage…", null, (_, _) => RequestQuit());
         tray = new NotifyIcon { Icon = Icon, Text = "Cage", Visible = true, ContextMenuStrip = trayMenu };
         tray.DoubleClick += (_, _) => RestoreWindow();
-        updater = new AppUpdater(PublishUpdate, ConfirmStop, () => { allowQuit = true; Close(); }, () => _ = Bootstrap());
+        updater = new AppUpdater(PublishUpdate, () => { allowQuit = true; Close(); }, () => _ = Bootstrap());
         Shown += async (_, _) => {
             if (Program.SmokeOutput != null) _ = SmokeDeadline();
             await Initialize();

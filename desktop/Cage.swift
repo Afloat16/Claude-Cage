@@ -94,15 +94,6 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         appUpdater = CageAppUpdater(bundleURL: Bundle.main.bundleURL, onChange: { [weak self] state in
             guard let data = try? JSONSerialization.data(withJSONObject: state), let json = String(data: data, encoding: .utf8) else { return }
             self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('cage-app-update',{detail:\(json)}));", completionHandler: nil)
-        }, confirmStop: { [weak self] completion in
-            guard let self else { completion(false); return }
-            let alert = NSAlert()
-            alert.messageText = "更新已下载，保存并停止环境后安装重启"
-            alert.informativeText = "请先保存编辑器中的文件并结束正在运行的工作。继续后 Cage 会停止环境、安装已验证的更新并重新启动。"
-            alert.addButton(withTitle: "已保存，停止并安装")
-            alert.addButton(withTitle: "稍后安装")
-            self.window.makeKeyAndOrderFront(nil)
-            alert.beginSheetModal(for: self.window) { completion($0 == .alertFirstButtonReturn) }
         }, quit: { [weak self] in self?.allowQuit = true; NSApp.terminate(nil) }, reconnect: { [weak self] in self?.bootstrap() })
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
