@@ -1,4 +1,4 @@
-// Use anonymous public endpoints: a maintainer token must not hide download failures.
+// Public downloads and metadata stay anonymous, including the manifest fallback.
 import { createHash } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, writeFile, rm } from 'node:fs/promises';
@@ -12,13 +12,55 @@ const repository = 'Lee-xeo/Claude-Cage';
 const repoURL = `https://github.com/${repository}`;
 const apiURL = `https://api.github.com/repos/${repository}/releases`;
 
-async function request(url, timeout = 180_000) {
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'Cage-Release-Verification', Accept: url.startsWith(apiURL) ? 'application/vnd.github+json' : 'application/octet-stream' },
+export async function request(url, timeout = 180_000, { fetchImpl = fetch } = {}) {
+  const target = new URL(url);
+  const metadata = target.origin === 'https://api.github.com' &&
+    (target.pathname === `/repos/${repository}/releases` || target.pathname.startsWith(`/repos/${repository}/releases/`));
+  const options = {
+    headers: { 'User-Agent': 'Cage-Release-Verification', Accept: metadata ? 'application/vnd.github+json' : 'application/octet-stream' },
     signal: AbortSignal.timeout(timeout),
-  });
+  };
+  let response = await fetchImpl(url, options);
+  if (metadata && response.status === 403 && response.headers.get('x-ratelimit-remaining') === '0') {
+    const tag = target.pathname.match(/^\/repos\/Lee-xeo\/Claude-Cage\/releases\/tags\/(v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)?.[1];
+    if (tag) {
+      await response.body?.cancel();
+      console.warn('Anonymous GitHub API is rate limited; reading the requested version from its public checksum manifest.');
+      return new Response(JSON.stringify(await publicManifestRelease(tag, fetchImpl)));
+    }
+  }
   if (!response.ok) throw new Error(`Public download failed: HTTP ${response.status} (${new URL(url).pathname})`);
   return response;
+}
+
+export async function publicManifestRelease(tag, fetchImpl = fetch) {
+  if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(tag)) throw new Error('Invalid public release tag');
+  const base = `${repoURL}/releases/download/${tag}/`;
+  const manifest = await request(`${base}SHA256SUMS`, 180_000, { fetchImpl });
+  const text = await manifest.text();
+  if (!text.length || Buffer.byteLength(text) > 65536) throw new Error('Invalid public checksum manifest size');
+  const names = new Map();
+  for (const line of text.split(/\r?\n/).filter(Boolean)) {
+    const match = /^([a-f0-9]{64}) [ *]([A-Za-z0-9][A-Za-z0-9._-]*)$/i.exec(line);
+    if (!match || names.has(match[2])) throw new Error('Invalid or duplicate public checksum entry');
+    names.set(match[2], match[1].toLowerCase());
+  }
+  const version = tag.slice(1);
+  const allowed = name => [
+    `Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`,
+    `Cage-${version}-windows-amd64-setup-unsigned.exe`, `Cage-${version}-linux-amd64.deb`,
+  ].includes(name) || /^mihomo-v[\d.]+-source\.tar\.gz$/.test(name) || /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(name);
+  if ([...names.keys()].some(name => !allowed(name))) throw new Error('Unexpected public release asset');
+  const assets = [{ name: 'SHA256SUMS', state: 'uploaded', size: Buffer.byteLength(text), browser_download_url: `${base}SHA256SUMS` }];
+  for (const [name, digest] of names) {
+    const response = await fetchImpl(`${base}${name}`, { method: 'HEAD', headers: { 'User-Agent': 'Cage-Release-Verification' }, signal: AbortSignal.timeout(180_000) });
+    const size = Number(response.headers.get('content-length'));
+    if (!response.ok || !Number.isSafeInteger(size) || size <= 0 || size > 512 * 1024 * 1024) throw new Error(`Missing or incomplete public asset: ${name}`);
+    assets.push({ name, state: 'uploaded', size, digest: `sha256:${digest}`, browser_download_url: `${base}${name}` });
+  }
+  const release = { tag_name: tag, draft: false, prerelease: version.includes('-'), assets };
+  releaseAssets(release);
+  return release;
 }
 
 export function releaseAssets(release) {
