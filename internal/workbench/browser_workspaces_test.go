@@ -33,7 +33,7 @@ func TestBrowserEditorWorkspaceRESTUsesAuthorizedWindowsProjects(t *testing.T) {
 	if err := writePrivate(filepath.Join(s.profile, "projects.json"), sharedProjects{Paths: []string{second}}); err != nil {
 		t.Fatal(err)
 	}
-	snapshot := `{"active":"first","downloads":[{"id":"download","url":"https://example.test/a"}],"tabs":[` +
+	snapshot := `{"active":"first","back":true,"forward":false,"downloads":[{"id":"download","url":"https://example.test/a"}],"tabs":[` +
 		`{"id":"first","kind":"editor","workspace":"/c/Users/甲 用户/项目 一","url":"http://127.0.0.1:18080/?folder=%2Fc%2FUsers%2F甲%20用户%2F项目%20一"},` +
 		`{"id":"second","kind":"editor","workspace":"/d/跨盘 项目/two","url":"http://127.0.0.1:18080/?folder=%2Fd%2F跨盘%20项目%2Ftwo"},` +
 		`{"id":"web","kind":"web","workspace":"/c/Users/甲 用户/项目 一","url":"https://example.test/"},` +

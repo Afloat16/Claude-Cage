@@ -1075,7 +1075,7 @@ function App() {
                       <button
                         className="icon-button"
                         aria-label="后退"
-                        disabled={!status.ready || !browser.back}
+                        disabled={!status.ready || browser.active !== current?.id || !browser.back}
                         onClick={() =>
                           action("/browser/back", { id: current?.id })
                         }
@@ -1085,7 +1085,7 @@ function App() {
                       <button
                         className="icon-button"
                         aria-label="前进"
-                        disabled={!status.ready || !browser.forward}
+                        disabled={!status.ready || browser.active !== current?.id || !browser.forward}
                         onClick={() =>
                           action("/browser/forward", { id: current?.id })
                         }
