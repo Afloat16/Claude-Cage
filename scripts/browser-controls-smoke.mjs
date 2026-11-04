@@ -28,16 +28,37 @@ const site = http.createServer(async (req, res) => {
   res.setHeader("Content-Type", "text/html");
   if (url.pathname === "/first")
     res.setHeader("Set-Cookie", "cage_smoke=1; SameSite=Lax");
-  res.end(`<!doctype html><title>${url.pathname}</title><p>Browser smoke test</p>
+  res.end(`<!doctype html><title>${url.pathname}</title><p>Browser smoke test</p><a href="#section">Section</a><button onclick="history.pushState({}, '', '#pushed')">Push history</button>
     <script>fetch('/report?path='+encodeURIComponent(location.pathname), {
       method:'POST',body:JSON.stringify({webdriver:navigator.webdriver,
         cookie:document.cookie.includes('cage_smoke=1')})
-    });</script>`);
+    });${url.pathname === "/spa" ? "setTimeout(() => history.pushState({}, '', '#pushed'), 500);" : ""}</script>`);
 });
 await new Promise((resolve) => site.listen(0, "127.0.0.1", resolve));
 const origin = `http://127.0.0.1:${site.address().port}`;
 const token = randomBytes(32).toString("hex");
 let agent, control, stderr = "";
+let eventState, eventsDone;
+const eventController = new AbortController();
+async function listenEvents() {
+  const response = await fetch(control + "/events", {
+    headers: { Authorization: `Bearer ${token}` }, signal: eventController.signal,
+  });
+  assert.equal(response.status, 200);
+  eventsDone = (async () => {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    for await (const chunk of response.body) {
+      buffer += decoder.decode(chunk, { stream: true });
+      let end;
+      while ((end = buffer.indexOf("\n\n")) !== -1) {
+        const frame = buffer.slice(0, end);
+        buffer = buffer.slice(end + 2);
+        if (frame.startsWith("data: ")) eventState = JSON.parse(frame.slice(6));
+      }
+    }
+  })().catch(error => { if (!eventController.signal.aborted) stderr += error.message; });
+}
 async function waitFor(read, label) {
   const deadline = Date.now() + 15000;
   while (Date.now() < deadline) {
@@ -99,6 +120,8 @@ try {
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("CONTROL_PORT=" + server.address().port));'));
   await copyFile(new URL("../internal/cage/browser-audit.mjs", import.meta.url), join(directory, "browser-audit.mjs"));
   await copyFile(new URL("../internal/cage/browser-downloads.mjs", import.meta.url), join(directory, "browser-downloads.mjs"));
+  await copyFile(new URL("../internal/cage/browser-uploads.mjs", import.meta.url), join(directory, "browser-uploads.mjs"));
+  await copyFile(new URL("../internal/cage/native-input.mjs", import.meta.url), join(directory, "native-input.mjs"));
   await writeFile(join(directory, "control.json"), JSON.stringify({ token, workspace: directory }));
   await writeFile(join(directory, "homepage.json"), JSON.stringify({ url: origin + "/first" }));
   await start();
@@ -109,6 +132,10 @@ try {
     headers: { Authorization: `Bearer ${token}`, Origin: "https://example.com" },
   })).status, 403);
   const original = (await api("/tabs")).active;
+  await listenEvents();
+  await waitFor(() => eventState?.active === original, "initial browser events");
+  assert.equal(eventState.back, false);
+  assert.equal(eventState.forward, false);
   const second = await api("/new", { url: origin + "/second" });
   await waitFor(() => reports.get("/second"), "new tab");
   assert.equal(reports.get("/second").webdriver, false);
@@ -117,12 +144,24 @@ try {
   assert.equal((await api("/tabs")).active, original);
   await api("/navigate", { id: original, url: origin + "/third" });
   await waitFor(() => reports.get("/third"), "navigation");
+  await waitFor(() => eventState?.active === original && eventState.back === true && eventState.forward === false, "back availability via events only");
   assert.equal((await api("/tabs")).back, true);
   await api("/back", { id: original });
+  await waitFor(() => eventState?.active === original && eventState.back === false && eventState.forward === true, "forward availability via events only");
   await waitFor(async () => (await api("/tabs")).tabs.some(t => t.id === original && t.url === origin + "/first"), "back");
   assert.equal((await api("/tabs")).forward, true);
   await api("/forward", { id: original });
+  await waitFor(() => eventState?.active === original && eventState.back === true && eventState.forward === false, "forward navigation via events only");
   await waitFor(async () => (await api("/tabs")).tabs.some(t => t.id === original && t.url === origin + "/third"), "forward");
+  const spa = await api("/new", { url: origin + "/spa" });
+  await waitFor(() => eventState?.active === spa.id && eventState.back === true && eventState.forward === false, "pushState history via events only");
+  await api("/back", { id: spa.id });
+  await waitFor(() => eventState?.active === spa.id && eventState.back === false && eventState.forward === true, "same-document back via events only");
+  await api("/activate", { id: second.id });
+  await waitFor(() => eventState?.active === second.id && eventState.back === false && eventState.forward === false, "fresh tab history isolation");
+  await api("/activate", { id: original });
+  await waitFor(() => eventState?.active === original && eventState.back === true && eventState.forward === false, "restored tab history");
+  await api("/close", { id: spa.id });
   const visits = reports.get("/third").visits;
   await api("/reload", { id: original });
   await waitFor(() => reports.get("/third").visits > visits, "reload");
@@ -147,6 +186,8 @@ try {
     unauthenticatedRejected: true, crossOriginRejected: true,
   }));
 } finally {
+  eventController.abort();
+  await eventsDone;
   await stop();
   await new Promise(resolve => site.close(resolve));
   await rm(directory, { recursive: true, force: true });
