@@ -8,6 +8,12 @@ const output = new URL(
 );
 await fs.mkdir(output, { recursive: true });
 const { browser, page, state, errors } = await createWorkbench();
+await page.addInitScript(() => {
+  window.EventSource = class {
+    constructor() { window.desktopBrowserEvents = this; }
+    close() {}
+  };
+});
 const desktop = {
   installed: false,
   running: false,
@@ -71,6 +77,25 @@ try {
   await page.getByRole("button", { name: "下载并安装", exact: true }).click();
   await page.getByRole("button", { name: "关闭应用", exact: true }).waitFor();
   assert.deepEqual(actions, ["install", "install", "start"]);
+  const desktopToolbar = page.locator(".claude-desktop-toolbar");
+  const sendBrowserState = (focus) => page.evaluate((snapshot) => {
+    window.desktopBrowserEvents.onmessage({ data: JSON.stringify(snapshot) });
+  }, { tabs: state.tabs, active: state.active, focus });
+  await sendBrowserState(false);
+  await desktopToolbar.waitFor();
+  const loginTab = { id: "desktop-login", kind: "web", title: "Desktop sign in", url: "https://claude.com/cai/login/app-google-auth" };
+  state.tabs.push(loginTab);
+  state.active = loginTab.id;
+  await sendBrowserState(true);
+  await desktopToolbar.waitFor({ state: "hidden" });
+  assert.equal(desktop.running, true, "opening an external login page must preserve Desktop");
+  await page.getByRole("button", { name: "Claude Desktop", exact: true }).click();
+  await sendBrowserState(false);
+  await desktopToolbar.waitFor();
+  state.tabs.push({ ...loginTab, id: "desktop-login-poll" });
+  state.active = "desktop-login-poll";
+  await desktopToolbar.waitFor({ state: "hidden" });
+  assert.equal(await page.getByRole("textbox", { name: "网页地址或搜索" }).inputValue(), loginTab.url);
   await page.getByRole("button", { name: "打开浏览器", exact: true }).click();
   assert.equal(
     desktop.running,
@@ -109,15 +134,12 @@ try {
     "claude --continue --model sonnet",
   );
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).click();
-  await page
-    .getByRole("dialog")
-    .getByText("claude --continue --model sonnet", { exact: true })
-    .waitFor();
+  await page.getByRole("menu", { name: "新建终端", exact: true }).waitFor();
   await page.screenshot({
     path: fileURLToPath(new URL("terminal-choice.png", output)),
   });
   await page
-    .getByRole("button", { name: "新建 Claude 终端", exact: true })
+    .getByRole("menuitem", { name: "Claude 终端", exact: true })
     .click();
   const terminalRequests = () =>
     state.requests.filter(
@@ -137,7 +159,7 @@ try {
     "reconnect must not relaunch Claude",
   );
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   assert.equal(terminalRequests().at(-1).body.kind, "shell");
   await page.setViewportSize({ width: 820, height: 558 });
   await page
@@ -148,8 +170,11 @@ try {
   });
   assert.deepEqual(errors, []);
   console.log(
-    "PASS: sidebar, optional installation, failure/retry, shared application lifecycle, terminal choice, command settings and reconnect",
+    "PASS: sidebar, optional installation, failure/retry, Desktop login handoff via events and polling, background updates, lifecycle, terminal choice, settings and reconnect",
   );
+} catch (error) {
+  console.error(JSON.stringify({ actions, desktop, status: state.status, errors, body: await page.locator("body").innerText() }));
+  throw error;
 } finally {
   await browser.close();
 }
