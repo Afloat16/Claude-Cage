@@ -5,10 +5,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
 func TestClaudeDesktopSnapshotFailureReason(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("snapshot executes in the Linux guest; fixture requires POSIX executables")
+	}
 	if _, err := exec.LookPath("python3"); err != nil {
 		t.Skip("python3 unavailable")
 	}

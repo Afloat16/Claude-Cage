@@ -179,6 +179,9 @@ func TestGuestRunnerSharesRedactionAndExitStatus(t *testing.T) {
 	if _, err := exec.LookPath("uv"); err != nil {
 		t.Skip("uv unavailable")
 	}
+	// CI runs this fixture as an ordinary user; setup-uv's inherited cache
+	// can belong to the root account that installed the build dependencies.
+	t.Setenv("UV_CACHE_DIR", t.TempDir())
 	script := filepath.Join(t.TempDir(), "runner.py")
 	_ = os.WriteFile(script, []byte(GuestRunner()), 0600)
 	cmd := exec.Command("uv", "run", "--no-project", "python", script, "/bin/sh", "-c", `printf 'Cookie: one=first-secret; two=second-secret\nhttps://user:pass@example.com/secret\nsafe-line\n'; exit 7`)
