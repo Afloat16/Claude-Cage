@@ -1,3 +1,5 @@
+import { installDiagnostics } from "./diagnostics.mjs";
+import { DiagnosticBoundary } from "./diagnostics.jsx";
 import { shortcut, primaryModifier } from "./platform.mjs";
 import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
@@ -478,6 +480,11 @@ function App() {
     stream.onerror = () => { browserStreamReady.current = false; };
     stream.onmessage = (event) => {
       const b = JSON.parse(event.data);
+      if (b.desktopFocus === true) {
+        setDesktopOpen(true);
+        setHome(false);
+        setSettingsOpen(false);
+      }
       browserSnapshot.current = b;
       setBrowser((previous) => ({ ...previous, ...b }));
       setTabs((previous) => {
@@ -1676,12 +1683,15 @@ function App() {
     </div>
   );
 }
+installDiagnostics();
 createRoot(document.getElementById("root")).render(
+ <DiagnosticBoundary>
   <AccountProvider>
     <AppearanceProvider>
       <AccountGate><App /></AccountGate>
     </AppearanceProvider>
-  </AccountProvider>,
+  </AccountProvider>
+ </DiagnosticBoundary>,
 );
 
 // A launcher can reopen an existing window with a fresh one-use ticket.

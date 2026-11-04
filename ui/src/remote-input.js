@@ -1,5 +1,5 @@
 import { getKeycode, getKeysym } from "../.generated/novnc/core/input/util.js";
-import { writeClipboard, nativeAvailable } from "./api";
+import { writeClipboard, nativeAvailable, native } from "./api";
 import {
   readClipboardContent,
   transferFiles,
@@ -11,7 +11,7 @@ import {
 export function installRemoteInput(
   rfb,
   container,
-  { mode, onStatus, onFallback, isActive, insertText, pasteContent },
+  { mode, onStatus, onFallback, isActive, insertText, insertComposition, caretRect, tabId: getTargetId = () => "", pasteContent },
 ) {
   const listeners = [],
     handled = new Set(),
@@ -22,11 +22,22 @@ export function installRemoteInput(
     copyTimer,
     pending = 0,
     composing = false,
+    compositionTarget = "",
+    compositionSession = "",
+    compositionSequence = 0,
+    caretState,
+    caretTimer,
+    caretPending = false,
+    nativeOwner = "",
+    nativeTarget = "",
+    nativeOwned = false,
+    nativeFailed = false,
     disposed = false;
   const target = document.createElement("textarea");
   target.setAttribute("aria-label", "Cage 网页输入");
   target.setAttribute("autocomplete", "off");
   target.setAttribute("autocapitalize", "off");
+  target.setAttribute("wrap", "off");
   target.spellcheck = false;
   target.className = "remote-text-input";
   target.style.cssText = "position:fixed;left:0;top:0";
@@ -38,19 +49,77 @@ export function installRemoteInput(
   };
   const focused = () =>
     isActive() &&
-    (container.contains(document.activeElement) ||
+    (nativeOwned || container.contains(document.activeElement) ||
       document.activeElement === target);
-  const position = (x, y) => {
-    if (composing) return;
-    target.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 280))}px`;
-    target.style.top = `${Math.max(0, Math.min(y, window.innerHeight - 36))}px`;
+  const deactivateNative = () => {
+    const owner = nativeOwner;
+    nativeOwned = false;
+    nativeOwner = "";
+    nativeTarget = "";
+    if (owner) void native("remoteInput", { operation: "deactivate", owner }).catch(() => {});
   };
+  const updateNative = (rect) => {
+    if (nativeFailed || !window.cageNativeIMEAvailable || !nativeAvailable() || !focused()) return;
+    if (!nativeOwned && composing) return;
+    const operation = nativeOwned ? "caret" : "activate";
+    if (!nativeOwned) { nativeOwner = crypto.randomUUID(); nativeTarget = getTargetId(); nativeOwned = true; }
+    const owner = nativeOwner;
+    void native("remoteInput", { operation, owner, ...rect }).then((accepted) => {
+      if (owner !== nativeOwner) return;
+      if (!accepted || disposed) {
+        deactivateNative();
+        nativeFailed = !accepted;
+      }
+    }).catch(() => { if (owner === nativeOwner) { deactivateNative(); nativeFailed = true; } });
+  };
+  const position = (x, y) => {
+    target.style.left = `${Math.max(0, Math.min(x, window.innerWidth - 1))}px`;
+    target.style.top = `${Math.max(0, Math.min(y, window.innerHeight - 24))}px`;
+  };
+  const syncCaret = async () => {
+    if (!caretRect || caretPending || disposed || !isActive()) return;
+    caretPending = true;
+    const id = getTargetId();
+    if (nativeOwned && nativeTarget !== id) deactivateNative();
+    try {
+      const value = await caretRect(compositionSession);
+      if (disposed || !isActive() || id !== getTargetId()) return;
+      caretState = value?.available ? { ...value, target: id, time: Date.now() } : null;
+      if (!value?.available) { deactivateNative(); return; }
+      if (!value.rect || value.rect[3] <= 0) return;
+      const canvas = container.querySelector("canvas");
+      if (!canvas?.width || !canvas.height) return;
+      const bounds = canvas.getBoundingClientRect();
+      const height = Math.max(1, value.rect[3] / canvas.height * bounds.height);
+      target.style.height = `${height}px`;
+      target.style.lineHeight = `${height}px`;
+      const x = bounds.left + (value.rect[0] / canvas.width) * bounds.width;
+      const y = bounds.top + (value.rect[1] / canvas.height) * bounds.height;
+      position(x, y);
+      updateNative({ x, y, height });
+    } catch {} finally { caretPending = false; }
+  };
+  const pollCaret = async () => {
+    if (focused()) await syncCaret();
+    if (!disposed) caretTimer = setTimeout(pollCaret, 250);
+  };
+  if (caretRect) caretTimer = setTimeout(pollCaret, 0);
   const bounds = container.getBoundingClientRect();
   position(bounds.left + 12, bounds.top + 12);
   on(
     container,
     "pointerdown",
-    (event) => position(event.clientX, event.clientY),
+    (event) => {
+      // Cancel before noVNC queues a click into another remote field.
+      if (composing) {
+        if (compositionSession) queueComposition({ mode: "cancel" });
+        resetComposition();
+        const owner = nativeOwner;
+        if (owner) void native("remoteInput", { operation: "cancel", owner }).catch(() => {});
+        target.blur();
+      }
+      position(event.clientX, event.clientY);
+    },
     true,
   );
   const commit = (text) => {
@@ -61,19 +130,63 @@ export function installRemoteInput(
       if (!disposed) onStatus("文字输入未完成，请重新连接画面后重试");
     });
   };
+  const queueComposition = (value) => {
+    const targetId = compositionTarget;
+    if (!insertComposition || !compositionSession || !targetId || disposed ||
+        (!isActive() && value.mode !== "cancel")) return;
+    // Reserve the shared RFB input queue in this event handler. Deferring this
+    // call to another promise would let the next Enter overtake the commit.
+    insertComposition(targetId, { session: compositionSession, sequence: compositionSequence++, ...value }).catch((error) => {
+        if (!disposed && value.mode !== "cancel")
+          say(error.message || "输入法组合文字未能同步");
+    });
+  };
   const resetComposition = () => {
     composing = false;
+    compositionTarget = "";
+    compositionSession = "";
     target.value = "";
   };
-  on(target, "compositionstart", () => {
+  const startComposition = () => {
     composing = true;
+    compositionTarget = getTargetId();
+    if (insertComposition && caretState?.context && caretState.target === compositionTarget &&
+        Date.now() - caretState.time < 1000) {
+      compositionSession = crypto.randomUUID().replaceAll("-", "");
+      compositionSequence = 0;
+      queueComposition({ mode: "begin", context: caretState.context });
+    }
+    void syncCaret();
+  };
+  on(target, "compositionstart", startComposition);
+  on(target, "compositionupdate", () => {
+    void syncCaret();
   });
-  on(target, "compositionend", (event) => {
-    if (composing) commit(event.data || "");
+  const endComposition = (text) => {
+    if (composing) {
+      if (compositionSession) queueComposition({ mode: "commit", text, selectionStart: 0, selectionEnd: 0 });
+      else if (compositionTarget === getTargetId()) commit(text);
+    }
     resetComposition();
-  });
+    void syncCaret();
+  };
+  on(target, "compositionend", (event) => endComposition(event.data || ""));
   on(target, "input", (event) => {
-    if (composing || event.isComposing) return;
+    if (document.activeElement !== target) {
+      if (!composing) target.value = "";
+      return;
+    }
+    if (composing || event.isComposing) {
+      if (compositionSession && ["insertCompositionText", "insertFromComposition"].includes(event.inputType)) {
+        queueComposition({
+          mode: "update",
+          text: target.value,
+          selectionStart: target.selectionStart ?? target.value.length,
+          selectionEnd: target.selectionEnd ?? target.value.length,
+        });
+      }
+      return;
+    }
     // WebKit may deliver the final input after compositionend. That text has
     // already been sent. Input without composition covers emoji and dictation.
     if (
@@ -84,7 +197,39 @@ export function installRemoteInput(
       commit(target.value);
     target.value = "";
   });
-  on(target, "blur", resetComposition);
+  on(target, "blur", () => {
+    if (nativeOwned) return;
+    if (composing && compositionSession) queueComposition({ mode: "cancel", text: "", selectionStart: 0, selectionEnd: 0 });
+    resetComposition();
+  });
+  on(document, "focusin", (event) => {
+    if (nativeOwned && !container.contains(event.target)) deactivateNative();
+  });
+  on(window, "cage-native-input", (event) => {
+    const value = event.detail;
+    if (disposed || !value || value.owner !== nativeOwner) return;
+    if (value.kind === "deactivated") {
+      nativeOwned = false;
+      nativeOwner = "";
+      if (composing && compositionSession) queueComposition({ mode: "cancel" });
+      resetComposition();
+      return;
+    }
+    if (!isActive() || nativeTarget !== getTargetId()) { deactivateNative(); return; }
+    if (value.kind === "compositionstart") startComposition();
+    else if (value.kind === "compositionupdate" && composing) {
+      queueComposition({ mode: "update", text: value.text, selectionStart: value.selectionStart, selectionEnd: value.selectionEnd });
+    } else if (value.kind === "compositionend") endComposition(value.text || "");
+    else if (value.kind === "input") commit(value.text);
+    else if (["keydown", "keyup"].includes(value.kind)) {
+      const key = new KeyboardEvent(value.kind, { ...value, bubbles: true, cancelable: true });
+      key.cageNativeTextKey = value.textKey;
+      target.dispatchEvent(key);
+    }
+  });
+  on(container, "pointerup", () => {
+    setTimeout(() => void syncCaret(), 50);
+  });
   const say = (text) => {
     if (!disposed) onStatus(text);
   };
@@ -177,8 +322,8 @@ export function installRemoteInput(
         event.keyCode === 229 ||
         ["Process", "Dead"].includes(event.key)
       ) {
-        // Leave the default action to the host IME; noVNC must not cancel it
-        // or send candidate navigation/confirmation keys into the guest.
+        // Leave composition keys to the host IME. The guest receives the
+        // composition text through the authenticated browser IME endpoint.
         event.stopImmediatePropagation();
         return;
       }
@@ -259,6 +404,20 @@ export function installRemoteInput(
         }
       }
       if (mapping && event.key === "Meta") event.stopImmediatePropagation();
+      if (!event.metaKey && !event.ctrlKey && [...event.key].length === 1 &&
+          event.key.codePointAt(0) > 127) {
+        // Fullwidth punctuation may arrive without a composition session.
+        // Sending it as an X11 keysym can silently drop it in X0tigervnc.
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        handled.add(code);
+        commit(event.key);
+      } else if (!event.cageNativeTextKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
+          event.key.length === 1 && /[^a-zA-Z0-9 ]/.test(event.key)) {
+        // Let the host input method choose punctuation (e.g. ? -> ？).
+        // The resulting input event carries the actual character to insert.
+        event.stopImmediatePropagation();
+      }
     },
     true,
   );
@@ -281,6 +440,8 @@ export function installRemoteInput(
         (focused() && mode() === "mac" && event.key === "Meta")
       )
         event.stopImmediatePropagation();
+      else if (focused() && !composing && caretRect)
+        setTimeout(() => void syncCaret(), 35);
     },
     true,
   );
@@ -338,8 +499,12 @@ export function installRemoteInput(
       return true;
     },
     dispose() {
+      if (composing && compositionSession)
+        queueComposition({ mode: "cancel", text: "", selectionStart: 0, selectionEnd: 0 });
       disposed = true;
+      deactivateNative();
       clearTimeout(copyTimer);
+      clearTimeout(caretTimer);
       release();
       listeners.forEach((remove) => remove());
       rfb.cageSetKeyboardTarget(null);

@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 )
 
@@ -69,8 +70,10 @@ func Validate(ctx context.Context, profile string, s Store) error {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, core, "-t", "-d", dir, "-f", f.Name())
 	cmd.Env = coreEnvironment(dir)
-	if output, e := cmd.CombinedOutput(); e != nil {
-		_ = Write(filepath.Join(dir, "validation.log"), output)
+	output := diagnostics.New(profile).Stream("proxy-validation", "error")
+	defer output.Close()
+	cmd.Stdout, cmd.Stderr = output, output
+	if e := cmd.Run(); e != nil {
 		return errors.New("代理核心拒绝该配置，请检查节点协议和参数；原配置已保留")
 	}
 	return nil
@@ -178,7 +181,7 @@ func Start(ctx context.Context, profile string, s Store) error {
 		return errors.New("Cage 代理端口已被占用，请更换独立端口")
 	}
 	l.Close()
-	core, err := CorePath()
+	_, err = CorePath()
 	if err != nil {
 		return err
 	}
@@ -200,12 +203,17 @@ func Start(ctx context.Context, profile string, s Store) error {
 		return err
 	}
 	_ = os.Remove(Socket(profile))
-	log := filepath.Join(Dir(profile), "runtime.log")
-	if err = Write(log, nil); err != nil {
+	executable, err := os.Executable()
+	if err != nil {
 		return err
 	}
+	configPath := os.Getenv("CLAUDE_CAGE_CONFIG")
+	if configPath == "" {
+		configPath = filepath.Join(profile, "config.json")
+	}
 	escape := func(s string) string { var b bytes.Buffer; _ = xml.EscapeText(&b, []byte(s)); return b.String() }
-	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>%s</string><key>ProgramArguments</key><array><string>%s</string><string>-d</string><string>%s</string><string>-f</string><string>%s</string></array><key>EnvironmentVariables</key><dict><key>HOME</key><string>%s</string><key>PATH</key><string>/usr/bin:/bin</string></dict><key>RunAtLoad</key><true/><key>StandardOutPath</key><string>%s</string><key>StandardErrorPath</key><string>%s</string></dict></plist>`, escape(label(profile)), escape(core), escape(Dir(profile)), escape(filepath.Join(Dir(profile), "config.yaml")), escape(Dir(profile)), escape(log), escape(log))
+	plist := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>%s</string><key>ProgramArguments</key><array><string>%s</string><string>log-relay</string><string>proxy</string></array><key>EnvironmentVariables</key><dict><key>HOME</key><string>%s</string><key>PATH</key><string>/usr/bin:/bin</string><key>CLAUDE_CAGE_CONFIG</key><string>%s</string></dict><key>RunAtLoad</key><true/></dict></plist>`, escape(label(profile)), escape(executable), escape(Dir(profile)), escape(configPath))
+
 	if err = Write(servicePath(profile), []byte(plist)); err != nil {
 		return err
 	}

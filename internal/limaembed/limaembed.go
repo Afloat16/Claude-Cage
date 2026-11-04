@@ -4,6 +4,7 @@
 package limaembed
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -12,15 +13,20 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 
+	"github.com/docker/go-units"
 	"github.com/lima-vm/lima/v2/pkg/debugutil"
+	"github.com/lima-vm/lima/v2/pkg/driver"
 	"github.com/lima-vm/lima/v2/pkg/driver/external/server"
 	"github.com/lima-vm/lima/v2/pkg/envutil"
+	"github.com/lima-vm/lima/v2/pkg/hostagent"
 	"github.com/lima-vm/lima/v2/pkg/hostagent/dns"
+	"github.com/lima-vm/lima/v2/pkg/limatype"
 	"github.com/lima-vm/lima/v2/pkg/networks/usernet"
 	"github.com/lima-vm/lima/v2/pkg/osutil"
 	"github.com/lima-vm/sshocker/pkg/reversesshfs"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/guard"
 	"github.com/sylvinus/agent-vm/internal/netguard"
 	"github.com/sylvinus/agent-vm/internal/state"
@@ -39,6 +45,20 @@ func Run(args []string) bool {
 	}
 	if i == len(args) || args[i] != "hostagent" {
 		return false
+	}
+	var diagnosticStream *diagnostics.Stream
+	if path := os.Getenv(cage.ConfigEnv); path != "" {
+		hostagent.ManageResources = func(ctx context.Context, dir string, cfg *limatype.LimaYAML, balloon driver.MemoryBalloon, read func(context.Context, string) ([]byte, error)) func() {
+			maximum, err := units.RAMInBytes(*cfg.Memory)
+			if err != nil || *cfg.OS != limatype.LINUX {
+				return func() {}
+			}
+			return cage.StartResourceManager(ctx, dir, uint64(maximum), *cfg.CPUs, read, balloon.SetMemoryTarget)
+		}
+		diagnosticStream = diagnostics.New(filepath.Dir(path)).Stream("vm-hostagent", "warn")
+		diagnostics.SetDefault(diagnostics.New(filepath.Dir(path)))
+		logrus.SetOutput(diagnosticStream)
+		defer diagnosticStream.Close()
 	}
 	if runtime.GOOS == "windows" {
 		windowsPath()
@@ -127,6 +147,10 @@ func Run(args []string) bool {
 	// Its events, as limactl's, and a notice for each port it forwards. The
 	// instance is the last argument.
 	root.SetOut(newEventWatch(os.Stdout, args[len(args)-1]))
+	if diagnosticStream != nil {
+		root.SetErr(diagnosticStream)
+	}
+
 	err = root.Execute()
 	if stopJobWatch != nil {
 		stopJobWatch()

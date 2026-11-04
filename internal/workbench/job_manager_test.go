@@ -250,14 +250,14 @@ func TestJobManagerFinalizationAndOutput(t *testing.T) {
 	_, err := manager.submit(&operation, "stop", 0, nil, func() error {
 		return errors.New("account could not be locked")
 	}, func() error {
-		_, _ = manager.execution().Write([]byte(strings.Repeat("a", 25000) + "tail"))
+		_, _ = manager.execution().Write([]byte(strings.Repeat("a\n", 12500) + "tail"))
 		return nil
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	state := awaitJobIdle(t, &manager)
-	if state.Error != "account could not be locked" || len(state.Log) != 24000 || !strings.HasSuffix(state.Log, "tail") {
+	if state.Error != "account could not be locked" || len(state.Log) != 24000 || !strings.HasSuffix(state.Log, "tail\n") {
 		t.Fatalf("finalization error or bounded log lost: %+v", state)
 	}
 }

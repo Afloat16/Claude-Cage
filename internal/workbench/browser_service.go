@@ -16,12 +16,19 @@ var (
 type browserInputError struct{ error }
 
 type browserInput struct {
-	ID        string `json:"id"`
-	URL       string `json:"url"`
-	Width     int    `json:"width,omitempty"`
-	Height    int    `json:"height,omitempty"`
-	Workspace string `json:"workspace,omitempty"`
-	Text      string `json:"text,omitempty"`
+	ID             string `json:"id"`
+	URL            string `json:"url"`
+	Width          int    `json:"width,omitempty"`
+	Height         int    `json:"height,omitempty"`
+	Workspace      string `json:"workspace,omitempty"`
+	Text           string `json:"text,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	Target         string `json:"target,omitempty"`
+	Session        string `json:"session,omitempty"`
+	Context        string `json:"context,omitempty"`
+	Sequence       int    `json:"sequence"`
+	SelectionStart int    `json:"selectionStart,omitempty"`
+	SelectionEnd   int    `json:"selectionEnd,omitempty"`
 }
 
 func (s *Server) browserClient() *browserClient {
@@ -56,6 +63,21 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 		method = http.MethodPost
 		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {
 			return nil, browserInputError{errors.New("输入文字或目标标签无效")}
+		}
+		if action == "ime" {
+			selectionLimit := 0
+			for _, char := range input.Text {
+				selectionLimit++
+				if char > 0xffff {
+					selectionLimit++
+				}
+			}
+			validMode := input.Mode == "status" || input.Mode == "begin" || input.Mode == "update" || input.Mode == "commit" || input.Mode == "cancel"
+			validTarget := input.Target == "browser" && input.ID != "" || input.Target == "desktop" && input.ID == "desktop"
+			validSession := input.Mode == "status" || validInputToken(input.Session)
+			if !validTarget || !validMode || !validSession || input.Mode == "begin" && !validInputToken(input.Context) || input.Sequence < 0 || len(input.Text) > 8192 || input.SelectionStart < 0 || input.SelectionEnd < input.SelectionStart || input.SelectionEnd > selectionLimit {
+				return nil, browserInputError{errors.New("输入法组合状态无效")}
+			}
 		}
 		if action == "new" && input.URL == "" {
 			s.mu.Lock()
@@ -92,6 +114,18 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 		return nil, errors.New("浏览器响应超出大小限制")
 	}
 	return data, err
+}
+
+func validInputToken(value string) bool {
+	if len(value) != 32 {
+		return false
+	}
+	for _, char := range value {
+		if !(char >= '0' && char <= '9' || char >= 'a' && char <= 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Server) subscribeBrowser(ctx context.Context) (io.ReadCloser, error) {

@@ -12,6 +12,7 @@ import (
 
 	agentvm "github.com/sylvinus/agent-vm"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/env"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/state"
@@ -431,7 +432,13 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 		return 1
 	}
 	logPath := e.state.Path("setup.log")
-	log, err := os.Create(logPath)
+	var log io.WriteCloser
+	if configPath := os.Getenv(cage.ConfigEnv); configPath != "" {
+		logPath = filepath.Join(filepath.Dir(configPath), "logs")
+		log = diagnostics.New(filepath.Dir(configPath)).Stream("setup", "info")
+	} else {
+		log, err = os.Create(logPath)
+	}
 	if err != nil {
 		fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
 		return 1
@@ -445,7 +452,7 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 		win.Close()
 		if err != nil {
 			fmt.Fprintf(log, "%v\n", err)
-			if f, ok := e.io.Stdout.(*os.File); ok && ui.IsTerminal(f) {
+			if f, ok := e.io.Stdout.(*os.File); ok && ui.IsTerminal(f) && os.Getenv(cage.ConfigEnv) == "" {
 				fmt.Fprint(e.io.Stderr, ui.Tail(logPath, 20))
 			}
 			return false

@@ -79,6 +79,8 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
 
 建议使用独立测试配置和非敏感测试项目，避免将开发验证写入日常环境。启动前的 Git 保护检查属于主机状态：单独指定 Cage 配置目录不会隔离全局 Git 设置，测试修改路径时应使用隔离的测试用户目录。应用必须先解释影响，用户明确确认后才将 `safe.bareRepository` 设置为 `explicit`，并在复检通过后启动环境；读取状态不得修改 Git 配置。真实网络验证应区分代理连通、环境放行、浏览器访问、Claude 授权与模型请求，不能互相替代。
 
+修改日志、原生错误捕获或诊断导出时，执行 `go test -race ./internal/diagnostics ./internal/workbench ./internal/managedproxy ./internal/limaembed ./internal/cli`。构建工作台与 `cage` 后，用 `node ui/scripts/diagnostics-smoke.mjs /absolute/path/to/cage` 验证真实后台、界面下载、脱敏 ZIP 和离线导出；Playwright 路径可通过 `CAGE_PLAYWRIGHT_MODULE` 指定。三个平台的原生保存、取消和覆盖行为需要分别实测，客机日志 namespace 需要 Linux/systemd 验证。
+
 ## 开发诊断
 
 配置与状态默认在 `~/.claude-cage/`。`CLAUDE_CAGE_CONFIG` 可以指向另一份私有配置，其父目录拥有独立状态。配置文件权限为 `0600`；不要把该目录作为共享项目或提交到 Git。

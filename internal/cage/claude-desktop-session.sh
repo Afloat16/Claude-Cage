@@ -56,7 +56,7 @@ for i in $(seq 1 100); do
 done
 test -S "$XDG_RUNTIME_DIR/files.sock"
 export GTK_USE_PORTAL=1
-claude-desktop --force-device-scale-factor=2 --xdg-portal-required-version=3 &
+/usr/local/bin/cage-input-session claude-desktop --force-device-scale-factor=2 --xdg-portal-required-version=3 &
 app_pid=$!
 # The service becomes ready only after the application has opened a window.
 for i in $(seq 1 200); do

@@ -496,7 +496,11 @@ func (l *Lima) Start(ctx context.Context, name string, log io.Writer) error {
 	}
 	// Here, so that VMs made before it get it too; nothing is written when
 	// it is there already.
-	if err := l.Edit(ctx, name, Settings{noEphemeralPorts: true}); err != nil {
+	settings := Settings{noEphemeralPorts: true}
+	if os.Getenv(cage.ConfigEnv) != "" {
+		settings.MemoryGiB, settings.CPUs = cage.ResourceLimits()
+	}
+	if err := l.Edit(ctx, name, settings); err != nil {
 		return err
 	}
 	if inst, err = l.inspect(ctx, name); err != nil {

@@ -1,3 +1,4 @@
+import { reportDiagnostic } from "./diagnostics.mjs";
 let sessionRenewal;
 async function responseError(response) {
   const error = new Error(
@@ -33,12 +34,16 @@ export async function api(path, body, method) {
     headers: body === undefined ? {} : { "Content-Type": "application/json" },
     body: body === undefined ? undefined : JSON.stringify(body),
   };
-  let response = await fetch("/api" + path, options);
+  const send = async () => {
+    try { return await fetch("/api" + path, options); }
+    catch (error) { reportDiagnostic("frontend", error); throw error; }
+  };
+  let response = await send();
   // Authentication fails before a handler runs, so retrying this rejected
   // request once does not repeat an accepted mutation.
   if (response.status === 401 && path !== "/session" && nativeAvailable()) {
     await renewSession();
-    response = await fetch("/api" + path, options);
+    response = await send();
   }
   if (response.status === 423) window.dispatchEvent(new Event("cage-account-locked"));
   if (!response.ok) throw await responseError(response);
@@ -82,7 +87,8 @@ export async function native(action, extra = {}) {
     try { await api("/account/suspend", {}); }
     catch (error) { if (error.status !== 423) throw error; }
   }
-  return window.webkit.messageHandlers.cage.postMessage({ action, ...extra });
+  try { return await window.webkit.messageHandlers.cage.postMessage({ action, ...extra }); }
+  catch (error) { reportDiagnostic("frontend", error); throw error; }
 }
 export const readClipboard = () =>
   nativeAvailable() ? native("clipboardRead") : navigator.clipboard.readText();

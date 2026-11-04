@@ -15,11 +15,12 @@ import (
 )
 
 type claudeDesktopState struct {
-	Installed bool   `json:"installed"`
-	Version   string `json:"version"`
-	Running   bool   `json:"running"`
-	Failed    bool   `json:"failed"`
-	Managed   bool   `json:"managed"`
+	Installed     bool   `json:"installed"`
+	Version       string `json:"version"`
+	Running       bool   `json:"running"`
+	Failed        bool   `json:"failed"`
+	Managed       bool   `json:"managed"`
+	FailureReason string `json:"failure_reason,omitempty"`
 }
 
 const claudeDesktopSnapshot = `python3 - <<'CAGE_DESKTOP_STATE'
@@ -30,7 +31,8 @@ def run(*args):
 package=run('dpkg-query','-W','-f=${Status}\n${Version}','claude-desktop').splitlines()
 installed=bool(package and package[0]=='install ok installed')
 state=run('systemctl','is-active','cage-claude-desktop.service')
-print(json.dumps({'installed':installed,'version':package[1] if installed else '', 'running':state=='active','failed':state=='failed','managed':Path('/run/cage-desktop/keyring-ready').exists()}))
+result=run('systemctl','show','--property=Result','--value','cage-claude-desktop.service') if state=='failed' else ''
+print(json.dumps({'installed':installed,'version':package[1] if installed else '', 'running':state=='active','failed':state=='failed','managed':Path('/run/cage-desktop/keyring-ready').exists(),'failure_reason':'oom-kill' if result=='oom-kill' else ''}))
 CAGE_DESKTOP_STATE`
 
 func (s *Server) claudeDesktopStatus(w http.ResponseWriter, r *http.Request) {

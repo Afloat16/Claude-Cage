@@ -6,6 +6,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, constants }
 import { open } from "node:fs/promises";
 import http from "node:http";
 import { auditBrowser } from "./browser-audit.mjs";
+import { nativeInput } from "./native-input.mjs";
 import { DownloadManager } from "./browser-downloads.mjs";
 import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
 import { timingSafeEqual } from "node:crypto";
@@ -323,9 +324,9 @@ function publicState() {
     })),
   };
 }
-function broadcastState(focus = false) {
+function broadcastState(focus = false, desktopFocus = false) {
   const payload =
-    "data: " + JSON.stringify({ ...publicState(), focus }) + "\n\n";
+    "data: " + JSON.stringify({ ...publicState(), focus, desktopFocus }) + "\n\n";
   for (const stream of events) stream.write(payload);
 }
 setInterval(() => {
@@ -461,6 +462,11 @@ const server = http.createServer(async (req, res) => {
       if (text.length > (req.url === "/paste-image" ? 28 * 1024 * 1024 : 65536)) throw new Error("Request too large");
     }
     const input = JSON.parse(text || "{}");
+    if (req.url === "/desktop-focus") {
+      broadcastState(false, true);
+      res.end('{"ok":true}');
+      return;
+    }
     if (req.url === "/upload-start" || req.url === "/upload-finish") {
       const result = await mutate(async () => {
         const tabId = req.url === "/upload-start" ? input.id : uploads.request(input.id).tabId;
@@ -500,6 +506,12 @@ const server = http.createServer(async (req, res) => {
       if (req.url === "/new") return newTab(input.url || undefined);
       if (req.url === "/editor") return editor(input.workspace || config.workspace);
       if (req.url === "/editor-restart") return restartEditor(input.workspace);
+      if (req.url === "/ime") {
+        if (!["browser", "desktop"].includes(input.target)) throw new Error("Input target is invalid");
+        if (input.target === "browser" && input.mode !== "cancel" &&
+            (input.id !== activeId || !targets.has(input.id))) throw new Error("Input target changed");
+        return nativeInput(input);
+      }
       const id = input.id || activeId;
       if (!targets.has(id)) throw new Error("Tab no longer exists");
       switch (req.url) {

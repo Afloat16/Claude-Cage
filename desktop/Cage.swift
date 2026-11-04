@@ -2,10 +2,22 @@ import Cocoa
 import WebKit
 import UniformTypeIdentifiers
 
+enum CageDiagnostics {
+    static func record(_ message: String) {
+        guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil),
+              let data = try? JSONSerialization.data(withJSONObject: ["source":"native", "message":String(message.prefix(4096))]) else { return }
+        let process = Process(); process.executableURL = executable; process.arguments = ["diagnostic-event"]
+        let input = Pipe(); process.standardInput = input
+        process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+        do { try process.run(); try input.fileHandleForWriting.write(contentsOf: data); try input.fileHandleForWriting.close() } catch { }
+    }
+}
+
 @main
 final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandlerWithReply {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var nativeInput: CageNativeInput!
     private var accountDeviceBusy = false
     private var expectedPort = 0
     private var allowQuit = false
@@ -27,6 +39,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
 
     static func main() {
+        NSSetUncaughtExceptionHandler { exception in CageDiagnostics.record("Uncaught native exception: \(exception.name.rawValue): \(exception.reason ?? "")\n\(exception.callStackSymbols.joined(separator: "\n"))") }
         let app = NSApplication.shared
         let delegate = CageApp()
         app.delegate = delegate
@@ -50,6 +63,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let config = WKWebViewConfiguration()
         config.websiteDataStore = .default()
         config.userContentController.addScriptMessageHandler(self, contentWorld: .page, name: "cage")
+        config.userContentController.addUserScript(WKUserScript(source: "window.cageNativeIMEAvailable = true;", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         webView = WKWebView(frame: .zero, configuration: config)
         webView.navigationDelegate = self
         webView.uiDelegate = self
@@ -65,6 +79,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         backdrop.state = .followsWindowActiveState
         content.addSubview(backdrop)
         content.addSubview(webView)
+        nativeInput = CageNativeInput(frame: .zero)
+        nativeInput.configure(web: webView)
+        content.addSubview(nativeInput)
         NSLayoutConstraint.activate([webView.leadingAnchor.constraint(equalTo: content.leadingAnchor), webView.trailingAnchor.constraint(equalTo: content.trailingAnchor), webView.topAnchor.constraint(equalTo: content.topAnchor), webView.bottomAnchor.constraint(equalTo: content.bottomAnchor)])
         loading = NSTextField(labelWithString: "正在启动 Cage 工作台…")
         loading.font = NSFont.systemFont(ofSize: 16, weight: .medium)
@@ -92,6 +109,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         NSLayoutConstraint.activate([existingEnvironmentButton.centerXAnchor.constraint(equalTo: content.centerXAnchor), existingEnvironmentButton.topAnchor.constraint(equalTo: retry.bottomAnchor, constant: 10), completeUpdateButton.centerXAnchor.constraint(equalTo: content.centerXAnchor), completeUpdateButton.topAnchor.constraint(equalTo: existingEnvironmentButton.bottomAnchor, constant: 10)])
         applyAppearance(appearance)
         appUpdater = CageAppUpdater(bundleURL: Bundle.main.bundleURL, onChange: { [weak self] state in
+            if state["phase"] as? String == "failed" { CageDiagnostics.record("App update failed: " + (state["message"] as? String ?? "unknown error")) }
             guard let data = try? JSONSerialization.data(withJSONObject: state), let json = String(data: data, encoding: .utf8) else { return }
             self?.webView.evaluateJavaScript("window.dispatchEvent(new CustomEvent('cage-app-update',{detail:\(json)}));", completionHandler: nil)
         }, quit: { [weak self] in self?.allowQuit = true; NSApp.terminate(nil) }, reconnect: { [weak self] in self?.bootstrap() })
@@ -241,7 +259,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
                 guard data.count <= 65536, let result = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw CageUpdateError("文件操作未返回有效结果") }
                 DispatchQueue.main.async { reply(process.terminationStatus == 0 ? result : nil, process.terminationStatus == 0 ? nil : result["message"] as? String ?? "文件操作失败") }
-            } catch { DispatchQueue.main.async { reply(nil,error.localizedDescription) } }
+            } catch { CageDiagnostics.record(error.localizedDescription); DispatchQueue.main.async { reply(nil,error.localizedDescription) } }
         }
     }
     private func rememberFiles(_ urls: [URL]) throws -> [String: Any] {
@@ -259,7 +277,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         fileSelections[id] = (urls.map(\.path), now.addingTimeInterval(600))
         return ["fileSelection": id, "count": urls.count]
     }
-    private func showError(_ text: String) { loading.stringValue = text; loading.isHidden = false; retry.isHidden = false; webView.isHidden = true }
+    private func showError(_ text: String) { CageDiagnostics.record(text); loading.stringValue = text; loading.isHidden = false; retry.isHidden = false; webView.isHidden = true }
     private func applyAppearance(_ value: [String:Any]) {
         let mode = value["mode"] as? String ?? "system"
         NSApp.appearance = mode == "system" ? nil : NSAppearance(named: mode == "dark" ? .darkAqua : .aqua)
@@ -273,7 +291,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { loading.isHidden = true; retry.isHidden = true; completeUpdateButton.isHidden = true; existingEnvironmentButton.isHidden = true; webView.isHidden = false; window.makeFirstResponder(webView); publishWindowVisibility() }
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { showError("无法连接工作台。后台任务不会因此自动结束。") }
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { bootstrap() }
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { CageDiagnostics.record("WebKit content process terminated"); bootstrap() }
     func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
         guard let url = navigationAction.request.url, url.scheme == "http", url.host == "localhost", url.port == expectedPort else { decisionHandler(.cancel); return }
         decisionHandler(.allow)
@@ -282,6 +300,8 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         let origin = message.frameInfo.securityOrigin
         guard message.frameInfo.isMainFrame, origin.protocol == "http", origin.host == "localhost", origin.port == expectedPort, let body = message.body as? [String:Any], let action = body["action"] as? String else { replyHandler(nil,"请求来源无效"); return }
         switch action {
+        case "remoteInput":
+            replyHandler(nativeInput.handle(body), nil)
         case "accountDevice":
             guard !controllerNeedsUpdate, !accountDeviceBusy,
                   let operation = body["operation"] as? String, ["status", "enable", "disable", "unlock"].contains(operation) else { replyHandler(nil,"账户操作正在进行或后台需要更新，请稍后重试"); return }
@@ -300,6 +320,15 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                         await MainActor.run { self.accountDeviceBusy = false; replyHandler(nil,error.localizedDescription) }
                     }
                 }
+            }
+        case "exportDiagnostics":
+            guard !nativeFilePanelOpen else { replyHandler(nil,"请先完成当前文件窗口"); return }
+            let panel = NSSavePanel(); panel.title = "导出诊断包"; panel.nameFieldStringValue = "cage-diagnostics.zip"
+            panel.allowedContentTypes = [.zip]; nativeFilePanelOpen = true
+            panel.beginSheetModal(for: window) { response in
+                self.nativeFilePanelOpen = false
+                guard response == .OK, let url = panel.url else { replyHandler(["canceled":true],nil); return }
+                self.fileCommand(["diagnostics", "--json", url.path], reply: replyHandler)
             }
         case "workbenchReady":
             guard !controllerNeedsUpdate else { replyHandler(nil,"后台版本尚未同步，更新未完成"); return }

@@ -63,6 +63,20 @@ internal static class Backend
         var buffer = new char[4096];
         while (await reader.ReadAsync(buffer.AsMemory(), token) > 0) { }
     }
+    public static async Task Report(string message)
+    {
+        try
+        {
+            using var process = new Process { StartInfo = StartInfo(Executable, "diagnostic-event") };
+            process.StartInfo.RedirectStandardInput = true;
+            if (!process.Start()) return;
+            await process.StandardInput.WriteAsync(JsonSerializer.Serialize(new { source = "native", message = message[..Math.Min(message.Length, 4096)] }));
+            process.StandardInput.Close();
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await process.WaitForExitAsync(timeout.Token);
+        }
+        catch (Exception) { /* Logging failure must not recurse or replace the original error. */ }
+    }
     public static string Text(this JsonElement data, string name) =>
         data.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString()! : "";
 }

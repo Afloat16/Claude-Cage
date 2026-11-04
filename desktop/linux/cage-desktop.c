@@ -8,6 +8,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <math.h>
+#include "native-input.h"
 
 #ifndef CAGE_VERSION
 #define CAGE_VERSION "development"
@@ -60,6 +62,28 @@ static char *quote(const char *value) {
     json_node_free(node);
     return result;
 }
+static void diagnostic_sent(GObject *source, GAsyncResult *result, gpointer data) {
+    (void)data;
+    g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), result, NULL, NULL, NULL);
+}
+static void diagnostic_event(const char *message) {
+    if (!app.backend || !app.profile) return;
+    GSubprocessLauncher *launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDIN_PIPE | G_SUBPROCESS_FLAGS_STDOUT_SILENCE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
+    g_subprocess_launcher_setenv(launcher, "CLAUDE_CAGE_CONFIG", app.profile, TRUE);
+    GSubprocess *process = g_subprocess_launcher_spawn(launcher, NULL, app.backend, "diagnostic-event", NULL);
+    g_object_unref(launcher);
+    if (!process) return;
+    char *limited = g_utf8_substring(message, 0, MIN(g_utf8_strlen(message, -1), 4096));
+    char *quoted = quote(limited);
+    char *body = g_strdup_printf("{\"source\":\"native\",\"message\":%s}", quoted);
+    g_subprocess_communicate_utf8_async(process, body, NULL, diagnostic_sent, NULL);
+    g_object_unref(process); g_free(body); g_free(quoted); g_free(limited);
+}
+static void diagnostic_glib(const gchar *domain, GLogLevelFlags level, const gchar *message, gpointer data) {
+    (void)data;
+    if (level & (G_LOG_LEVEL_ERROR | G_LOG_LEVEL_CRITICAL | G_LOG_LEVEL_WARNING)) diagnostic_event(message);
+    g_log_default_handler(domain, level, message, NULL);
+}
 static gboolean valid_workbench(const char *raw, int expected_port, gboolean entry) {
     if (!raw) return FALSE;
     GUri *uri = g_uri_parse(raw, G_URI_FLAGS_NONE, NULL);
@@ -111,13 +135,13 @@ static void command_finished(GObject *source, GAsyncResult *result, gpointer dat
     if (g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), result, &output, NULL, &error)) {
         if (!output || strlen(output) > 65536 || !json_parser_load_from_data(parser, output, -1, NULL) ||
             !JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser))) {
-            g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Cage 后台未返回有效状态，请查看私有配置中的 control.log。");
+            g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Cage 后台未返回有效状态，请查看私有配置中的 logs/。");
         } else {
             object = json_node_get_object(json_parser_get_root(parser));
             if (!g_subprocess_get_successful(command->process)) {
                 const char *message = text_member(object, "message");
                 g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_FAILED,
-                    *message ? message : "Cage 后台操作失败，请查看 control.log。");
+                    *message ? message : "Cage 后台操作失败，请查看 logs/。");
             }
         }
     }
@@ -188,6 +212,7 @@ static gboolean quit_idle(gpointer data) {
     return G_SOURCE_REMOVE;
 }
 static void show_error(const char *message) {
+    diagnostic_event(message);
     gtk_label_set_text(GTK_LABEL(app.status), message);
     gtk_stack_set_visible_child_name(GTK_STACK(app.stack), "status");
     gtk_widget_show(app.retry);
@@ -219,8 +244,9 @@ static char *choose_file(GtkFileChooserAction kind, const char *title, const cha
     }
     if (kind != GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER) {
         GtkFileFilter *filter = gtk_file_filter_new();
-        gtk_file_filter_set_name(filter, "Cage 主题 (*.json)");
-        gtk_file_filter_add_pattern(filter, "*.json");
+        gboolean diagnostic = filename && g_str_has_suffix(filename, ".zip");
+        gtk_file_filter_set_name(filter, diagnostic ? "诊断包 (*.zip)" : "Cage 主题 (*.json)");
+        gtk_file_filter_add_pattern(filter, diagnostic ? "*.zip" : "*.json");
         gtk_file_chooser_add_filter(GTK_FILE_CHOOSER(dialog), filter);
     }
     char *path = gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT
@@ -494,7 +520,20 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
     JsonObject *request = json_node_get_object(request_node);
     const char *name = text_member(request, "action");
     JSCContext *context = jsc_value_get_context(value);
-    if (!strcmp(name, "workbenchReady")) {
+    if (!strcmp(name, "remoteInput")) {
+        reply_json(reply, context, input_handle(request) ? "true" : "false");
+    } else if (!strcmp(name, "exportDiagnostics")) {
+        if (app.picker_open) reply_error(reply, "请先完成当前文件窗口。");
+        else {
+            char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SAVE, "导出诊断包", "cage-diagnostics.zip");
+            if (!path) reply_json(reply, context, "{\"canceled\":true}");
+            else {
+                const char *args[] = {app.backend, "diagnostics", "--json", path, NULL};
+                backend_arguments(args, 60, browser_file_finished, pending_reply(reply, context));
+                g_free(path);
+            }
+        }
+    } else if (!strcmp(name, "workbenchReady")) {
         if (app.needs_update) reply_error(reply, "后台版本尚未同步，更新未完成。");
         else {
             app.ready = TRUE;
@@ -673,7 +712,7 @@ static void install_bridge(void) {
     char *token = quote(app.token);
     char *code = g_strdup_printf(
         "(()=>{'use strict';window.cageLinuxBridgeInit='injected';if(window!==window.top||location.protocol!=='http:'||location.hostname!=='localhost'||location.port!=='%d')return;"
-        "window.cageLinuxBridgeInit='origin-valid';try{"
+        "window.cageLinuxBridgeInit='origin-valid';window.cageNativeIMEAvailable=true;try{"
         "const transport=window.webkit.messageHandlers.cageTransport;const token=%s;"
         "const cage=Object.freeze({postMessage(request){return transport.postMessage({token,request});}});"
         "Object.defineProperty(window.webkit.messageHandlers,'cage',{value:cage,writable:false,configurable:false});"
@@ -869,6 +908,7 @@ static void create_window(void) {
     g_signal_connect(app.content, "script-message-with-reply-received::cageTransport", G_CALLBACK(bridge_received), NULL);
     webkit_user_content_manager_register_script_message_handler_with_reply(app.content, "cageTransport", NULL);
     app.web = WEBKIT_WEB_VIEW(g_object_new(WEBKIT_TYPE_WEB_VIEW, "web-context", context, "user-content-manager", app.content, NULL));
+    input_initialize(app.web);
     g_object_unref(context);
     WebKitSettings *web_settings = webkit_web_view_get_settings(app.web);
     webkit_settings_set_enable_developer_extras(web_settings, FALSE);
@@ -958,6 +998,7 @@ int main(int argc, char **argv) {
     app.profile = configured && *configured ? g_canonicalize_filename(configured, NULL)
         : g_build_filename(g_get_home_dir(), ".claude-cage", "config.json", NULL);
     g_setenv("CLAUDE_CAGE_CONFIG", app.profile, TRUE);
+    g_log_set_default_handler(diagnostic_glib, NULL);
     if (!prepare_web_storage()) {
         g_printerr("无法创建 Cage 私有界面数据目录，请检查配置目录的所有者、权限或符号链接。\n");
         return 1;

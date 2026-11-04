@@ -19,6 +19,8 @@ import { ProxySettings } from "./proxy-settings";
 import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
 import { EnvironmentVersions } from "./environment-versions";
+import { ResourceSettings } from "./resources";
+import { DiagnosticSettings } from "./diagnostics.jsx";
 import { AccountSettings } from "./account";
 const sections = [
   ["account", "账户", UserRound],
@@ -560,6 +562,8 @@ export function SettingsPanel({
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
                 <EnvironmentVersions status={status} onConfirm={onConfirm} />
+                <ResourceSettings status={status} onConfirm={onConfirm} />
+ <DiagnosticSettings />
                 {status.can_restore && (
                   <button
                     className="text-button"

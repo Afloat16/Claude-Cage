@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/version"
 )
 
@@ -20,6 +21,9 @@ var guestServices string
 
 //go:embed guest-audio.sh
 var guestAudio string
+
+//go:embed guest-memory.sh
+var guestMemory string
 
 //go:embed novnc-patch.py
 var novncPatch string
@@ -51,16 +55,32 @@ var imageInput string
 //go:embed desktop-files.py
 var desktopFiles string
 
+//go:embed native-ime.py
+var nativeIME string
+
+//go:embed native-ime-session.sh
+var nativeIMESession string
+
+//go:embed native-input.mjs
+var nativeInputClient string
+
+func nativeInputScript() string {
+	return "\nsudo tee /usr/local/bin/cage-native-input >/dev/null <<'CAGE_NATIVE_INPUT'\n" + nativeIME + "\nCAGE_NATIVE_INPUT\nsudo chmod 0755 /usr/local/bin/cage-native-input\n" +
+		"sudo tee /usr/local/bin/cage-input-session >/dev/null <<'CAGE_INPUT_SESSION'\n" + nativeIMESession + "\nCAGE_INPUT_SESSION\nsudo chmod 0755 /usr/local/bin/cage-input-session\n" +
+		"sudo tee /usr/local/lib/native-input.mjs >/dev/null <<'CAGE_INPUT_CLIENT'\n" + nativeInputClient + "\nCAGE_INPUT_CLIENT\n" +
+		"printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-native-input --request\\n' | sudo tee /etc/sudoers.d/cage-input >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-input\n"
+}
+
 func fileInputScript() string {
 	return "\nsudo tee /usr/local/bin/cage-desktop-files >/dev/null <<'CAGE_DESKTOP_FILES'\n" + desktopFiles + "\nCAGE_DESKTOP_FILES\nsudo chmod 0755 /usr/local/bin/cage-desktop-files\n"
 }
 
 func imageInputScript() string {
-	return fileInputScript() + "\nsudo tee /usr/local/bin/cage-image-input >/dev/null <<'CAGE_IMAGE_INPUT'\n" + imageInput + "\nCAGE_IMAGE_INPUT\nsudo chmod 0755 /usr/local/bin/cage-image-input\n"
+	return nativeInputScript() + fileInputScript() + "\nsudo tee /usr/local/bin/cage-image-input >/dev/null <<'CAGE_IMAGE_INPUT'\n" + imageInput + "\nCAGE_IMAGE_INPUT\nsudo chmod 0755 /usr/local/bin/cage-image-input\n"
 }
 
 func browserServices() string {
-	return guestAudio + "\n" + guestOpenScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee /usr/share/novnc/cage-clipboard.js >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
+	return guestMemory + "\n" + guestDiagnostics() + guestAudio + "\n" + guestOpenScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee /usr/share/novnc/cage-clipboard.js >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
 from pathlib import Path
 import re
 p = Path("/usr/share/novnc/vnc.html")
@@ -162,4 +182,22 @@ func RequiredGuestManifest() GuestManifest {
 func (m GuestManifest) Current() bool {
 	required := RequiredGuestManifest()
 	return m.Protocol == required.Protocol && m.Revision == required.Revision
+}
+
+func guestDiagnostics() string {
+	return "sudo tee /usr/local/bin/cage-log-run >/dev/null <<'CAGE_LOG_RUN'\n" + diagnostics.GuestRunner() + "\nCAGE_LOG_RUN\nsudo chmod 0755 /usr/local/bin/cage-log-run\n" + `sudo install -d -m 0755 /etc/systemd/journald@cage.conf.d
+sudo tee /etc/systemd/journald@cage.conf.d/limits.conf >/dev/null <<'CAGE_JOURNAL'
+[Journal]
+Storage=persistent
+SystemMaxUse=10M
+SystemMaxFileSize=1M
+RuntimeMaxUse=10M
+RuntimeMaxFileSize=1M
+MaxRetentionSec=14day
+MaxFileSec=1day
+RateLimitIntervalSec=30s
+RateLimitBurst=200
+CAGE_JOURNAL
+sudo systemctl try-restart systemd-journald@cage.service
+`
 }

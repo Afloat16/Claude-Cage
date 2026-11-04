@@ -15,10 +15,16 @@ import (
 	"github.com/sylvinus/agent-vm/internal/appupdate"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/workbench"
+	"io"
+	"os/signal"
+	"runtime/debug"
+	"sync"
+	"syscall"
 )
 
 const help = `Claude Cage — local isolated Claude development
@@ -39,13 +45,26 @@ cage claude        Run Claude Code in the shared environment
 cage stop          Stop the shared Cage environment
 cage list          List this cage profile's VMs
 cage doctor        Diagnose the VM
+cage diagnostics --json PATH.zip   Export a redacted diagnostic bundle
 
 Configuration: ~/.claude-cage/config.json (override CLAUDE_CAGE_CONFIG).
 Each configuration directory is an independent cage profile.
 Only explicitly opened project folders are shared. No host Claude credentials are imported.
 `
 
-func main() { os.Exit(run()) }
+func main() {
+	defer func() {
+		if failure := recover(); failure != nil {
+			diagnostics.Log("error", "command", fmt.Sprintf("panic: %v\n%s", failure, debug.Stack()))
+			panic(failure)
+		}
+	}()
+	code := run()
+	if code != 0 {
+		diagnostics.Log("error", "command", "operation exited unsuccessfully")
+	}
+	os.Exit(code)
+}
 func run() int {
 	// Apply this before desktop/serve dispatch: the control service and every
 	// child process must keep Cage's isolation even when launched from a shell
@@ -74,6 +93,42 @@ func run() int {
 	if err != nil {
 		return fail(err)
 	}
+	store := diagnostics.New(filepath.Dir(path))
+	diagnostics.SetDefault(store)
+	if args[0] == "diagnostic-event" {
+		var event struct {
+			Source  string `json:"source"`
+			Message string `json:"message"`
+		}
+		if json.NewDecoder(io.LimitReader(os.Stdin, 32<<10)).Decode(&event) != nil {
+			return 2
+		}
+		if event.Source != "native" {
+			return 2
+		}
+		if err := store.Record("error", event.Source, event.Message); err != nil {
+			return 1
+		}
+		return 0
+	}
+	if args[0] == "diagnostics" {
+		if len(args) != 3 || args[1] != "--json" {
+			return fail(fmt.Errorf("diagnostics --json /absolute/path.zip"))
+		}
+		if err := workbench.ExportDiagnostics(path, args[2]); err != nil {
+			diagnostics.Log("error", "command", err.Error())
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
+			return 1
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "ok"})
+		return 0
+	}
+	if args[0] == "log-relay" {
+		if len(args) != 2 {
+			return 2
+		}
+		return relay(path, args[1])
+	}
 	if args[0] == "app-update" {
 		return appupdate.Run(path, args[1:], os.Stdout)
 	}
@@ -83,6 +138,7 @@ func run() int {
 		}
 		result, err := workbench.UploadHostFiles(path, args[2], args[3], args[4:])
 		if err != nil {
+			diagnostics.Log("error", "command", err.Error())
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return 1
 		}
@@ -99,6 +155,7 @@ func run() int {
 		}
 		result, err := workbench.BrowserFile(path, args[2], args[3], destination)
 		if err != nil {
+			diagnostics.Log("error", "command", err.Error())
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return 1
 		}
@@ -129,6 +186,7 @@ func run() int {
 		entry, err := workbench.Desktop(path, options)
 		if err != nil {
 			if returnJSON {
+				diagnostics.Log("error", "command", err.Error())
 				_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 				return 1
 			}
@@ -163,6 +221,7 @@ func run() int {
 		result, err := workbench.PrepareUpdate(path, stop)
 		if err != nil {
 			if returnJSON {
+				diagnostics.Log("error", "command", err.Error())
 				_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 				return 1
 			}
@@ -275,7 +334,8 @@ func run() int {
 		if err = os.WriteFile(filepath.Join(state, "setup.sh"), []byte(cage.GuestSetup), 0600); err != nil {
 			return fail(err)
 		}
-		args = append([]string{"setup", "--memory", "4", "--cpus", "2", "--disk", "24", "--preinstall=node,python,chromium,claude,code-server"}, args[1:]...)
+		memory, cpus := cage.ResourceLimits()
+		args = append([]string{"setup", "--memory", fmt.Sprint(memory), "--cpus", fmt.Sprint(cpus), "--disk", "24", "--preinstall=node,python,chromium,claude,code-server"}, args[1:]...)
 	}
 	if args[0] == "up" || args[0] == "login" {
 		result := cli.Main([]string{"run", "true"}, cli.Stdio())
@@ -317,7 +377,11 @@ func runGuestServiceStart(script string, stdio cli.IO, invoke func([]string, cli
 	return invoke([]string{"run", "bash", "-s"}, stdio)
 }
 
-func fail(err error) int { fmt.Fprintln(os.Stderr, strings.TrimSpace(err.Error())); return 1 }
+func fail(err error) int {
+	diagnostics.Log("error", "command", err.Error())
+	fmt.Fprintln(os.Stderr, strings.TrimSpace(err.Error()))
+	return 1
+}
 
 func openWorkbench(address string) error {
 	if runtime.GOOS == "windows" {
@@ -328,4 +392,62 @@ func openWorkbench(address string) error {
 		command = "open"
 	}
 	return exec.Command(command, address).Run()
+}
+
+// Relay owns stdout/stderr capture outside the child so a Go runtime panic or
+// abrupt child exit is recorded without ever persisting raw output.
+func relay(configPath, kind string) int {
+	var cmd *exec.Cmd
+	source := "controller"
+	if kind == "controller" {
+		exe, err := os.Executable()
+		if err != nil {
+			return fail(err)
+		}
+		cmd = exec.Command(exe, "serve")
+	} else if kind == "proxy" {
+		core, err := managedproxy.CorePath()
+		if err != nil {
+			return fail(err)
+		}
+		profile := filepath.Dir(configPath)
+		cmd = exec.Command(core, "-d", managedproxy.Dir(profile), "-f", filepath.Join(managedproxy.Dir(profile), "config.yaml"))
+		source = "proxy"
+	} else {
+		return 2
+	}
+	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+configPath)
+	store := diagnostics.New(filepath.Dir(configPath))
+	out := store.Stream(source, "info")
+	defer out.Close()
+	stderr := store.Stream(source, "error")
+	defer stderr.Close()
+	cmd.Stdout, cmd.Stderr = out, stderr
+	if err := cmd.Start(); err != nil {
+		return fail(err)
+	}
+	diagnostics.Log("info", source, "process started")
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	defer signal.Stop(signals)
+	done := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case sig := <-signals:
+			_ = cmd.Process.Signal(sig)
+		case <-done:
+		}
+	}()
+	err := cmd.Wait()
+	close(done)
+	wg.Wait()
+	if err != nil {
+		diagnostics.Log("error", source, "process exited: "+err.Error())
+		return 1
+	}
+	diagnostics.Log("info", source, "process exited normally")
+	return 0
 }

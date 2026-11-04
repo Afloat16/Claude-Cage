@@ -448,6 +448,9 @@ func (a *HostAgent) Run(ctx context.Context) error {
 	if err := a.driver.AdditionalSetupForSSH(ctx); err != nil {
 		return err
 	}
+	stopResources := a.startResourceManager(ctx)
+	defer stopResources()
+	a.cleanUp(func() error { stopResources(); return nil })
 
 	// WSL instance SSH address isn't known until after VM start
 	if a.driver.Info(ctx).Features.DynamicSSHAddress {

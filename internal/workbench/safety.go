@@ -107,6 +107,7 @@ func (s *Server) revokeNetworkNow(reason string, pause bool) error {
 	var intentErr error
 	s.mu.Lock()
 	if pause {
+		s.recovery = networkRecovery{}
 		s.networkPaused = true
 		s.safety.pauseVersion++
 		intentErr = s.saveNetworkIntentLocked(true)
@@ -575,9 +576,18 @@ func (s *Server) monitorSafety() {
 	}
 	s.publishGate(state)
 	if state.Mode != cage.GateOpen || state.Report == nil {
+		if state.Mode == cage.GateClosed && state.Reason == "检查或监测授权已到期" && state.Report != nil {
+			s.mu.Lock()
+			pending := s.recovery.RunID != ""
+			s.mu.Unlock()
+			if !pending {
+				s.scheduleNetworkRecovery(state)
+			}
+		}
 		return
 	}
 	var issue string
+	var recoverable bool
 	cfg, err := loadConfig(s.configPath)
 	if err != nil || cfg.Fingerprint() != state.Configuration {
 		issue = "配置与运行环境不一致，请应用设置并重新检测"
@@ -592,6 +602,7 @@ func (s *Server) monitorSafety() {
 		ip, err = cage.ProbeExitIP(ctx, cfg)
 		if err != nil {
 			issue = "当前无法经指定代理确认出口，外网已暂停"
+			recoverable = true
 		} else {
 			result, message := s.checkExitPolicy(ctx, cfg, ip)
 			if result != cage.CheckPassed {
@@ -603,19 +614,25 @@ func (s *Server) monitorSafety() {
 		guest, e := s.guestObservation(ctx, map[string]any{"stage": "environment"})
 		if e != nil || !guestSettingsMatch(guest, cfg) {
 			issue = "系统时区或语言的运行状态无法确认，请重新检测"
+			recoverable = e != nil
 		}
 	}
 	if issue == "" {
 		browser, e := s.browserObservation(ctx, cfg, false)
 		if e != nil || !browserSettingsMatch(browser, cfg) {
 			issue = "浏览器时区或语言的运行状态无法确认，请重新检测"
+			recoverable = e != nil
 		}
 	}
-	s.finishSafetyMonitor(ctx, client, state, ip, issue)
+	s.finishSafetyObservation(ctx, client, state, ip, issue, recoverable)
 }
 
 // Recheck the user operation and configuration at the actual lease write.
 func (s *Server) finishSafetyMonitor(ctx context.Context, client *cage.GateClient, state cage.GateStatus, ip, issue string) {
+	s.finishSafetyObservation(ctx, client, state, ip, issue, false)
+}
+
+func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateClient, state cage.GateStatus, ip, issue string, recoverable bool) {
 	s.safetyOp.Lock()
 	defer s.safetyOp.Unlock()
 	s.mu.Lock()
@@ -627,11 +644,15 @@ func (s *Server) finishSafetyMonitor(ctx context.Context, client *cage.GateClien
 	current, e := loadConfig(s.configPath)
 	if e != nil || current.Fingerprint() != state.Configuration {
 		issue = "运行配置已变化，请重新应用设置"
+		recoverable = false
 	}
 	if issue != "" {
 		closed, e := client.Close(context.Background(), issue)
 		if e == nil {
 			s.publishGate(closed)
+			if recoverable {
+				s.scheduleNetworkRecovery(closed)
+			}
 		}
 		s.mu.Lock()
 		s.safety.Error = issue
@@ -645,6 +666,7 @@ func (s *Server) finishSafetyMonitor(ctx context.Context, client *cage.GateClien
 		closed, e := client.Close(context.Background(), "运行监测未能续期，请重新检测")
 		if e == nil {
 			s.publishGate(closed)
+			s.scheduleNetworkRecovery(closed)
 		}
 		s.mu.Lock()
 		s.safety.Error = "运行监测未能续期，请重新检测"

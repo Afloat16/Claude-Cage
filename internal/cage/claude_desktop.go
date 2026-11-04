@@ -28,7 +28,7 @@ func ClaudeDesktopInstallScript() string {
 // Provisioning is independent of the browser and never restarts it. Desktop
 // services are deliberately not enabled at boot: the user opens the app.
 func ClaudeDesktopProvisionScript() string {
-	return "set -euo pipefail\n" + fileInputScript() +
+	return "set -euo pipefail\n" + nativeInputScript() + fileInputScript() +
 		"sudo install -d -m 0755 /etc/claude-cage\n" +
 		"sudo tee /usr/local/bin/cage-claude-session >/dev/null <<'CAGE_CLAUDE_SESSION'\n" + claudeDesktopSession + "\nCAGE_CLAUDE_SESSION\n" +
 		"sudo tee /usr/local/bin/cage-claude-open >/dev/null <<'CAGE_CLAUDE_OPEN'\n" + claudeDesktopOpen + "\nCAGE_CLAUDE_OPEN\n" +
@@ -56,7 +56,8 @@ Environment=HOME=/home/cage
 EnvironmentFile=/etc/claude-cage/environment
 RuntimeDirectory=cage-desktop
 RuntimeDirectoryMode=0700
-ExecStart=/usr/local/bin/cage-claude-session
+ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-claude-session
+LogNamespace=cage
 KillMode=control-group
 TimeoutStartSec=45
 TimeoutStopSec=20

@@ -3,6 +3,9 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"runtime/debug"
 	"sync"
 )
 
@@ -67,6 +70,15 @@ func (m *jobManager) submit(operation sync.Locker, kind string, pauseVersion uin
 	m.afterSuccess = afterSuccess
 	m.state = Job{ID: randomToken()[:12], Kind: kind, Running: true, Message: "正在准备…"}
 	execution := &jobExecution{owner: m, id: m.state.ID, ctx: ctx, pauseVersion: pauseVersion}
+	execution.log = diagnostics.NewStream(diagnostics.Default(), "task/"+kind, "info", func(line string) {
+		if m.state.ID == execution.id {
+			m.state.Log += line
+			if len(m.state.Log) > 24000 {
+				m.state.Log = m.state.Log[len(m.state.Log)-24000:]
+			}
+		}
+	})
+	diagnostics.Log("info", "task", kind+" started")
 	m.workers.Add(1)
 	go func() {
 		defer m.workers.Done()
@@ -85,7 +97,15 @@ func (m *jobManager) submit(operation sync.Locker, kind string, pauseVersion uin
 		}
 		m.active = execution
 		m.mu.Unlock()
-		err := run()
+		err := func() (err error) {
+			defer func() {
+				if failure := recover(); failure != nil {
+					diagnostics.Log("error", "task", fmt.Sprintf("panic: %v\n%s", failure, debug.Stack()))
+					panic(failure)
+				}
+			}()
+			return run()
+		}()
 		m.mu.Lock()
 		defer m.mu.Unlock()
 		m.finishLocked(execution, err)
@@ -94,6 +114,9 @@ func (m *jobManager) submit(operation sync.Locker, kind string, pauseVersion uin
 }
 
 func (m *jobManager) finishLocked(execution *jobExecution, err error) {
+	if execution.log != nil {
+		_ = execution.log.Close()
+	}
 	if m.active == execution {
 		m.active = nil
 	}
@@ -111,11 +134,14 @@ func (m *jobManager) finishLocked(execution *jobExecution, err error) {
 	switch {
 	case errors.Is(err, context.Canceled):
 		m.state.Message = "已取消"
+		diagnostics.Log("info", "task", m.state.Kind+" canceled")
 	case err != nil:
 		m.state.Error = err.Error()
 		m.state.Message = "操作未完成"
+		diagnostics.Log("error", "task", m.state.Kind+": "+err.Error())
 	default:
 		m.state.Message = "已完成"
+		diagnostics.Log("info", "task", m.state.Kind+" completed")
 	}
 }
 
@@ -165,6 +191,7 @@ type jobExecution struct {
 	id           string
 	ctx          context.Context
 	pauseVersion uint64
+	log          *diagnostics.Stream
 }
 
 func (e *jobExecution) message(message string) {
@@ -179,9 +206,8 @@ func (e *jobExecution) Write(data []byte) (int, error) {
 	e.owner.mu.Lock()
 	defer e.owner.mu.Unlock()
 	if e.id != "" && e.owner.state.ID == e.id && e.owner.state.Running {
-		e.owner.state.Log += string(data)
-		if len(e.owner.state.Log) > 24000 {
-			e.owner.state.Log = e.owner.state.Log[len(e.owner.state.Log)-24000:]
+		if e.log != nil {
+			_, _ = e.log.Write(data)
 		}
 	}
 	return len(data), nil

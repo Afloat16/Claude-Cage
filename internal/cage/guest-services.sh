@@ -3,8 +3,8 @@
 if systemctl is-active --quiet cage-webvnc; then
   sudo systemctl stop cage-webvnc
 fi
-if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null; then
-  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0
+if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! command -v openbox >/dev/null || ! command -v xrandr >/dev/null || ! command -v xdotool >/dev/null || ! command -v ibus-daemon >/dev/null || ! /usr/bin/python3 -c 'import gi; gi.require_version("IBus", "1.0")' 2>/dev/null; then
+  sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0 ibus ibus-gtk3 gir1.2-ibus-1.0 python3-gi
 fi
 sudo install -d -m 0755 /etc/claude-cage /usr/local/lib
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
@@ -22,7 +22,8 @@ User=cage
 WorkingDirectory=/home/cage
 Environment=HOME=/home/cage
 EnvironmentFile=/etc/claude-cage/environment
-ExecStart=/usr/local/bin/cage-editor-start
+ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-editor-start
+LogNamespace=cage
 Restart=on-failure
 RestartSec=2
 TimeoutStopSec=15
@@ -47,7 +48,8 @@ Description=Claude Cage virtual browser display
 [Service]
 User=cage-browser
 ExecStartPre=/usr/bin/rm -f /home/cage-browser/.vnc/display.sock
-ExecStart=/usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport -1 -rfbunixpath /home/cage-browser/.vnc/display.sock -rfbunixmode 0600 -nolisten tcp -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/Xtigervnc :77 -geometry 2880x1800 -depth 24 -rfbport -1 -rfbunixpath /home/cage-browser/.vnc/display.sock -rfbunixmode 0600 -nolisten tcp -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd
+LogNamespace=cage
 Restart=on-failure
 UNIT
 sudo tee /etc/claude-cage/openbox.xml >/dev/null <<'WINDOW_CONFIG'
@@ -67,7 +69,8 @@ After=cage-display.service
 [Service]
 User=cage-browser
 Environment=DISPLAY=:77
-ExecStart=/usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/openbox --config-file /etc/claude-cage/openbox.xml
+LogNamespace=cage
 Restart=on-failure
 UNIT
 sudo tee /etc/systemd/system/cage-browser.service >/dev/null <<'UNIT'
@@ -79,7 +82,8 @@ After=cage-display.service cage-window-manager.service
 User=cage-browser
 Environment=DISPLAY=:77
 EnvironmentFile=/etc/claude-cage/environment
-ExecStart=/usr/bin/node /usr/local/lib/cage-browser-agent.mjs
+ExecStart=/usr/local/bin/cage-log-run /usr/local/bin/cage-input-session /usr/bin/node /usr/local/lib/cage-browser-agent.mjs
+LogNamespace=cage
 # Let the controller close Chromium and flush its tabs and profile before
 # systemd terminates any remaining child processes.
 KillMode=mixed
@@ -93,7 +97,8 @@ Requires=cage-display.service
 After=cage-display.service
 [Service]
 User=cage-browser
-ExecStart=/usr/bin/X0tigervnc -display :77 -rfbport 15900 -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/X0tigervnc -display :77 -rfbport 15900 -localhost -SecurityTypes VncAuth -PasswordFile /home/cage-browser/.vnc/passwd -AlwaysShared
+LogNamespace=cage
 Restart=on-failure
 RestartSec=2
 UNIT
@@ -104,7 +109,8 @@ Requires=cage-vnc.service
 After=cage-vnc.service
 [Service]
 User=cage-browser
-ExecStart=/usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:16080 127.0.0.1:15900
+ExecStart=/usr/local/bin/cage-log-run /usr/bin/websockify --web=/usr/share/novnc 127.0.0.1:16080 127.0.0.1:15900
+LogNamespace=cage
 Restart=on-failure
 UNIT
 sudo systemctl daemon-reload

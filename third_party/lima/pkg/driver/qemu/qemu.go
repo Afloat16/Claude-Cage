@@ -525,6 +525,10 @@ func Cmdline(ctx context.Context, cfg Config) (exe string, args []string, err er
 	}
 	memBytes = adjustMemBytesDarwinARM64HVF(memBytes, accel)
 	args = appendArgsIfNoConflict(args, "-m", strconv.Itoa(int(memBytes>>20)))
+	// A balloon returns guest pages to the host without restarting the VM.
+	if *y.OS == limatype.LINUX {
+		args = append(args, "-device", "virtio-balloon")
+	}
 
 	if *y.MountType == limatype.VIRTIOFS {
 		args = appendArgsIfNoConflict(args, "-object",

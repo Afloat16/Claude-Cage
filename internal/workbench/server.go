@@ -10,15 +10,18 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 	"io"
 	"io/fs"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +47,10 @@ type Server struct {
 	closing                                          bool
 	shutdown                                         func()
 	favoritesMu                                      sync.Mutex
+	diagnosticMu                                     sync.Mutex
+	diagnosticRateMu                                 sync.Mutex
+	diagnosticWindow                                 time.Time
+	diagnosticCount                                  int
 	tickets                                          map[string]time.Time
 	browserControl                                   *browserClient
 	op                                               sync.Mutex
@@ -60,6 +67,7 @@ type Server struct {
 	projectShares                                    map[string]*projectShare
 	projectErrors                                    []projectShareError
 	safety                                           safetyState
+	recovery                                         networkRecovery
 	locations                                        map[string]Location
 	monitorCancel                                    context.CancelFunc
 	safetyOp                                         sync.Mutex
@@ -86,6 +94,14 @@ func equalSecret(a, b string) bool {
 	return len(a) > 0 && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
 func Serve(configPath string) (returned error) {
+	store := diagnostics.New(filepath.Dir(configPath))
+	diagnostics.SetDefault(store)
+	if err := store.Clean(); err != nil {
+		return err
+	}
+
+	diagnostics.Log("info", "controller", "service starting")
+	defer func() { diagnostics.Log("info", "controller", "service stopped") }()
 	profile := filepath.Dir(configPath)
 	if err := host.EnsurePrivateDir(profile); err != nil {
 		return err
@@ -97,6 +113,9 @@ func Serve(configPath string) (returned error) {
 	defer lock.Close()
 	if err = lockController(lock); err != nil {
 		return errors.New("此配置已有工作台服务正在运行")
+	}
+	if err := store.ImportLegacy(filepath.Dir(configPath)); err != nil {
+		diagnostics.Log("warn", "diagnostics", "legacy log import failed: "+err.Error())
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -154,7 +173,9 @@ func Serve(configPath string) (returned error) {
 		_ = s.closeProxyGate("网络保持暂停，请手动恢复后再联网")
 	}
 	s.startMonitors()
-	server := &http.Server{Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	serverErrors := store.Stream("http", "error")
+	defer serverErrors.Close()
+	server := &http.Server{ErrorLog: log.New(serverErrors, "", 0), Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	defer server.Close()
 	shutdownDone := make(chan struct{})
 	s.shutdown = func() {
@@ -197,11 +218,17 @@ func (s *Server) handler() http.Handler {
 		jsonReply(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("POST /api/input", s.remoteInput)
+	mux.HandleFunc("GET /api/diagnostics", s.diagnosticStatus)
+	mux.HandleFunc("POST /api/diagnostics/events", s.diagnosticEvent)
+	mux.HandleFunc("GET /api/diagnostics/export", s.diagnosticExport)
 	mux.HandleFunc("GET /api/account", s.accountStatus)
 	mux.HandleFunc("POST /api/account/{action}", s.accountAction)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("POST /api/projects/open", s.openProject)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("GET /api/environment/resources", s.resourceStatus)
+	mux.HandleFunc("POST /api/environment/resources", s.applyResources)
 	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
 	mux.HandleFunc("POST /api/environment/tools", s.updateEnvironmentTools)
 	mux.HandleFunc("GET /api/host/git", s.hostGit)
@@ -290,7 +317,7 @@ func (s *Server) handler() http.Handler {
 		r = r.WithContext(ctx)
 		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
 		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff"
-		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
+		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
 			epoch, unlocked := s.account.access()
 			if !unlocked {
 				http.Error(w, "Cage 已锁定，请先登录", http.StatusLocked)
@@ -302,6 +329,19 @@ func (s *Server) handler() http.Handler {
 			r = r.WithContext(ctx)
 		}
 		defer interruptHTTPOnCancel(w, r)()
+		response := &diagnosticResponse{ResponseWriter: w}
+		w = response
+		defer func() {
+			if response.status >= 400 && r.URL.Path != "/api/diagnostics/events" {
+				_ = diagnostics.New(s.profile).Record("warn", "http", fmt.Sprintf("%s %s returned %d", r.Method, r.Pattern, response.status))
+			}
+		}()
+		defer func() {
+			if failure := recover(); failure != nil {
+				diagnostics.Log("error", "http", fmt.Sprintf("handler panic: %v\n%s", failure, debug.Stack()))
+				panic(failure)
+			}
+		}()
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -332,6 +372,7 @@ func jsonReply(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func requestError(w http.ResponseWriter, err error) {
+	diagnostics.Log("error", "api", err.Error())
 	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {

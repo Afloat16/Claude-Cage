@@ -7,6 +7,7 @@ namespace Cage.Windows;
 internal sealed class MainWindow : Form
 {
     private WebView2 web = new() { Dock = DockStyle.Fill, Visible = false };
+    private readonly NativeInput nativeInput;
     private readonly Label message = new() { AutoSize = true, MaximumSize = new Size(720, 0), Text = "正在启动 Cage 工作台…", Margin = new Padding(12) };
     private readonly FlowLayoutPanel status = new() { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, Padding = new Padding(48), WrapContents = false };
     private readonly Button retry = new() { Text = "重试连接", AutoSize = true, Visible = false };
@@ -21,6 +22,7 @@ internal sealed class MainWindow : Form
 
     public MainWindow()
     {
+        nativeInput = new NativeInput(value => Script("window.dispatchEvent(new CustomEvent('cage-native-input',{detail:" + JsonSerializer.Serialize(value) + "}));"));
         Text = "Cage"; Width = 1280; Height = 850; MinimumSize = new Size(820, 580);
         StartPosition = FormStartPosition.CenterScreen; BackColor = Color.FromArgb(247, 247, 247);
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? SystemIcons.Application;
@@ -40,6 +42,7 @@ internal sealed class MainWindow : Form
         menus.Items.AddRange([file, settings, help]); MainMenuStrip = menus;
         status.Controls.AddRange([message, retry, existing, complete]);
         Controls.Add(web); Controls.Add(status); Controls.Add(menus);
+        Controls.Add(nativeInput);
         retry.Click += async (_, _) => {
             if (webFailed || web.CoreWebView2 == null) await Initialize(true); else await Bootstrap();
         };
@@ -79,7 +82,10 @@ internal sealed class MainWindow : Form
     }
     private void Action(string name) => Script("window.cageNativeAction?.(" + JsonSerializer.Serialize(name) + ")");
     private void PublishVisibility() => Script($"window.cageWindowVisible = {(Visible && WindowState != FormWindowState.Minimized ? "true" : "false")}; window.dispatchEvent(new Event('cage-window-visibility'));");
-    private void PublishUpdate(Dictionary<string, object?> state) => Script("window.dispatchEvent(new CustomEvent('cage-app-update',{detail:" + JsonSerializer.Serialize(state) + "}));");
+    private void PublishUpdate(Dictionary<string, object?> state) {
+        if (state.TryGetValue("phase", out var phase) && phase as string == "failed") _ = Backend.Report("App update failed: " + state.GetValueOrDefault("message"));
+        Script("window.dispatchEvent(new CustomEvent('cage-app-update',{detail:" + JsonSerializer.Serialize(state) + "}));");
+    }
     private async void Script(string script)
     {
         if (web.CoreWebView2 == null || IsDisposed) return;
@@ -89,6 +95,7 @@ internal sealed class MainWindow : Form
     }
     private void Error(string text)
     {
+        _ = Backend.Report(text);
         message.Text = text; status.Show(); status.BringToFront(); retry.Show(); web.Hide();
     }
 
@@ -214,6 +221,16 @@ internal sealed class MainWindow : Form
             object? result;
             switch (request.Text("action"))
             {
+                case "remoteInput": result = nativeInput.ProcessRequest(request, web, web.ZoomFactor); break;
+                case "exportDiagnostics":
+                    using (var picker = new SaveFileDialog { Title = "导出诊断包", Filter = "诊断包 (*.zip)|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
+                    {
+                        if (picker.ShowDialog(this) != DialogResult.OK) { result = new { canceled = true }; break; }
+                        var exported = await Backend.Json(["diagnostics", "--json", picker.FileName], lifetime.Token, TimeSpan.FromSeconds(60));
+                        if (exported.Exit != 0) throw new IOException(exported.Data.Text("message"));
+                        result = exported.Data;
+                    }
+                    break;
                 case "workbenchReady":
                     if (controllerNeedsUpdate) throw new IOException("后台版本尚未同步，更新未完成");
                     updater.MarkReady(); result = true; _ = CompleteSmoke(); break;
@@ -317,6 +334,7 @@ internal sealed class MainWindow : Form
         }
         catch (Exception error)
         {
+            _ = Backend.Report(error.ToString());
             if (id.Length != 0 && !IsDisposed) web.CoreWebView2.PostWebMessageAsJson(JsonSerializer.Serialize(new { id, error = error.Message }));
         }
     }
@@ -324,6 +342,7 @@ internal sealed class MainWindow : Form
     private const string BridgeScript = """
         (() => {
           if (window !== window.top || location.protocol !== 'http:' || location.hostname !== 'localhost') return;
+          window.cageNativeIMEAvailable = true;
           const pending = new Map();
           chrome.webview.addEventListener('message', ({data}) => {
             const item = pending.get(data.id); if (!item) return;

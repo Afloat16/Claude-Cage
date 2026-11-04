@@ -1,6 +1,41 @@
 package workbench
 
-import "testing"
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+)
+
+func TestClaudeDesktopSnapshotFailureReason(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 unavailable")
+	}
+	dir := t.TempDir()
+	for name, script := range map[string]string{
+		"dpkg-query": "#!/bin/sh\nprintf 'install ok installed\\n4.4212.0\\n'\n",
+		"systemctl":  "#!/bin/sh\nif [ \"$1\" = is-active ]; then printf '%s\\n' \"$TEST_ACTIVE\"; else printf '%s\\n' \"$TEST_RESULT\"; fi\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(script), 0755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct{ active, result, want string }{
+		{"failed", "oom-kill", "oom-kill"}, {"failed", "exit-code", ""}, {"active", "oom-kill", ""},
+	} {
+		cmd := exec.Command("sh", "-c", claudeDesktopSnapshot)
+		cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_ACTIVE="+tc.active, "TEST_RESULT="+tc.result)
+		out, err := cmd.CombinedOutput()
+		var state claudeDesktopState
+		if err != nil || json.Unmarshal(out, &state) != nil {
+			t.Fatalf("snapshot: %v %s", err, out)
+		}
+		if state.FailureReason != tc.want || state.Failed != (tc.active == "failed") || state.Running != (tc.active == "active") {
+			t.Fatalf("%+v: %+v", tc, state)
+		}
+	}
+}
 
 func TestClaudeDesktopControlBoundary(t *testing.T) {
 	s := testServer(t)

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
@@ -33,8 +34,23 @@ func (s *Server) startMonitors() {
 		return
 	}
 	ctx := s.lifetimeContextLocked()
-	s.monitors.Add(2)
+	s.monitors.Add(3)
 	s.mu.Unlock()
+	go func() {
+		defer s.monitors.Done()
+		ticker := time.NewTicker(time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := diagnostics.New(s.profile).Clean(); err != nil {
+					diagnostics.Log("error", "diagnostics", "log cleanup failed: "+err.Error())
+				}
+			}
+		}
+	}()
 	go func() {
 		defer s.monitors.Done()
 		s.monitor(ctx)

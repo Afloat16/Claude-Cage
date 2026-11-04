@@ -140,6 +140,14 @@ replace_once('''    sendKey(keysym, code, down) {
 replace_once('''            this.sendKey(keysym, code, true);
             this.sendKey(keysym, code, false);''', '''            this._cageSendKey(keysym, code, true);
             this._cageSendKey(keysym, code, false);''')
+replace_once('''        const scancode = XtScancode[code];''', '''        // Track modifiers when they actually reach the wire, including keys
+        // waiting behind text transfers. Host key state may already be newer.
+        if (keysym >= 0xffe1 && keysym <= 0xffee) {
+            this._cageModifiers ||= new Map();
+            if (down) this._cageModifiers.set(code, keysym);
+            else this._cageModifiers.delete(code);
+        }
+        const scancode = XtScancode[code];''')
 replace_once('''    _sendMouse(x, y, mask) {''', '''    _sendMouse(x, y, mask) {
         if (this._cageInputChain) {
             this._cageQueueInput(() => this._cageSendMouse(x, y, mask));
@@ -168,10 +176,16 @@ replace_once('''        if (!(flags & (1<<31))) {
             if (payload.startsWith('cage-input-')) return true;
             const job = this._cagePasteJob;
             if (job && job.phase === 'fence' && payload === job.id) {
+                // Punctuation can commit while Shift is still physically held.
+                // Paste with a plain Ctrl+V, then restore the wire modifiers;
+                // queued host key releases will follow in their normal order.
+                const modifiers = [...(this._cageModifiers || [])];
+                for (const [code, sym] of modifiers) this._cageSendKey(sym, code, false);
                 this._cageSendKey(0xffe3, 'ControlLeft', true);
                 this._cageSendKey(0x76, 'KeyV', true);
                 this._cageSendKey(0x76, 'KeyV', false);
                 this._cageSendKey(0xffe3, 'ControlLeft', false);
+                for (const [code, sym] of modifiers) this._cageSendKey(sym, code, true);
                 job.phase = 'keys';
                 RFB.messages.clientFence(this._sock, (1 << 31) | 1, job.id + '-keys');
                 return true;

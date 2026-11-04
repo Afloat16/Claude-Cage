@@ -37,6 +37,7 @@ export function ClaudeDesktop({
   });
   const [desktop, setDesktop] = useState(null);
   const [error, setError] = useState("");
+  const [statusError, setStatusError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [jobID, setJobID] = useState("");
   const opened = useRef(false);
@@ -46,9 +47,10 @@ export function ClaudeDesktop({
     try {
       const value = await api("/claude-desktop");
       setDesktop(value);
+      setStatusError("");
       return value;
     } catch (e) {
-      setError(e.message);
+      setStatusError(e.message);
       return null;
     }
   };
@@ -177,9 +179,11 @@ export function ClaudeDesktop({
           <RefreshCw size={15} />
         </button>
       </header>
-      {(error || desktop?.failed) && (
+      {(error || statusError || desktop?.failed) && (
         <div className="connection-banner" role="alert">
-          {error || "Claude Desktop 未能启动，可重试打开或修复安装。"}
+          {error || statusError || (desktop?.failure_reason === "oom-kill"
+            ? "环境内存不足，Claude Desktop 已被系统关闭。请在设置中检查计算资源后重新打开。"
+            : "Claude Desktop 未能启动，可重试打开或修复安装。")}
           <button onClick={onDetails}>操作详情</button>
         </div>
       )}

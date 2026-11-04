@@ -19,6 +19,13 @@ internal static class Program
             if (File.Exists(output)) File.Delete(output);
         }
         else if (args.Length != 0) return 2;
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Backend.Report(e.ExceptionObject is Exception error ? error.ToString() : "Unhandled native exception").GetAwaiter().GetResult();
+        Application.ThreadException += (_, e) => {
+            Backend.Report(e.Exception.ToString()).GetAwaiter().GetResult();
+            using var dialog = new ThreadExceptionDialog(e.Exception);
+            if (dialog.ShowDialog() == DialogResult.Abort) Application.Exit();
+        };
+        TaskScheduler.UnobservedTaskException += (_, e) => _ = Backend.Report(e.Exception.ToString());
         ApplicationConfiguration.Initialize();
         if (RuntimeInformation.OSArchitecture != Architecture.X64 || Environment.OSVersion.Version.Build < 19045)
         {

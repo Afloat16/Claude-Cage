@@ -329,15 +329,9 @@ func startController(configPath string) error {
 	if err != nil {
 		return err
 	}
-	log, err := os.OpenFile(filepath.Join(profile, "control.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	defer log.Close()
-	cmd := exec.Command(exe, "serve")
+	cmd := exec.Command(exe, "log-relay", "controller")
 	cmd.Dir = profile
 	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+configPath)
-	cmd.Stdout, cmd.Stderr = log, log
 	detachController(cmd)
 	if err = cmd.Start(); err != nil {
 		return err

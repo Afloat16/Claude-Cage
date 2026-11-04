@@ -43,6 +43,30 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(data)
 }
 
+func (s *Server) remoteInput(w http.ResponseWriter, r *http.Request) {
+	// The authenticated workbench endpoint shares browser transport with both
+	// graphical sessions; it does not create another guest listener.
+	var input browserInput
+	if !readJSON(w, r, &input) {
+		return
+	}
+	data, err := s.browserAction(r.Context(), "ime", &input)
+	if err != nil {
+		status := http.StatusBadGateway
+		var inputError browserInputError
+		if errors.As(err, &inputError) {
+			status = http.StatusBadRequest
+		}
+		if errors.Is(err, errBrowserNotReady) {
+			status = http.StatusConflict
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(data)
+}
+
 func (s *Server) browserEvents(w http.ResponseWriter, r *http.Request) {
 	body, err := s.subscribeBrowser(r.Context())
 	if err != nil {

@@ -13,6 +13,7 @@
 | 升级应用、更新环境工具或卸载 | [升级与卸载](getting-started.md#升级与卸载) |
 | 查看首个内测版本的能力与验收范围 | [0.1.0-alpha.1 发行说明](releases/0.1.0-alpha.1.md) |
 | 排查下载、启动、联网与授权问题 | [常见问题与恢复](troubleshooting.md) |
+| 导出故障日志并了解自动清理 | [导出诊断包](troubleshooting.md#导出诊断包) |
 | 报告隔离或凭据安全问题 | [安全报告](../SECURITY.md) |
 
 ## 开发与发布
@@ -21,8 +22,11 @@
 |---|---|
 | 从源码构建、修改和验证代码 | [参与开发](../CONTRIBUTING.md) |
 | 理解工作台、浏览器与后台的职责 | [工作台设计](design/workbench.md) |
+| 评估主机输入法、原位拼音与候选窗跟随 | [原生输入法研究](research/2026-11-04-native-ime.md) |
 | 定位作业、终端、浏览器连接与退出流程的代码 | [控制服务职责](design/control-service.md) |
 | 理解网络检查、暂停与恢复 | [网络检查设计](design/network-checks.md) |
+| 理解内存回收、CPU 上限与压力后的联网恢复 | [计算资源](design/resources.md) |
+| 理解日志脱敏、清理与诊断接口 | [日志与诊断](design/diagnostics.md) |
 | 理解节点配置、代理核心与凭据归属 | [内置代理设计](design/managed-proxy.md) |
 | 构建签名、公证的 macOS 安装包 | [发布 macOS 安装包](releasing.md) |
 | 构建 Windows 安装包与执行平台验收 | [Windows 构建与验收](windows.md#维护者构建与验收) |

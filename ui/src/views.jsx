@@ -118,6 +118,22 @@ export const RemoteView = forwardRef(function RemoteView(
                 return api("/browser/insert-text", { id, text });
               });
             },
+            insertComposition: (id, value) => client.cageRunInput(async () => {
+              if (value.mode !== "cancel" && (disposed || !current.current.visible ||
+                  (desktop ? "desktop" : current.current.tabId) !== id))
+                throw new Error("输入位置已切换，请重新输入");
+              const result = await api("/input", { target: desktop ? "desktop" : "browser", id, ...value });
+              if (value.mode !== "cancel" && !result.available)
+                throw new Error("输入位置已失去焦点，请重新输入");
+              return result;
+            }),
+            tabId: () => desktop ? "desktop" : current.current.tabId,
+            caretRect: async (session) => {
+              const id = desktop ? "desktop" : current.current.tabId;
+              const value = await api("/input", { target: desktop ? "desktop" : "browser", id, mode: "status", session });
+              return !disposed && current.current.visible &&
+                (desktop ? "desktop" : current.current.tabId) === id ? value : null;
+            },
             mode: () => current.current.keyboard,
             isActive: () => current.current.visible,
             onStatus: (t) => current.current.onStatus(t),

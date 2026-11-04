@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"golang.org/x/sys/unix"
 )
@@ -197,19 +198,13 @@ func startLinuxCore(ctx context.Context, profile string, s Store) error {
 		return err
 	}
 	_ = os.Remove(Socket(profile))
-	logPath := filepath.Join(Dir(profile), "runtime.log")
-	if err := Write(logPath, nil); err != nil {
-		return err
-	}
-	log, err := os.OpenFile(logPath, os.O_WRONLY|os.O_APPEND, 0600)
-	if err != nil {
-		return err
-	}
-	defer log.Close()
+	log := diagnostics.New(profile).Stream("proxy", "warn")
+
 	cmd := exec.Command(core, "-d", Dir(profile), "-f", path)
 	cmd.Env, cmd.Stdout, cmd.Stderr = coreEnvironment(Dir(profile)), log, log
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
+		_ = log.Close()
 		return err
 	}
 	record, err := identifyLinuxCore(cmd.Process.Pid)
@@ -226,7 +221,14 @@ func startLinuxCore(ctx context.Context, profile string, s Store) error {
 		return err
 	}
 	exited := make(chan struct{})
-	go func() { _ = cmd.Wait(); close(exited) }()
+	go func() {
+		err := cmd.Wait()
+		_ = log.Close()
+		if err != nil {
+			_ = diagnostics.New(profile).Record("error", "proxy", "core exited: "+err.Error())
+		}
+		close(exited)
+	}()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	timeout := time.NewTimer(15 * time.Second)

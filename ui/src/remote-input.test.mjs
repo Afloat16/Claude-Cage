@@ -2,13 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { webcrypto } from "node:crypto";
 const source = readFileSync(
   new URL("./remote-input.js", import.meta.url),
   "utf8",
 )
   .replace(/^import[\s\S]*?;\n/gm, "")
   .replace("export function installRemoteInput", "function installRemoteInput");
-function fixture(native = false) {
+function fixture(native = false, browserComposition = false) {
   const doc = new EventTarget(),
     win = new EventTarget(),
     canvas = {},
@@ -16,10 +17,12 @@ function fixture(native = false) {
     keys = [],
     pastes = [],
     texts = [],
+    compositions = [],
     writes = [],
     statuses = [];
   let reads = 0,
-    mode = "mac";
+    mode = "mac",
+    currentTabId = "tab-1";
   doc.activeElement = canvas;
   doc.body = { append() {} };
   const target = Object.assign(new EventTarget(), {
@@ -56,6 +59,7 @@ function fixture(native = false) {
     Map,
     Set,
     console,
+    crypto: webcrypto,
     readClipboardContent: async () => {
       reads++;
       return { text: "中文🙂" };
@@ -78,6 +82,7 @@ function fixture(native = false) {
   const controller = install(
     rfb,
     Object.assign(new EventTarget(), {
+      querySelector: () => null,
       contains: (element) => element === canvas || element === target,
       append() {},
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
@@ -90,6 +95,14 @@ function fixture(native = false) {
       insertText: async (text) => {
         texts.push(text);
       },
+      insertComposition: browserComposition ? async (id, value) => {
+        if (id !== currentTabId) throw new Error("Input target changed");
+        compositions.push({ id, ...value });
+      } : null,
+      tabId: () => currentTabId,
+      caretRect: browserComposition ? async () => ({
+        available: true, context: "a".repeat(32), rect: [240, 120, 0, 24],
+      }) : null,
       pasteContent: async (content) => {
         const value = await content;
         if (rfb.target) pastes.push(value.png || value.text);
@@ -117,6 +130,7 @@ function fixture(native = false) {
     keys,
     pastes,
     texts,
+    compositions,
     writes,
     statuses,
     controller,
@@ -125,6 +139,9 @@ function fixture(native = false) {
     target,
     setMode: (value) => {
       mode = value;
+    },
+    setTabId: (value) => {
+      currentTabId = value;
     },
     reads: () => reads,
   };
@@ -215,6 +232,46 @@ test("host IME receives composition keys and sends only committed Unicode in ord
   assert.equal(f.rfb.target, null);
 });
 
+test("browser composition is forwarded as preedit, then committed separately", async () => {
+  const f = fixture(false, true);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  try {
+    f.rfb.focus();
+    inputEvent(f, "compositionstart");
+    f.target.value = "nihao";
+    inputEvent(f, "compositionupdate", { data: "nihao" });
+    inputEvent(f, "input", { data: "nihao", inputType: "insertCompositionText", isComposing: true });
+    await Promise.resolve();
+    inputEvent(f, "compositionend", { data: "你好" });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.deepEqual(f.texts, []);
+    assert.equal(f.compositions[0].mode, "begin");
+    assert.equal(new Set(f.compositions.map(value => value.session)).size, 1);
+    assert.deepEqual(f.compositions.map(value => value.sequence), [0, 1, 2]);
+    assert.deepEqual(JSON.parse(JSON.stringify(f.compositions.slice(1).map(({session, sequence, ...value}) => value))), [
+      { id: "tab-1", mode: "update", text: "nihao", selectionStart: 5, selectionEnd: 5 },
+      { id: "tab-1", mode: "commit", text: "你好", selectionStart: 0, selectionEnd: 0 },
+    ]);
+  } finally {
+    f.controller.dispose();
+  }
+});
+
+test("queued composition stays bound to its original browser tab", async () => {
+  const f = fixture(false, true);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  f.rfb.focus();
+  inputEvent(f, "compositionstart");
+  f.target.value = "nihao";
+  inputEvent(f, "input", { data: "nihao", inputType: "insertCompositionText", isComposing: true });
+  f.setTabId("tab-2");
+  inputEvent(f, "compositionend", { data: "你好" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.compositions.map(value => value.mode), ["begin", "update"]);
+  assert.ok(f.statuses.includes("Input target changed"));
+  f.controller.dispose();
+});
+
 test("cancelled and disconnected compositions do not insert text", () => {
   const f = fixture();
   f.rfb.focus();
@@ -240,6 +297,24 @@ test("text input without a composition supports emoji and clears the host buffer
   } finally {
     f.controller.dispose();
   }
+});
+
+test("fullwidth punctuation without composition uses text, while host punctuation keeps its default action", () => {
+  const f = fixture();
+  try {
+    f.rfb.focus();
+    for (const character of ["？", "？", "，", "。", "！", "🙂"]) {
+      assert.equal(f.key("keydown", character, "Slash", { shiftKey: true }).defaultPrevented, true);
+      f.key("keyup", character, "Slash");
+    }
+    assert.deepEqual(f.texts, ["？", "？", "，", "。", "！", "🙂"]);
+    assert.deepEqual(f.keys, []);
+    assert.equal(f.key("keydown", "?", "Slash", { shiftKey: true }).defaultPrevented, false);
+    f.target.value = "？";
+    inputEvent(f, "input", { data: "？", inputType: "insertText" });
+    assert.equal(f.texts.at(-1), "？");
+    assert.equal(f.key("keydown", "?", "Slash", { ctrlKey: true }).defaultPrevented, false);
+  } finally { f.controller.dispose(); }
 });
 test("local fields and native keyboard mode do not acquire mapped shortcuts", () => {
   const f = fixture();

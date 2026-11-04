@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"al.essio.dev/pkg/shellescape"
+
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/vmname"
@@ -51,7 +53,10 @@ func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args .
 }
 func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 	name := vmname.Name(s.environmentDir())
-	cmd := s.sshCommand(ctx, "-T", "lima-"+name, "--", script)
+	// SSH enters the user's default shell. Run control scripts in Bash so
+	// zsh initialization cannot change their redirection or error behavior.
+	command := "exec /bin/bash --noprofile --norc -c " + shellescape.Quote(script)
+	cmd := s.sshCommand(ctx, "-T", "lima-"+name, "--", command)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -220,7 +225,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 					s.publishGate(state)
 					return nil
 				}
-				return s.runSafetyCheck()
+				return s.checkNetworkIfWanted()
 			}
 		}
 		s.setMessage("正在重启环境以加载 VM 外网络门槛…")
@@ -302,7 +307,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 			return s.operationContext().Err()
 		}
 		if err = s.attach(); err == nil {
-			return s.runSafetyCheck()
+			return s.checkNetworkIfWanted()
 		}
 		time.Sleep(time.Second)
 	}
@@ -446,6 +451,7 @@ func (s *Server) monitorNetwork(ctx context.Context) {
 			s.monitorProxyInterface()
 			s.checkProxyHealth()
 			s.monitorSafety()
+			s.recoverNetwork()
 			s.refreshProxySubscriptions()
 			s.op.Unlock()
 		}
