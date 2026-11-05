@@ -62,7 +62,7 @@ try {
   await page.getByText("已保存到本机", { exact: true }).waitFor();
   assert.equal(retries, 1);
   await page.screenshot({ path: fileURLToPath(new URL("download-recovery.png", output)) });
-  await page.getByRole("dialog", { name: "浏览器下载" }).getByRole("button", { name: "关闭面板" }).click();
+  await page.getByRole("dialog", { name: "下载文件" }).getByRole("button", { name: "关闭面板" }).click();
   await page.getByRole("button", { name: "打开 默认工作区 的编辑器", exact: true }).click();
   await page.getByRole("button", { name: "恢复编辑器", exact: true }).click();
   await page.getByRole("dialog", { name: "重启编辑器？" }).getByRole("button", { name: "重启编辑器", exact: true }).click();

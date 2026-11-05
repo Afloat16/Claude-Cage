@@ -322,6 +322,9 @@ internal sealed class MainWindow : Form
                     BackColor = ColorTranslator.FromHtml(background); web.DefaultBackgroundColor = BackColor;
                     web.CoreWebView2.Profile.PreferredColorScheme = mode == "dark" ? CoreWebView2PreferredColorScheme.Dark : mode == "light" ? CoreWebView2PreferredColorScheme.Light : CoreWebView2PreferredColorScheme.Auto;
                     result = true; break;
+                case "accountDevice":
+                    if (request.Text("operation") != "status") throw new InvalidDataException("此平台暂不支持快捷登录");
+                    result = new { supported = false }; break;
                 case "refreshSession":
                     var (exit, data) = await Backend.Json(controllerNeedsUpdate ? ["desktop", "--json", "--existing"] : ["desktop", "--json"], lifetime.Token);
                     if (exit != 0) throw new IOException("工作台会话恢复失败");

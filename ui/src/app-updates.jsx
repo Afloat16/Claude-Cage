@@ -124,7 +124,7 @@ export function AppUpdateButton({ updates }) {
             </svg>
             {downloading && percent !== null && <span className="app-update-percent">{percent}%</span>}
           </>
-        ) : failed ? <RefreshCw size={20} /> : <ArrowDownToLine size={22} />}
+        ) : failed ? <RefreshCw size={20} /> : <ArrowDownToLine size={20} />}
       </button>}
       {(failure || startupFailure) && <div className="app-update-error" role="alert">{failure || startupFailure}{visible ? "。可点击更新按钮重试。" : ""}</div>}
     </>

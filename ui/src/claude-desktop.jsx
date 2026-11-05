@@ -16,6 +16,7 @@ import "./claude-desktop.css";
 const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
 
 export function ClaudeDesktop({
+  uploads = [],
   status,
   onProjectOpened,
   visible,
@@ -27,7 +28,6 @@ export function ClaudeDesktop({
   onExpand,
   sidebarCollapsed,
 }) {
-  const [uploads, setUploads] = useState([]);
   const [closedChooser, setClosedChooser] = useState("");
   const directoryRequest = uploads.find((item) => item.directory && item.id !== closedChooser);
   const [zoom, setZoom] = useState(() => {
@@ -67,17 +67,6 @@ export function ClaudeDesktop({
       setSubmitting(false);
     }
   };
-  useEffect(() => {
-    if (!visible || !desktop?.running || !status.ready) { setUploads([]); return; }
-    let disposed = false;
-    const poll = async () => {
-      try { const value = await api("/input/files/desktop/requests"); if (!disposed) setUploads(value.uploads || []); }
-      catch { if (!disposed) setUploads([]); }
-    };
-    void poll();
-    const timer = setInterval(poll, 1500);
-    return () => { disposed = true; clearInterval(timer); };
-  }, [visible, desktop?.running, status.ready]);
   useEffect(() => {
     if (!status.vm_running || status.job?.running) return;
     let disposed = false;

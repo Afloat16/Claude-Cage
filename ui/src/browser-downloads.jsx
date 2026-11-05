@@ -10,23 +10,29 @@ export function useDownloadNotifications(
   uploading = false,
 ) {
   const previous = useRef(new Map());
+  const mountedAt = useRef(Date.now());
   const observed = useRef(new Set()),
     prompted = useRef(new Set()),
     queue = useRef(Promise.resolve());
   useEffect(() => {
     for (const item of downloads) {
-      if (["downloading", "saving"].includes(item.state))
+      if (["downloading", "saving"].includes(item.state) ||
+          (item.target === "desktop" && Date.parse(item.startedAt) >= mountedAt.current))
         observed.current.add(item.id);
       if (item.state === "failed" && previous.current.get(item.id) !== "failed")
         onStatus(
           `“${item.name}”未能保存：${item.error || "请在下载列表中重试"}`,
         );
+      if (item.target === "desktop" && observed.current.has(item.id) && previous.current.get(item.id) !== item.state) {
+        if (item.state === "downloading") onStatus(`正在下载“${item.name}”，可在侧栏“下载”查看`);
+        if (item.state === "saved") onStatus(`“${item.name}”已保存到默认工作区的 Downloads`);
+      }
       if (
         nativeAvailable() &&
         !uploading &&
         observed.current.has(item.id) &&
         !prompted.current.has(item.id) &&
-        (item.state === "saved" || (item.state === "failed" && item.retryable))
+        (item.state === "saved" || (item.target !== "desktop" && item.state === "failed" && item.retryable))
       ) {
         prompted.current.add(item.id);
         queue.current = queue.current
@@ -36,6 +42,27 @@ export function useDownloadNotifications(
     }
     previous.current = new Map(downloads.map((item) => [item.id, item.state]));
   }, [downloads, uploading]);
+}
+
+export function useDesktopFiles(ready) {
+  const [files, setFiles] = useState({ uploads: [], downloads: [] });
+  useEffect(() => {
+    if (!ready) { setFiles({ uploads: [], downloads: [] }); return; }
+    let disposed = false, timer;
+    const poll = async () => {
+      try {
+        const value = await api("/input/files/desktop/requests");
+        if (!disposed) setFiles({ uploads: value.uploads || [], downloads: value.downloads || [] });
+      } catch {
+        // Closing Desktop invalidates its outstanding file choosers.
+        if (!disposed) setFiles((previous) => ({ ...previous, uploads: [] }));
+      }
+      if (!disposed) timer = setTimeout(poll, 1500);
+    };
+    void poll();
+    return () => { disposed = true; clearTimeout(timer); };
+  }, [ready]);
+  return files;
 }
 
 async function saveDownload(item) {
@@ -99,7 +126,7 @@ export function BrowserDownloads({
           sidebar ? "sidebar-link" : "icon-button browser-download-button"
         }
         aria-label={sidebar ? "下载文件" : "浏览器下载"}
-        title={failed ? "有下载未能保存，点击查看" : "浏览器下载"}
+        title={failed ? "有下载未能保存，点击查看" : "下载文件"}
         onClick={() => setOpen(true)}
       >
         {failed ? <CircleAlert size={16} /> : <ArrowDownToLine size={16} />}
@@ -107,7 +134,7 @@ export function BrowserDownloads({
       </button>
       {open &&
         createPortal(
-          <Modal title="浏览器下载" onClose={() => setOpen(false)}>
+          <Modal title="下载文件" onClose={() => setOpen(false)}>
             <div className="browser-download-list">
               {!items.length && (
                 <p>
@@ -126,7 +153,7 @@ export function BrowserDownloads({
                   </p>
                   {item.path && <p className="download-path">{item.path}</p>}
                   {item.error && <p role="status">{item.error}</p>}
-                  {(item.state === "saved" || item.retryable) && (
+                  {(item.state === "saved" || (item.target !== "desktop" && item.retryable)) && (
                     <div className="download-actions">
                       <button
                         disabled={Boolean(retrying)}
@@ -173,7 +200,8 @@ export function BrowserDownloads({
                       onClick={async () => {
                         setRetrying(item.id);
                         try {
-                          await api("/browser/download-retry", { id: item.id });
+                          await api(item.target === "desktop" ? "/input/files/download-retry" : "/browser/download-retry",
+                            { id: item.id, ...(item.target === "desktop" ? { target: "desktop" } : {}) });
                         } catch (error) {
                           onStatus(error.message);
                         } finally {

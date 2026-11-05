@@ -40,6 +40,17 @@ func ClaudeDesktopProvisionScript() string {
 		"sudo chmod 0755 /usr/local/bin/cage-claude-session /usr/local/bin/cage-claude-open /usr/local/bin/cage-claude-start\n" + guestOpenScript() + `
 printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-claude-open *\n' | sudo tee /etc/sudoers.d/cage-claude-desktop >/dev/null
 sudo chmod 0440 /etc/sudoers.d/cage-claude-desktop
+sudo python3 - <<'CAGE_DESKTOP_DOWNLOAD_CONFIG'
+import json, os
+from pathlib import Path
+source = Path('/etc/claude-cage/browser-control.json')
+if source.exists():
+    with source.open() as config:
+        workspace = json.load(config)['workspace']
+    destination = Path('/etc/claude-cage/desktop-downloads.json')
+    destination.write_text(json.dumps({'workspace': workspace}))
+    os.chmod(destination, 0o644)
+CAGE_DESKTOP_DOWNLOAD_CONFIG
 sudo tee /etc/claude-cage/desktop-openbox.xml >/dev/null <<'CAGE_CLAUDE_WINDOWS'
 <?xml version="1.0" encoding="UTF-8"?>
 <openbox_config xmlns="http://openbox.org/3.4/rc">

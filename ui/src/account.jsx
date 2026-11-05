@@ -23,11 +23,14 @@ import "./account.css";
 
 const AccountContext = createContext(null);
 export const useAccount = () => useContext(AccountContext);
+const credentialPresent = (status) => status === "available" || status === "authentication_required";
 
 export function AccountProvider({ children }) {
   const [account, setAccount] = useState(null);
   const [error, setError] = useState("");
-  const [deviceSupport, setDeviceSupport] = useState(null);
+  const [deviceCheck, setDeviceCheck] = useState(null);
+  const deviceKey = JSON.stringify([account?.device_binding, account?.devices?.automatic, account?.devices?.biometric]);
+  const deviceSupport = deviceCheck?.key === deviceKey ? deviceCheck.value : null;
   const [deviceNotice, setDeviceNotice] = useState("");
   const sequence = useRef(0);
   const refresh = async () => {
@@ -52,16 +55,23 @@ export function AccountProvider({ children }) {
   };
   useEffect(() => {
     if (!account || deviceSupport !== null) return;
-    if (!nativeAvailable()) { setDeviceSupport({ supported: false }); return; }
+    if (!nativeAvailable()) { setDeviceCheck({ key: deviceKey, value: { supported: false } }); return; }
     let live = true;
     native("accountDevice", { operation: "status" })
-      .then((value) => { if (live) setDeviceSupport(value || { supported: false }); })
-      .catch(() => { if (live) setDeviceSupport({ supported: false }); });
+      .then((value) => { if (live) setDeviceCheck({ key: deviceKey, value: value || { supported: false } }); })
+      .catch(() => { if (live) setDeviceCheck({ key: deviceKey, value: { supported: false } }); });
     return () => { live = false; };
-  }, [Boolean(account), deviceSupport]);
+  }, [Boolean(account), deviceKey, deviceSupport]);
   const deviceAction = async (operation, kind) => {
-    await native("accountDevice", { operation, kind });
-    return refresh();
+    if (!deviceSupport?.device_status) throw new Error("当前应用启动器需要更新，请重新安装完整的 Cage 应用后再设置快捷登录。");
+    try {
+      await native("accountDevice", { operation, kind });
+    } finally {
+      // Failed enrollment may have revoked its server record. Reconcile both
+      // sides after failures too, including a credential removed while open.
+      await refresh();
+      setDeviceCheck(null);
+    }
   };
   useEffect(() => {
     let live = true,
@@ -87,6 +97,9 @@ export function AccountProvider({ children }) {
       }
     };
     const locked = () => {
+      // A 423 can follow a controller restart or directory change. Do not
+      // auto-unlock using the previous account's cached Keychain status.
+      setDeviceCheck(null);
       setAccount((previous) =>
         previous ? { ...previous, unlocked: false } : previous,
       );
@@ -102,7 +115,7 @@ export function AccountProvider({ children }) {
     };
   }, []);
   return (
-    <AccountContext.Provider value={{ account, error, refresh, act, deviceSupport, deviceAction, deviceNotice, setDeviceNotice }}>
+    <AccountContext.Provider value={{ account, error, refresh, act, deviceSupport, deviceAction, deviceNotice, setDeviceNotice, recheckDevices: () => setDeviceCheck(null) }}>
       {children}
     </AccountContext.Provider>
   );
@@ -176,7 +189,7 @@ export function AccountGate({ children }) {
   }, [Boolean(account), account?.unlocked, connectionError]);
   useEffect(() => {
     const id = account?.devices?.automatic;
-    if (!id || account.unlocked || account.require_authentication || !deviceSupport?.supported || automaticAttempt.current === id) return;
+    if (!id || account.unlocked || account.require_authentication || !deviceSupport?.supported || deviceSupport.device_status?.automatic !== "available" || automaticAttempt.current === id) return;
     automaticAttempt.current = id;
     setBusy(true);
     deviceAction("unlock", "automatic").catch((e) => setError(e.message)).finally(() => setBusy(false));
@@ -210,7 +223,7 @@ export function AccountGate({ children }) {
       );
       setPassword("");
       setConfirmation("");
-      if (creating && rememberLogin && deviceSupport?.supported) {
+      if (creating && rememberLogin && deviceSupport?.supported && deviceSupport.device_status) {
         try { await deviceAction("enable", "automatic"); }
         catch (e) { setDeviceNotice(`账户已创建，记住登录未能开启：${e.message}。可在「设置 → 账户」中重试。`); }
       }
@@ -291,13 +304,22 @@ export function AccountGate({ children }) {
                   {error || connectionError}
                 </p>
               )}
-              {creating && deviceSupport?.supported && (
+              {!creating && Object.values(deviceSupport?.device_status || {}).includes("missing") && (
+                <p className="field-help" role="status">当前目录的快捷登录凭据缺失或已失效。请用密码解锁，再到「设置 → 账户 → 登录与解锁」重新开启。</p>
+              )}
+              {!creating && Object.values(deviceSupport?.device_status || {}).includes("unavailable") && (
+                <p className="field-help" role="status">暂时无法检查系统钥匙串，请先用密码解锁。快捷登录授权记录已保留。</p>
+              )}
+              {deviceSupport?.supported && !deviceSupport.device_status && (
+                <p className="field-help" role="status">当前应用启动器需要更新，暂时无法检查快捷登录状态。请先用密码进入，并重新安装完整的 Cage 应用。</p>
+              )}
+              {creating && deviceSupport?.supported && deviceSupport.device_status && (
                 <label className="account-device-option check-line">
                   <input type="checkbox" checked={rememberLogin} onChange={(e) => setRememberLogin(e.target.checked)} />
                   <span><strong>记住登录</strong><small>下次打开直接进入。手动锁定后仍需验证。</small></span>
                 </label>
               )}
-              {!creating && deviceSupport?.supported && account.devices?.biometric && (
+              {!creating && deviceSupport?.supported && credentialPresent(deviceSupport.device_status?.biometric) && account.devices?.biometric && (
                 <button type="button" className="quiet-button account-submit" disabled={busy}
                   onClick={async () => {
                     setBusy(true); setError("");
@@ -643,11 +665,23 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
 }
 
 function AccountDeviceSettings() {
-  const { account, deviceSupport, deviceAction } = useAccount();
+  const { account, deviceSupport, deviceAction, recheckDevices } = useAccount();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   if (!deviceSupport?.supported) return null;
+  if (!deviceSupport.device_status) return <section className="account-device-settings" aria-label="登录与解锁">
+    <h4>登录与解锁</h4>
+    <p className="field-help" role="status">当前应用启动器需要更新，无法检查快捷登录状态。请重新安装完整的 Cage 应用后再设置；现有授权已保留。</p>
+  </section>;
+  const states = deviceSupport.device_status || {};
+  const description = (kind, fallback) => states[kind] === "missing"
+    ? "当前目录的凭据缺失或已失效，请重新开启。"
+    : states[kind] === "unavailable"
+      ? "暂时无法检查系统钥匙串，授权记录已保留。请稍后重新检查。"
+      : states[kind] === "authentication_required"
+        ? "凭据需要通过 Touch ID 验证，解锁时会请求指纹。"
+        : fallback;
   const change = async (kind, enabled) => {
     setBusy(true); setError(""); setMessage("");
     try {
@@ -659,15 +693,16 @@ function AccountDeviceSettings() {
   return <section className="account-device-settings" aria-label="登录与解锁">
     <h4>登录与解锁</h4>
     <label className="account-device-option check-line">
-      <input type="checkbox" checked={Boolean(account.devices?.automatic)} disabled={busy}
+      <input type="checkbox" checked={Boolean(account.devices?.automatic) && states.automatic === "available"} disabled={busy || states.automatic === "unavailable"}
         onChange={(event) => change("automatic", event.target.checked)} />
-      <span><strong>记住登录</strong><small>重新打开直接进入。手动锁定后仍需指纹或密码。</small></span>
+      <span><strong>记住登录</strong><small>{description("automatic", "重新打开直接进入。手动锁定后仍需指纹或密码。")}</small></span>
     </label>
     <label className="account-device-option check-line">
-      <input type="checkbox" checked={Boolean(account.devices?.biometric)} disabled={busy || (!deviceSupport.biometric_available && !account.devices?.biometric)}
+      <input type="checkbox" checked={Boolean(account.devices?.biometric) && credentialPresent(states.biometric)} disabled={busy || states.biometric === "unavailable" || (!deviceSupport.biometric_available && !credentialPresent(states.biometric))}
         onChange={(event) => change("biometric", event.target.checked)} />
-      <span><strong>使用 Touch ID 解锁</strong><small>{deviceSupport.biometric_available ? "手动锁定后，通过系统指纹验证进入。" : "请先在 macOS 系统设置中设置 Touch ID。"}</small></span>
+      <span><strong>使用 Touch ID 解锁</strong><small>{description("biometric", deviceSupport.biometric_available ? "手动锁定后，通过系统指纹验证进入。" : "请先在 macOS 系统设置中设置 Touch ID。")}</small></span>
     </label>
+    {Object.values(states).includes("unavailable") && <button type="button" className="quiet-button" disabled={busy} onClick={recheckDevices}>重新检查快捷登录</button>}
     <p className="field-help">退出账户会撤销本机快捷登录授权。密码始终可以用于解锁。</p>
     {error && <p className="account-error" role="alert">{error}</p>}
     {message && <p className="account-saved" role="status">{message}</p>}

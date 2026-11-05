@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -89,7 +90,7 @@ func (s *Server) fileInputAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.PathValue("action")
-	if action != "start" && action != "finish" && action != "cancel" && action != "directory" {
+	if action != "start" && action != "finish" && action != "cancel" && action != "directory" && action != "download-retry" {
 		http.NotFound(w, r)
 		return
 	}
@@ -105,7 +106,7 @@ func (s *Server) fileInputAction(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "文件传递方式无效", 400)
 		return
 	}
-	if action == "directory" && input.Target != "desktop" {
+	if (action == "directory" || action == "download-retry") && input.Target != "desktop" {
 		http.Error(w, "文件夹目标无效", 400)
 		return
 	}
@@ -172,7 +173,43 @@ func (s *Server) desktopFileRequests(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
+	if err = s.rememberDesktopDownloads(result); err != nil {
+		requestError(w, err)
+		return
+	}
 	jsonReply(w, result)
+}
+
+// Register completed exports before the UI can ask a native bridge to save them.
+// Guest paths are never accepted as arbitrary host paths.
+func (s *Server) rememberDesktopDownloads(result map[string]any) error {
+	items, _ := result["downloads"].([]any)
+	for _, value := range items {
+		item, ok := value.(map[string]any)
+		if !ok {
+			return errors.New("Desktop 下载记录无效")
+		}
+		id, _ := item["id"].(string)
+		name, _ := item["name"].(string)
+		if !browserFileID.MatchString(id) || !browserFileName(name) {
+			return errors.New("Desktop 下载记录无效")
+		}
+		item["target"] = "desktop"
+		if item["state"] != "saved" {
+			delete(item, "path")
+			continue
+		}
+		root := s.environmentDir()
+		if item["path"] != strings.TrimRight(guestPath(root), "/")+"/Downloads/"+name {
+			return errors.New("Desktop 下载保存位置无效")
+		}
+		path := filepath.Join(root, "Downloads", name)
+		if err := rememberDownload(s.profile, SavedDownload{ID: id, Name: name, Path: path}, true); err != nil {
+			return err
+		}
+		item["path"] = path
+	}
+	return nil
 }
 
 func (s *Server) fileInputUpload(w http.ResponseWriter, r *http.Request) {

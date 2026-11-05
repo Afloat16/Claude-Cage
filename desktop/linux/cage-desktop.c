@@ -446,7 +446,9 @@ static void smoke_evaluated(GObject *source, GAsyncResult *result, gpointer data
     GError *error = NULL;
     JSCValue *value = webkit_web_view_call_async_javascript_function_finish(WEBKIT_WEB_VIEW(source), result, &error);
     if (!value || error || !jsc_value_is_object(value)) {
-        g_printerr("Linux smoke: authenticated workbench verification failed.\n");
+        g_printerr("Linux smoke: authenticated workbench verification failed (error domain=%s, code=%d, object=%d).\n",
+            error ? g_quark_to_string(error->domain) : "none", error ? error->code : 0,
+            value ? jsc_value_is_object(value) : FALSE);
         g_clear_error(&error); g_clear_object(&value);
         g_application_quit(G_APPLICATION(app.application));
         return;
@@ -466,7 +468,7 @@ static void smoke_evaluated(GObject *source, GAsyncResult *result, gpointer data
         webkit_web_view_get_snapshot(app.web, WEBKIT_SNAPSHOT_REGION_VISIBLE, WEBKIT_SNAPSHOT_OPTIONS_NONE,
             NULL, smoke_snapshot, report);
     } else {
-        g_printerr("Linux smoke: workbench evidence was incomplete.\n");
+        g_printerr("Linux smoke: workbench evidence was incomplete: %s\n", json ? json : "null");
         g_application_quit(G_APPLICATION(app.application));
     }
     g_free(json); g_object_unref(parser); g_object_unref(value);
@@ -476,23 +478,25 @@ static gboolean start_smoke(gpointer data) {
     char *phase = quote(app.storage_phase ? app.storage_phase : "");
     char *marker = quote(app.storage_marker ? app.storage_marker : "");
     char *body = g_strdup_printf(
+        "let stage='storage';try{"
         "const phase=%s,marker=%s;const storageKey='cage-linux-smoke-persistence';"
         "if(phase==='seed')localStorage.setItem(storageKey,marker);"
         "const storageMarkerMatched=!phase||localStorage.getItem(storageKey)===marker;"
         "if(phase==='verify'&&storageMarkerMatched)localStorage.removeItem(storageKey);"
-        "const bridge=window.webkit.messageHandlers.cage;"
+        "stage='bridge';const bridge=window.webkit.messageHandlers.cage;"
         "let unauthenticatedBridgeDenied=false;try{await window.webkit.messageHandlers.cageTransport.postMessage({token:'invalid',request:{action:'clipboardRead'}});}catch{unauthenticatedBridgeDenied=true;}"
-        "const native=await bridge.postMessage({action:'accountDevice',operation:'status'});"
-        "const update=await bridge.postMessage({action:'appUpdate',operation:'status'});"
-        "const accountResponse=await fetch('/api/account');const account=await accountResponse.json();"
-        "const stateResponse=await fetch('/api/status');const state=await stateResponse.json();"
-        "const settingsResponse=await fetch('/api/settings');await settingsResponse.json();"
+        "stage='account-device';const native=await bridge.postMessage({action:'accountDevice',operation:'status'});"
+        "stage='app-update';const update=await bridge.postMessage({action:'appUpdate',operation:'status'});"
+        "stage='account';const accountResponse=await fetch('/api/account');const account=await accountResponse.json();"
+        "stage='status';const stateResponse=await fetch('/api/status');const state=await stateResponse.json();"
+        "stage='settings';const settingsResponse=await fetch('/api/settings');await settingsResponse.json();"
         "const root=document.getElementById('root');"
         "const rendered=!!root&&root.innerText.trim().length>40&&root.querySelectorAll('button').length>3;"
         "const success=rendered&&accountResponse.ok&&account.unlocked===true&&stateResponse.ok&&settingsResponse.ok&&native.supported===false&&update.phase==='manual'&&unauthenticatedBridgeDenied&&storageMarkerMatched;"
         "return {success,nativeBridgeReady:true,authenticated:accountResponse.ok,accountUnlocked:account.unlocked===true,"
         "workbenchRendered:rendered,workbenchReadyAcknowledged:true,statusReceived:stateResponse.ok,settingsReceived:settingsResponse.ok,unauthenticatedBridgeDenied,"
-        "storageMarkerMatched,localStoragePersisted:phase==='verify'&&storageMarkerMatched};", phase, marker);
+        "storageMarkerMatched,localStoragePersisted:phase==='verify'&&storageMarkerMatched};"
+        "}catch(error){return {success:false,stage,errorName:error.name};}", phase, marker);
     webkit_web_view_call_async_javascript_function(app.web, body, -1, NULL, NULL, NULL, NULL, smoke_evaluated, NULL);
     g_free(body); g_free(phase); g_free(marker);
     return G_SOURCE_REMOVE;

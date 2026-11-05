@@ -73,6 +73,8 @@ jobs:
           go vet ./cmd/cage ./internal/cage ./internal/managedproxy ./internal/workbench
       - name: Native application updater
         run: bash scripts/test-app-updates.sh
+      - name: Native account credential status
+        run: bash scripts/test-account-device.sh
       - name: Patched networking and shared files
         run: go test github.com/containers/gvisor-tap-vsock/pkg/services/dns github.com/lima-vm/lima/v2/pkg/hostagent/dns github.com/lima-vm/lima/v2/pkg/networks/usernet github.com/lima-vm/sshocker/pkg/reversesshfs
       - name: Dependency licenses

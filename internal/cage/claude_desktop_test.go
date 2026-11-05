@@ -16,76 +16,82 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 	if err != nil {
 		t.Skip("node unavailable")
 	}
-	for _, tc := range []struct {
-		name, url, path, login string
-		fail                   bool
-	}{
-		{"callback", "claude://login?code=private-test-value", "/desktop-focus", "", false},
-		{"failed-callback", "claude://login?code=private-test-value", "", "", true},
-		{"web-link", "https://example.com/login", "/new", "", false},
-		{"cli-login", "https://claude.ai/oauth/authorize?state=private-test-value", "/login-open", "1234567890abcdef", false},
-		{"finish-cli-login", "--finish-login", "/login-finish", "1234567890abcdef", false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := t.TempDir()
-			type request struct{ Path, Auth, URL, Login string }
-			requests := make(chan request, 2)
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var body struct {
-					URL   string `json:"url"`
-					Login string `json:"login"`
+	for _, identity := range []string{"cage", "cage-browser"} {
+		for _, tc := range []struct {
+			name, url, path, login string
+			fail                   bool
+		}{
+			{"callback", "claude://login?code=private-test-value", "/desktop-focus", "", false},
+			{"failed-callback", "claude://login?code=private-test-value", "", "", true},
+			{"web-link", "https://example.com/login", "/new", "", false},
+			{"cli-login", "https://claude.ai/oauth/authorize?state=private-test-value", "/login-open", "1234567890abcdef", false},
+			{"finish-cli-login", "--finish-login", "/login-finish", "1234567890abcdef", false},
+		} {
+			t.Run(identity+"/"+tc.name, func(t *testing.T) {
+				dir := t.TempDir()
+				type request struct{ Path, Auth, URL, Login string }
+				requests := make(chan request, 2)
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body struct {
+						URL   string `json:"url"`
+						Login string `json:"login"`
+					}
+					_ = json.NewDecoder(r.Body).Decode(&body)
+					requests <- request{r.URL.Path, r.Header.Get("Authorization"), body.URL, body.Login}
+					w.Write([]byte(`{"ok":true}`))
+				}))
+				defer server.Close()
+				config := filepath.Join(dir, "control.json")
+				if err := os.WriteFile(config, []byte(`{"token":"test-only"}`), 0600); err != nil {
+					t.Fatal(err)
 				}
-				_ = json.NewDecoder(r.Body).Decode(&body)
-				requests <- request{r.URL.Path, r.Header.Get("Authorization"), body.URL, body.Login}
-				w.Write([]byte(`{"ok":true}`))
-			}))
-			defer server.Close()
-			config := filepath.Join(dir, "control.json")
-			if err := os.WriteFile(config, []byte(`{"token":"test-only"}`), 0600); err != nil {
-				t.Fatal(err)
-			}
-			// Preserve the production shell flow; sudo only substitutes the two
-			// guest identities and the app. Node performs the real HTTP request.
-			sudo := "#!/bin/sh\nshift\nuser=$1\nshift\nif [ \"$user\" = cage ]; then exit \"$CALLBACK_EXIT\"; fi\nshift\nexec \"$TEST_NODE\" \"$@\"\n"
-			if err := os.WriteFile(filepath.Join(dir, "sudo"), []byte(sudo), 0755); err != nil {
-				t.Fatal(err)
-			}
-			script := strings.ReplaceAll(guestOpen, "/etc/claude-cage/browser-control.json", config)
-			script = strings.ReplaceAll(script, "http://127.0.0.1:18500", server.URL)
-			code := "0"
-			if tc.fail {
-				code = "1"
-			}
-			cmd := exec.Command("sh", "-c", script, "cage-open", tc.url)
-			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "CALLBACK_EXIT="+code, "CAGE_CLAUDE_LOGIN="+tc.login)
-			out, err := cmd.CombinedOutput()
-			if tc.fail {
-				if err == nil {
-					t.Fatal("failed handoff reported success")
+				// Preserve the production shell flow; sudo only substitutes the two
+				// guest identities and the app. Node performs the real HTTP request.
+				sudo := "#!/bin/sh\nshift\nuser=$1\nshift\nif [ \"$user\" = cage ]; then exit \"$CALLBACK_EXIT\"; fi\nif [ \"$TEST_IDENTITY\" = cage-browser ]; then echo 'sudo denied' >&2; exit 1; fi\nshift\nexec \"$TEST_NODE\" \"$@\"\n"
+				if err := os.WriteFile(filepath.Join(dir, "sudo"), []byte(sudo), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "id"), []byte("#!/bin/sh\nprintf '%s\\n' \"$TEST_IDENTITY\"\n"), 0755); err != nil {
+					t.Fatal(err)
+				}
+				script := strings.ReplaceAll(guestOpen, "/etc/claude-cage/browser-control.json", config)
+				script = strings.ReplaceAll(script, "http://127.0.0.1:18500", server.URL)
+				script = strings.ReplaceAll(script, "/usr/bin/node", "\"$TEST_NODE\"")
+				code := "0"
+				if tc.fail {
+					code = "1"
+				}
+				cmd := exec.Command("sh", "-c", script, "cage-open", tc.url)
+				cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "TEST_IDENTITY="+identity, "CALLBACK_EXIT="+code, "CAGE_CLAUDE_LOGIN="+tc.login)
+				out, err := cmd.CombinedOutput()
+				if tc.fail {
+					if err == nil {
+						t.Fatal("failed handoff reported success")
+					}
+					select {
+					case r := <-requests:
+						t.Fatalf("failed handoff emitted focus: %+v", r)
+					default:
+					}
+					return
+				}
+				if err != nil {
+					t.Fatalf("%v: %s", err, out)
 				}
 				select {
 				case r := <-requests:
-					t.Fatalf("failed handoff emitted focus: %+v", r)
+					wantURL := ""
+					if tc.path == "/new" || tc.path == "/login-open" {
+						wantURL = tc.url
+					}
+					if r.Path != tc.path || r.Auth != "Bearer test-only" || r.URL != wantURL || r.Login != tc.login {
+						t.Fatalf("unexpected request: %+v", r)
+					}
 				default:
+					t.Fatal("handoff notification missing")
 				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("%v: %s", err, out)
-			}
-			select {
-			case r := <-requests:
-				wantURL := ""
-				if tc.path == "/new" || tc.path == "/login-open" {
-					wantURL = tc.url
-				}
-				if r.Path != tc.path || r.Auth != "Bearer test-only" || r.URL != wantURL || r.Login != tc.login {
-					t.Fatalf("unexpected request: %+v", r)
-				}
-			default:
-				t.Fatal("handoff notification missing")
-			}
-		})
+			})
+		}
 	}
 }
 

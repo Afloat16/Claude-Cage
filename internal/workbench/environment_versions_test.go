@@ -72,6 +72,11 @@ func TestToolUpdateLeaseHonorsPauseStopAndConfigurationAtRenewal(t *testing.T) {
 						t.Fatal(err)
 					}
 					before := gate.Status()
+					// Windows can grant and renew within the same wall-clock tick.
+					// Advance past the grant tick before requiring a later deadline.
+					for !time.Now().Add(cage.GateLease).After(before.Until) {
+						time.Sleep(time.Millisecond)
+					}
 					switch condition {
 					case "paused":
 						if err := s.pauseNetworkNow("test user pause"); err != nil {

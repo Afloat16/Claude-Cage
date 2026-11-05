@@ -19,7 +19,6 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
     }()
     private let base: URL
     private let ticket: String
-    private static let service = "io.github.lee-xeo.claude-cage.account"
 
     init(entry: URL) throws {
         guard entry.scheme == "http", entry.host == "localhost", let ticket = entry.fragment, !ticket.isEmpty else { throw CageAccountError("本地账户连接无效") }
@@ -43,6 +42,10 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
         guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CageAccountError("本地账户响应无效") }
         return value
     }
+}
+
+enum CageAccountKeychain {
+    private static let service = "io.github.lee-xeo.claude-cage.account"
     private static func query(binding: String, kind: String) -> [String: Any] {
         var result: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
          kSecAttrService as String: service,
@@ -53,13 +56,14 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
         }
         return result
     }
-    private static func remove(binding: String, kind: String) throws {
+    static func remove(binding: String, kind: String) throws {
         let status = SecItemDelete(query(binding: binding, kind: kind) as CFDictionary)
         guard status == errSecSuccess || status == errSecItemNotFound else { throw CageAccountError("无法移除本机钥匙串记录，请重试") }
     }
-    private static func store(_ credential: [String: Any], binding: String, kind: String) throws {
+    static func store(_ credential: [String: Any], binding: String, kind: String) throws {
         var item = query(binding: binding, kind: kind)
         item[kSecValueData as String] = try JSONSerialization.data(withJSONObject: credential)
+        if let id = credential["id"] as? String { item[kSecAttrGeneric as String] = Data(id.utf8) }
         item[kSecAttrLabel as String] = kind == "biometric" ? "Cage 指纹解锁" : "Cage 记住登录"
         if kind == "biometric" {
             var error: Unmanaged<CFError>?
@@ -70,7 +74,32 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
         let status = SecItemAdd(item as CFDictionary, nil)
         guard status == errSecSuccess else { throw CageAccountError("macOS 未能保存快捷登录凭据（\(status)），密码登录仍然可用") }
     }
-    private static func read(binding: String, kind: String) throws -> [String: Any] {
+    // Inspect metadata only. Status checks must not read the secret or ask for
+    // Touch ID, and must never search credentials belonging to another path.
+    static func status(binding: String, kind: String, expectedID: String?) -> String {
+        guard let expectedID else { return "disabled" }
+        var item = query(binding: binding, kind: kind)
+        item[kSecReturnAttributes as String] = true
+        item[kSecMatchLimit as String] = kSecMatchLimitOne
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        item[kSecUseAuthenticationContext as String] = context
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(item as CFDictionary, &result)
+        return availability(status: status, attributes: result as? [String: Any], expectedID: expectedID, kind: kind)
+    }
+    static func availability(status: OSStatus, attributes: [String: Any]?, expectedID: String, kind: String) -> String {
+        if status == errSecItemNotFound { return "missing" }
+        // A protected item can require Touch ID even to return attributes.
+        // Preserve its explicit unlock button without claiming it is verified.
+        if kind == "biometric" && status == errSecInteractionNotAllowed { return "authentication_required" }
+        guard status == errSecSuccess, let attributes else { return "unavailable" }
+        // Older entries have no ID metadata. They remain usable at their
+        // original binding; unlock still validates the ID in the secret.
+        if let id = attributes[kSecAttrGeneric as String] as? Data, id != Data(expectedID.utf8) { return "missing" }
+        return "available"
+    }
+    static func read(binding: String, kind: String) throws -> [String: Any] {
         var item = query(binding: binding, kind: kind)
         item[kSecReturnData as String] = true; item[kSecMatchLimit as String] = kSecMatchLimitOne
         let context = LAContext()
@@ -89,6 +118,9 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
               let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw CageAccountError("快捷登录不可用，请使用密码解锁后重新开启") }
         return value
     }
+}
+
+extension CageAccountDevice {
     func handle(operation: String, kind: String?) async throws -> [String: Any] {
         defer { session.invalidateAndCancel() }
         _ = try await call("@session", ["token": ticket])
@@ -97,26 +129,30 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
         let context = LAContext()
         let biometricAvailable = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
         if operation == "status" {
-            return ["supported": true, "biometric_available": biometricAvailable]
+            let devices = account["devices"] as? [String: String] ?? [:]
+            let states = Dictionary(uniqueKeysWithValues: ["automatic", "biometric"].map { kind in
+                (kind, CageAccountKeychain.status(binding: binding, kind: kind, expectedID: devices[kind]))
+            })
+            return ["supported": true, "biometric_available": biometricAvailable, "device_status": states]
         }
         guard let kind, ["automatic", "biometric"].contains(kind) else { throw CageAccountError("快捷登录类型无效") }
         switch operation {
         case "enable":
             if kind == "biometric" && !biometricAvailable { throw CageAccountError("请先在 macOS 系统设置中设置 Touch ID") }
             let credential = try await call("/device-enroll", ["kind": kind])
-            do { try Self.store(credential, binding: binding, kind: kind) }
+            do { try CageAccountKeychain.store(credential, binding: binding, kind: kind) }
             catch {
                 _ = try? await call("/device-revoke", ["kind": kind])
                 throw error
             }
         case "disable":
             _ = try await call("/device-revoke", ["kind": kind])
-            try Self.remove(binding: binding, kind: kind)
+            try CageAccountKeychain.remove(binding: binding, kind: kind)
         case "unlock":
             // Check persisted manual-lock state before touching the Keychain.
             if kind == "automatic" && account["require_authentication"] as? Bool == true { throw CageAccountError("Cage 已手动锁定，请使用指纹或密码") }
             guard let devices = account["devices"] as? [String: String], let expectedID = devices[kind] else { throw CageAccountError("请先使用密码登录，再开启快捷登录") }
-            let credential = try Self.read(binding: binding, kind: kind)
+            let credential = try CageAccountKeychain.read(binding: binding, kind: kind)
             guard credential["id"] as? String == expectedID else { throw CageAccountError("快捷登录授权已失效，请使用密码") }
             _ = try await call("/device-unlock", ["kind": kind, "credential": credential])
         default: throw CageAccountError("快捷登录操作无效")

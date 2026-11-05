@@ -30,7 +30,7 @@ import { ClaudeDesktop } from "./claude-desktop";
 import { useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate } from "./account";
 import { BrowserHeader, TerminalHeader, ExpandSidebar, ExpandPane } from "./pane-headers";
-import { BrowserDownloads, useDownloadNotifications } from "./browser-downloads";
+import { BrowserDownloads, useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
 import { AudioControls, useAudioOutput } from "./audio";
 import { ProjectDialog } from "./project-dialog";
@@ -210,7 +210,9 @@ function App() {
           ? status?.environment_update_required ? "环境待更新" : "浏览器待恢复"
           : "已停止";
   const notify = (text) => setToast(text);
-  useDownloadNotifications(browser.downloads, notify, Boolean(browser.uploads?.length));
+  const desktopFiles = useDesktopFiles(Boolean(status?.ready));
+  const downloads = [...(browser.downloads || []), ...desktopFiles.downloads];
+  useDownloadNotifications(downloads, notify, Boolean(browser.uploads?.length || desktopFiles.uploads.length));
   const refreshSettings = async () => {
     const results = await Promise.allSettled([api("/settings"), api("/proxy")]);
     if (results[0].status === "fulfilled") setSettings(results[0].value);
@@ -962,7 +964,7 @@ function App() {
     forward={browser.split?.history?.[tab.id]?.forward ?? (tab.id === browser.active && browser.forward)}
     action={action} onSelect={select} onClose={closeTab} onRename={renameTab} onPin={pinTab} onReorder={reorder}
     onNew={newPage} onNavigate={address => navigate(tab.id, address)} onOpen={openBrowserPage}
-    downloads={browser.downloads} onStatus={notify} onRemote={async command => {
+    downloads={downloads} onStatus={notify} onRemote={async command => {
       if (browser.active !== tab.id) await select(tab.id, false);
       if (activeRef.current === tab.id) remote.current?.[command]();
     }}
@@ -1089,7 +1091,7 @@ function App() {
       >
         {!sidebarCollapsed && (
           <WorkspaceSidebar
-            downloadAction={<BrowserDownloads sidebar downloads={browser.downloads} ready={status.ready && !busy} onStatus={notify} />}
+            downloadAction={<BrowserDownloads sidebar downloads={downloads} ready={status.ready && !busy} onStatus={notify} />}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
             defaultWorkspace={status.environment_directory}
@@ -1146,6 +1148,7 @@ function App() {
             style={{ "--split-left": `${100 * (dualBrowser && nativeSplit?.fraction || 0.5)}%` }}>
             {dropSide && <div aria-hidden="true" className={`split-drop split-${dropSide}`}>{dropSide === "left" ? "放到左侧" : "放到右侧"}</div>}
             {desktopOpen && <ClaudeDesktop
+              uploads={desktopFiles.uploads}
               onProjectOpened={() => refreshStatus.current?.()}
               status={status} visible={!settingsOpen} remoteRef={remote}
               onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })}

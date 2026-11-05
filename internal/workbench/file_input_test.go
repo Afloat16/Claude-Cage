@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -35,6 +37,57 @@ func TestFileInputBrowserGestureAuthorizationAndTarget(t *testing.T) {
 	s.account.lock()
 	if w := request(s, "POST", path, s.origin, body, true); w.Code != 423 || calls != 1 {
 		t.Fatal("locked gesture reached guest", w.Code, calls)
+	}
+}
+
+func TestDesktopDownloadsRegisterOnlyCompletedFilesInSharedDownloadDirectory(t *testing.T) {
+	s := testServer(t)
+	name := "视频.mp4"
+	item := map[string]any{"id": testBrowserFileID, "name": name, "state": "saved",
+		"path": strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/" + name}
+	result := map[string]any{"downloads": []any{item}}
+	if err := s.rememberDesktopDownloads(result); err != nil {
+		t.Fatal(err)
+	}
+	saved, err := readSavedDownload(s.profile, testBrowserFileID)
+	if err != nil || saved.Path != filepath.Join(s.environmentDir(), "Downloads", name) {
+		t.Fatal(saved, err)
+	}
+	// A user-chosen host destination must survive later guest polling.
+	saved.Path = filepath.Join(t.TempDir(), name)
+	if err := rememberDownload(s.profile, saved, false); err != nil {
+		t.Fatal(err)
+	}
+	item["path"] = strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/" + name
+	if err := s.rememberDesktopDownloads(result); err != nil {
+		t.Fatal(err)
+	}
+	again, _ := readSavedDownload(s.profile, testBrowserFileID)
+	if again.Path != saved.Path {
+		t.Fatal("poll replaced user destination", again)
+	}
+	for _, path := range []string{"/etc/passwd", strings.TrimRight(guestPath(s.environmentDir()), "/") + "/Downloads/../secret"} {
+		item["path"] = path
+		if s.rememberDesktopDownloads(result) == nil {
+			t.Fatal("untrusted path accepted", path)
+		}
+	}
+	item["name"] = "../secret"
+	if s.rememberDesktopDownloads(result) == nil {
+		t.Fatal("path-like name accepted")
+	}
+	item["name"], item["state"] = name, "downloading"
+	if err := os.Remove(savedDownloadPath(s.profile, testBrowserFileID)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.rememberDesktopDownloads(result); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readSavedDownload(s.profile, testBrowserFileID); err == nil {
+		t.Fatal("partial file registered")
+	}
+	if _, exists := item["path"]; exists {
+		t.Fatal("partial host path leaked")
 	}
 }
 

@@ -22,15 +22,16 @@ ROOT = '/org/freedesktop/portal/desktop'
 
 
 class Broker:
-    def __init__(self, directory, deliver=lambda request, paths: None):
+    def __init__(self, directory, deliver=lambda request, paths: None, downloads=None):
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.deliver = deliver
+        self.downloads = downloads
         self.requests = {}
         self.lock = threading.RLock()
 
     def start(self, kind='paste', multiple=True, **metadata):
-        if kind not in ('paste', 'drop', 'chooser'):
+        if kind not in ('paste', 'drop', 'chooser', 'save'):
             raise ValueError('文件传递方式无效')
         with self.lock:
             if len(self.requests) >= 32:
@@ -45,7 +46,8 @@ class Broker:
             return {'uploads': [dict(id=r['id'], multiple=r['multiple'],
                                      title=r.get('title', ''), target='desktop',
                                      directory=r.get('directory', False))
-                                for r in self.requests.values() if r['kind'] == 'chooser']}
+                                for r in self.requests.values() if r['kind'] == 'chooser'],
+                    'downloads': self.downloads.snapshot() if self.downloads else []}
 
     def get(self, key):
         if key not in self.requests:
@@ -112,7 +114,7 @@ class Broker:
     def cancel(self, key, respond=True):
         with self.lock:
             request = self.requests.pop(key, None)
-        if request and respond and request['kind'] == 'chooser':
+        if request and respond and request['kind'] in ('chooser', 'save'):
             self.deliver(request, None)
         shutil.rmtree(self.directory / key, ignore_errors=True)
         return {'ok': True}
@@ -198,6 +200,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = broker.cancel(key)
                 elif route.path == '/directory':
                     result = broker.choose_directory(value.get('id', ''), value.get('path', ''))
+                elif route.path == '/download-retry' and broker.downloads:
+                    result = broker.downloads.retry(value.get('id', ''))
                 else:
                     raise ValueError('文件操作无效')
             else:
@@ -232,6 +236,8 @@ class Portal:
     XML = '''<node><interface name="org.freedesktop.portal.FileChooser">
       <property name="version" type="u" access="read"/>
       <method name="OpenFile"><arg type="s" direction="in"/><arg type="s" direction="in"/>
+        <arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+      <method name="SaveFile"><arg type="s" direction="in"/><arg type="s" direction="in"/>
         <arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
       </interface><interface name="org.freedesktop.portal.Request">
       <method name="Close"/><signal name="Response"><arg type="u"/><arg type="a{sv}"/></signal>
@@ -333,14 +339,28 @@ class Portal:
                 if not object_id:
                     raise ValueError('文件窗口无法打开')
                 self.objects[handle] = object_id
+                key = None
                 try:
-                    self.broker.start('chooser', self.option(options, 'multiple', False) and not directory,
+                    saving = method == b'SaveFile'
+                    key = self.broker.start('save' if saving else 'chooser', self.option(options, 'multiple', False) and not directory,
                                       directory=directory,
-                                      handle=handle, sender=sender.decode(), title=self.string(title, None).decode())
+                                      handle=handle, sender=sender.decode(), title=self.string(title, None).decode())['id']
+                    if saving:
+                        if not self.broker.downloads:
+                            raise ValueError('下载服务不可用')
+                        destination = self.broker.downloads.begin(self.option(options, 'current_name', 'download'))
                 except Exception:
                     self.unregister(self.connection, self.objects.pop(handle))
+                    if key:
+                        self.broker.cancel(key, respond=False)
                     raise
                 self.reply(invocation, self.tuple(self.new_path(handle.encode())))
+                if saving:
+                    # The user already requested a download. Stage bytes privately;
+                    # the host save dialog is offered only after the writer finishes.
+                    request = self.broker.get(key)
+                    self.deliver(request, [destination])
+                    del self.broker.requests[key]
             finally:
                 self.unref(title)
                 self.unref(options)
@@ -353,7 +373,7 @@ class Portal:
             self.unregister(self.connection, object_id)
 
     def deliver(self, request, paths):
-        if request['kind'] != 'chooser':
+        if request['kind'] not in ('chooser', 'save'):
             paste_files(paths)
             return
         entries = []
@@ -455,7 +475,9 @@ def main():
     runtime = Path(os.environ['XDG_RUNTIME_DIR'])
     directory = runtime / 'uploads'
     shutil.rmtree(directory, ignore_errors=True)
-    broker = Broker(directory)
+    from importlib.machinery import SourceFileLoader
+    downloads = SourceFileLoader('cage_desktop_downloads', '/usr/local/lib/cage-desktop-downloads.py').load_module()
+    broker = Broker(directory, downloads=downloads.create_downloads())
     portal = Portal(broker)
     broker.deliver = portal.deliver
     socket = runtime / 'files.sock'

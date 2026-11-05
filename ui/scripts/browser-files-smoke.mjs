@@ -78,7 +78,7 @@ try {
   await page.getByRole("button", { name: "浏览器下载", exact: true }).click();
   await page.getByText("正在下载", { exact: false }).waitFor();
   await page
-    .getByRole("dialog", { name: "浏览器下载" })
+    .getByRole("dialog", { name: "下载文件" })
     .getByRole("button", { name: "关闭面板" })
     .click();
   selections = [{ id: chooser, tabId: "tab-1", multiple: true }];
@@ -104,7 +104,7 @@ try {
     .getByText("/Users/test/Downloads/视频.mp4", { exact: true })
     .waitFor();
   await page
-    .getByRole("dialog", { name: "浏览器下载" })
+    .getByRole("dialog", { name: "下载文件" })
     .getByRole("button", { name: "打开文件", exact: true })
     .click();
   await page
@@ -129,7 +129,7 @@ try {
     "web UI must not send arbitrary host paths",
   );
   await page
-    .getByRole("dialog", { name: "浏览器下载" })
+    .getByRole("dialog", { name: "下载文件" })
     .getByRole("button", { name: "关闭面板" })
     .click();
   selections = [{ id: "a8af5851-5837-45ca-a820-1a2565bc7ec6", tabId: "tab-1", multiple: false }];
@@ -151,7 +151,7 @@ try {
     .getByText("/Users/test/Downloads/视频.mp4", { exact: true })
     .waitFor();
   await page
-    .getByRole("dialog", { name: "浏览器下载" })
+    .getByRole("dialog", { name: "下载文件" })
     .getByRole("button", { name: "打开文件", exact: true })
     .click();
   await poll(
