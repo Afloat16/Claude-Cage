@@ -25,8 +25,46 @@ export DEBIAN_FRONTEND=noninteractive
 # stdin (dpkg asking about a changed config file, an npm install script)
 # would swallow the lines after it, which then never run.
 apt_get() {
-  sudo env DEBIAN_FRONTEND=noninteractive apt-get "$@" </dev/null
+  local status before=''
+  if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+    before="$(awk '$1 == "oom_kill" {print $2}' /proc/vmstat)"
+  fi
+  if sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=60 -o Acquire::https::Timeout=60 "$@" </dev/null; then
+    return 0
+  else
+    status=$?
+  fi
+  if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+    printf 'APT failed (exit %s); guest memory evidence follows. oom_kill before=%s\n' "$status" "$before" >&2
+    apt-get --version | head -n 1 >&2 || true
+    awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree):/' /proc/meminfo >&2 || true
+    awk '$1 == "oom_kill" {print "oom_kill after=" $2}' /proc/vmstat >&2 || true
+    ps -eo pid,rss,comm --sort=-rss | head -n 12 >&2 || true
+    sudo timeout 5 journalctl -k -b --no-pager -n 40 --grep='Out of memory|Killed process|oom-kill' >&2 || true
+    printf 'Retry preserves the build VM and package cache. Export diagnostics if installation fails again.\n' >&2
+  fi
+  return "$status"
 }
+
+# Download completely before replacing a repository key. A failed request must
+# leave the previously trusted key usable on the next setup attempt.
+install_repository_key() (
+  set -euo pipefail
+  local url="$1" target="$2" stage replacement=''
+  stage="$(mktemp)"
+  trap 'rm -f "$stage"; if [ -n "$replacement" ]; then sudo rm -f "$replacement"; fi' EXIT
+  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --silent \
+    --retry 3 --retry-all-errors --retry-max-time 120 --connect-timeout 15 --max-time 30 "$url" -o "$stage" </dev/null
+  test -s "$stage"
+  if [[ "$target" == *.asc ]]; then
+    grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$stage"
+    grep -q '^-----END PGP PUBLIC KEY BLOCK-----' "$stage"
+  fi
+  replacement="$(sudo mktemp "${target}.XXXXXX")"
+  sudo install -m 0644 -o root -g root "$stage" "$replacement"
+  sudo mv -f "$replacement" "$target"
+  replacement=''
+)
 
 # Component toggles. The host wizard prepends `export` lines for these before
 # piping the script in. Members of the default install set (everything except
@@ -100,6 +138,14 @@ echo '$nrconf{restart} = '"'"'a'"'"';' | sudo tee /etc/needrestart/conf.d/no-pro
 # avahi-daemon, upower, Vulkan drivers), some of them running daemons. The
 # recommended packages that are used are listed by name instead.
 echo "Installing base packages..."
+if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+  # This runs in the guest, through its configured DNS and proxy-only route.
+  echo "Checking guest DNS for Debian packages..."
+  if ! timeout 30 getent ahostsv4 deb.debian.org >/dev/null; then
+    echo 'Guest DNS could not resolve deb.debian.org. Check Cage Network & Proxy / DNS settings, apply and retry. Host internet access alone does not verify guest DNS.' >&2
+    exit 1
+  fi
+fi
 apt_get update
 apt_get install -y --no-install-recommends \
   git curl jq zsh \
@@ -191,7 +237,7 @@ if [[ "$INSTALL_DOCKER" == "1" ]]; then
   # Install Docker from official repo (includes docker compose)
   echo "Installing Docker..."
   sudo install -m 0755 -d /etc/apt/keyrings
-  sudo curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+  install_repository_key https://download.docker.com/linux/debian/gpg /etc/apt/keyrings/docker.asc
   sudo chmod a+r /etc/apt/keyrings/docker.asc
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
   apt_get update
@@ -211,7 +257,7 @@ if [[ "$INSTALL_NODE" == "1" ]]; then
   # keeps apt on NodeSource's nodejs over Debian's older one.
   echo "Installing Node.js 24..."
   sudo install -m 0755 -d /etc/apt/keyrings
-  sudo curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key -o /etc/apt/keyrings/nodesource.asc
+  install_repository_key https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key /etc/apt/keyrings/nodesource.asc
   sudo chmod a+r /etc/apt/keyrings/nodesource.asc
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/nodesource.asc] https://deb.nodesource.com/node_24.x nodistro main" | sudo tee /etc/apt/sources.list.d/nodesource.list > /dev/null
   printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' | sudo tee /etc/apt/preferences.d/nodejs > /dev/null
@@ -236,7 +282,7 @@ if [[ "$INSTALL_GH" == "1" ]]; then
   # Install GitHub CLI from official repo
   echo "Installing GitHub CLI..."
   sudo mkdir -p -m 755 /etc/apt/keyrings
-  wget -qO- https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
+  install_repository_key https://cli.github.com/packages/githubcli-archive-keyring.gpg /etc/apt/keyrings/githubcli-archive-keyring.gpg
   sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
   apt_get update

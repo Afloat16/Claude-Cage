@@ -25,3 +25,12 @@ dist
 *.p12
 *.keychain-db
 /promo/out/
+
+# Local diagnostics and UI design/acceptance workspaces. Public media lives in promo/.
+/output/
+/ui/.oil-ui/
+/ui/_output/
+
+# Rendered promo export; reproducible source and assets are in promo/.
+/claude-cage-promo.mp4
+/.vite/

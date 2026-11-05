@@ -409,7 +409,13 @@ func fetch(ctx context.Context, localPath, remote string, o options) (*Result, e
 	if err := os.WriteFile(shadURL, []byte(remote), 0o644); err != nil {
 		return nil, err
 	}
-	if err := downloadHTTP(ctx, shadData, shadTime, shadType, remote, o.description, o.expectedDigest); err != nil {
+	// A cache entry is locked by Download. Only digest-pinned downloads may
+	// retain and resume partial bytes across processes and setup retries.
+	download := downloadHTTP
+	if o.expectedDigest != "" {
+		download = downloadHTTPResumable
+	}
+	if err := download(ctx, shadData, shadTime, shadType, remote, o.description, o.expectedDigest); err != nil {
 		return nil, err
 	}
 	if shadDigest != "" && o.expectedDigest != "" {
@@ -1056,6 +1062,7 @@ func removeStaleTempFilesInDir(dir string) error {
 	return lockutil.WithDirLock(dir, func() error {
 		patterns := []string{
 			filepath.Join(dir, "data.part"),
+			filepath.Join(dir, "data.part.digest"),
 			filepath.Join(dir, "data.tmp.*"),
 		}
 		for _, pattern := range patterns {

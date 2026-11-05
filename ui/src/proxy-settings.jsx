@@ -13,6 +13,10 @@ import {
   Pencil,
   LoaderCircle,
   Square,
+  CircleHelp,
+  ArrowRight,
+  X,
+  Route,
 } from "lucide-react";
 import { api } from "./api";
 import "./proxy.css";
@@ -45,7 +49,7 @@ const emptyForm = {
   interval_hours: 24,
   host_download: false,
 };
-export function ProxySettings({ status, onApplied, onConfirm }) {
+export function ProxySettings({ status, onApplied, onConfirm, onDirty }) {
   const [proxy, setProxy] = useState(null),
     [tab, setTab] = useState("nodes"),
     [search, setSearch] = useState(""),
@@ -68,7 +72,9 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
     username: "",
     password: "",
   });
+  const [routeDraft, setRouteDraft] = useState(null);
   const [hostRefresh, setHostRefresh] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const alive = useRef(true),
     loading = useRef(false),
     latest = useRef(null),
@@ -165,6 +171,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
       if (current.error) throw new Error(current.error);
       if (alive.current) {
         setForm(null);
+        if (action === "route" || action === "select") setRouteDraft(null);
         setNotice(current.message || "已完成");
         setDelays({});
       }
@@ -174,7 +181,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
       if (alive.current) setPending("");
     }
   };
-  const select = async (id) => {
+  const applyRoute = async (nodeIDs) => {
     if (
       !proxy.active &&
       status.vm_running &&
@@ -185,7 +192,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
       }))
     )
       return;
-    mutate("select", { node_id: id, port: Number(port) });
+    mutate("route", { node_ids: nodeIDs, port: Number(port) });
   };
   const measure = async (ids) => {
     if (measuring.current) return;
@@ -236,12 +243,29 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
     }
     mutate(form.id ? "edit" : "import", value);
   };
+  const savedRoute = proxy?.route?.length
+    ? proxy.route
+    : proxy?.selected
+      ? [proxy.selected]
+      : [""];
+  const route = routeDraft ?? savedRoute;
+  const routeChanged = JSON.stringify(route) !== JSON.stringify(savedRoute);
+  useEffect(() => {
+    onDirty?.(routeChanged);
+    return () => onDirty?.(false);
+  }, [onDirty, routeChanged]);
   if (!proxy)
     return <div className="proxy-loading">{error || "正在读取代理配置…"}</div>;
   const allNodes = proxy.sources.flatMap((s) =>
     s.nodes.map((n) => ({ ...n, source: s.name, sourceID: s.id })),
   );
   const selected = allNodes.find((n) => n.id === proxy.selected);
+  const routeValid =
+    route.every((id) => allNodes.some((n) => n.id === id)) &&
+    new Set(route).size === route.length;
+  const routeName = (id) => allNodes.find((n) => n.id === id)?.name || "待选择";
+  const updateHop = (index, id) =>
+    setRouteDraft(route.map((current, i) => (i === index ? id : current)));
   const nodes = allNodes.filter(
     (n) =>
       (!source || n.sourceID === source) &&
@@ -252,13 +276,93 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
   return (
     <div className="proxy-manager">
       <div className="section-title">
-        <h3>内置代理</h3>
-        <p>导入订阅、选择节点，供 Cage 内所有程序共用。</p>
+        <div className="proxy-heading">
+          <h3>内置代理</h3>
+          <button
+            type="button"
+            className="icon-button proxy-help-toggle"
+            aria-label="代理使用说明"
+            title={helpOpen ? "收起代理使用说明" : "查看代理使用说明"}
+            aria-expanded={helpOpen}
+            aria-controls="proxy-help"
+            onClick={() => setHelpOpen((open) => !open)}
+          >
+            <CircleHelp size={17} aria-hidden="true" />
+          </button>
+        </div>
+        <p>选择最终出口，按需添加中转，供 Cage 内所有程序共用。</p>
       </div>
+      {helpOpen && (
+        <section
+          id="proxy-help"
+          className="proxy-help"
+          aria-labelledby="proxy-help-title"
+        >
+          <h4 id="proxy-help-title">代理使用说明</h4>
+          <p className="proxy-help-intro">
+            Cage 自带代理核心，无需另外安装
+            Clash。请先准备你已有的代理订阅或节点信息，Cage 不提供代理节点。
+          </p>
+          <ol className="proxy-help-steps">
+            <li>
+              <strong>导入你的代理</strong>
+              <p>打开「订阅」→「添加来源」，填写来源名称，再选择一种方式：</p>
+              <ul>
+                <li>
+                  <strong>订阅链接：</strong>从代理服务商处复制 Clash/Mihomo
+                  格式的 HTTPS
+                  订阅地址，粘贴后点击「导入并验证」。首次还没有可用节点时，勾选「通过主机网络下载这份订阅」；主机需要能访问该地址。
+                </li>
+                <li>
+                  <strong>本地 YAML：</strong>选择配置文件，或粘贴含节点的 YAML
+                  配置，再点击「导入并验证」。可从已有代理客户端导出配置。
+                </li>
+                <li>
+                  <strong>手动节点：</strong>适用于 HTTP CONNECT 或
+                  SOCKS5。填写节点名称、服务器地址、端口，以及服务商提供的用户名和密码（如有），再点击「导入并验证」。
+                </li>
+              </ul>
+            </li>
+            <li>
+              <strong>选择节点并启用</strong>
+              <p>
+                导入完成后切到「节点」，选择最终出口，再点击「应用代理」。住宅代理无法从国内连接时，选择「链式代理」，在它前面添加可连接的中转节点；节点可以来自不同订阅。首次启用时若环境正在运行，需要重启；后续切换只重建网络连接。
+              </p>
+            </li>
+            <li>
+              <strong>确认可以联网</strong>
+              <p>
+                回到工作台启动环境，等待网络检查通过。以工作台的联网状态为准；「测速」只检测节点延迟。Cage
+                内的浏览器、终端和开发工具会共用所选节点，无需分别配置代理。
+              </p>
+            </li>
+          </ol>
+          <div className="proxy-help-notes">
+            <strong>导入失败或无法联网？</strong>
+            <p>
+              确认复制的是订阅地址，而非服务商登录页或管理页。暂不支持单条分享链接、Base64
+              节点列表，以及只引用远程节点列表的配置；请向服务商获取含节点的
+              Clash/Mihomo YAML。
+            </p>
+            <p>
+              订阅下载失败时，可检查主机是否能访问订阅地址，或改用本地
+              YAML。节点不可用时，换一个节点并查看「诊断」；更换节点后仍需通过出口
+              IP 和地区检查。
+            </p>
+          </div>
+        </section>
+      )}
       <div className="proxy-summary">
         <Server size={22} />
         <div>
-          <strong>{selected?.name || "尚未配置代理节点"}</strong>
+          <strong>
+            {selected ? `最终出口 · ${selected.name}` : "尚未配置代理节点"}
+          </strong>
+          {savedRoute.length > 1 && (
+            <span className="proxy-current-route">
+              当前链路：{savedRoute.map(routeName).join(" → ")}
+            </span>
+          )}
           <span>
             {proxy.active
               ? proxy.running
@@ -306,6 +410,198 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
       </div>
       {tab === "nodes" && (
         <>
+          {allNodes.length > 0 && (
+            <section
+              className="proxy-route"
+              aria-labelledby="proxy-route-title"
+            >
+              <div className="proxy-route-heading">
+                <div>
+                  <h4 id="proxy-route-title">配置连接方式</h4>
+                  <p>直接使用一个出口，或经中转连接住宅代理。</p>
+                </div>
+                <div
+                  className="proxy-route-mode"
+                  role="group"
+                  aria-label="连接方式"
+                >
+                  <button
+                    type="button"
+                    aria-pressed={route.length === 1}
+                    disabled={busy}
+                    onClick={() => setRouteDraft([route.at(-1)])}
+                  >
+                    单节点
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={route.length > 1}
+                    disabled={busy}
+                    onClick={() => {
+                      if (route.length === 1) setRouteDraft(["", route[0]]);
+                    }}
+                  >
+                    链式代理
+                  </button>
+                </div>
+              </div>
+              <ol className="proxy-route-hops">
+                {route.map((id, index) => {
+                  const final = index === route.length - 1;
+                  const label = final
+                    ? "最终出口"
+                    : `中转节点${route.length > 2 ? ` ${index + 1}` : ""}`;
+                  return (
+                    <li
+                      key={index}
+                      className={`proxy-route-hop ${final ? "is-exit" : ""}`}
+                    >
+                      <span className="proxy-hop-number" aria-hidden="true">
+                        {index + 1}
+                      </span>
+                      <div className="proxy-hop-control">
+                        <label htmlFor={`proxy-hop-${index}`}>{label}</label>
+                        <InlineSelect
+                          id={`proxy-hop-${index}`}
+                          aria-label={label}
+                          value={id}
+                          disabled={busy}
+                          onValueChange={(next) => updateHop(index, next)}
+                        >
+                          <option value="" disabled>
+                            请选择{label}
+                          </option>
+                          {Boolean(id) &&
+                            !allNodes.some((n) => n.id === id) && (
+                              <option value={id} disabled>
+                                节点已被移除，请重新选择
+                              </option>
+                            )}
+                          {proxy.sources.map((src) => (
+                            <optgroup key={src.id} label={src.name}>
+                              {src.nodes.map((n) => (
+                                <option
+                                  key={n.id}
+                                  value={n.id}
+                                  disabled={route.some(
+                                    (hop, i) => i !== index && hop === n.id,
+                                  )}
+                                >
+                                  {n.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          ))}
+                        </InlineSelect>
+                        {final && <small>目标网站看到此节点的出口 IP</small>}
+                      </div>
+                      {!final && (
+                        <button
+                          className="icon-button proxy-hop-remove"
+                          type="button"
+                          disabled={busy}
+                          aria-label={`移除${label}`}
+                          title={`移除${label}`}
+                          onClick={() =>
+                            setRouteDraft(route.filter((_, i) => i !== index))
+                          }
+                        >
+                          <X size={15} />
+                        </button>
+                      )}
+                    </li>
+                  );
+                })}
+              </ol>
+              {route.length > 1 && route.length < allNodes.length && (
+                <button
+                  type="button"
+                  className="proxy-route-add"
+                  disabled={busy || route.length >= allNodes.length}
+                  onClick={() =>
+                    setRouteDraft([...route.slice(0, -1), "", route.at(-1)])
+                  }
+                >
+                  <Plus size={14} />
+                  添加中转
+                </button>
+              )}
+              <div className="proxy-route-preview" aria-label="待应用链路">
+                <Route size={16} aria-hidden="true" />
+                <span>Cage</span>
+                {route.map((id, index) => (
+                  <React.Fragment key={index}>
+                    <ArrowRight size={13} aria-hidden="true" />
+                    <strong>{routeName(id)}</strong>
+                  </React.Fragment>
+                ))}
+                <ArrowRight size={13} aria-hidden="true" />
+                <span>目标网站</span>
+              </div>
+              <div className="proxy-route-actions">
+                <span aria-live="polite">
+                  {routeChanged
+                    ? "有未应用的代理修改"
+                    : proxy.active
+                      ? "当前配置已应用"
+                      : "选择完成后应用代理"}
+                </span>
+                <div>
+                  {routeDraft !== null && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => setRouteDraft(null)}
+                    >
+                      撤销修改
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className={routeChanged || !proxy.active ? "primary" : ""}
+                    disabled={busy || !proxy.core_available || !routeValid}
+                    onClick={() => applyRoute(route)}
+                  >
+                    {pending === "route" ? (
+                      <LoaderCircle size={14} className="spin" />
+                    ) : !routeChanged && proxy.active ? (
+                      <RefreshCw size={14} />
+                    ) : (
+                      <Check size={14} />
+                    )}
+                    {routeChanged || !proxy.active ? "应用代理" : "重新应用"}
+                  </button>
+                </div>
+              </div>
+              {proxy.route_error && (
+                <p role="alert" className="proxy-source-error">
+                  {proxy.route_error}
+                </p>
+              )}
+              {error && (
+                <div role="alert" className="error-message">
+                  {error}
+                </div>
+              )}
+            </section>
+          )}
+          {allNodes.length > 0 && (
+            <div className="proxy-node-heading">
+              <h4>可用节点</h4>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => {
+                  setTab("sources");
+                  setForm({ ...emptyForm });
+                  setMode("url");
+                }}
+              >
+                <Plus size={14} />
+                添加来源
+              </button>
+            </div>
+          )}
           <div className="proxy-toolbar">
             <label className="proxy-search">
               <Search size={15} />
@@ -330,6 +626,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
             </InlineSelect>
             <button
               disabled={busy || !proxy.running || !nodes.length}
+              title="检测 HTTP 往返延迟，通常不含建连开销，不代表网页首开耗时"
               onClick={() => measure(nodes.map((n) => n.id))}
             >
               <Activity size={14} />
@@ -356,19 +653,27 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
             <div className="proxy-node-list">
               {nodes.map((n) => (
                 <div
-                  className={`proxy-node ${n.id === proxy.selected && proxy.active ? "selected" : ""}`}
+                  className={`proxy-node ${n.id === route.at(-1) ? "selected" : ""}`}
                   key={n.id}
                 >
                   <button
                     className="proxy-node-choice"
-                    disabled={busy || !proxy.core_available}
-                    onClick={() => select(n.id)}
+                    disabled={
+                      busy ||
+                      !proxy.core_available ||
+                      route.slice(0, -1).includes(n.id)
+                    }
+                    title={
+                      route.slice(0, -1).includes(n.id)
+                        ? "此节点已用作中转"
+                        : "选为最终出口，点击应用代理后生效"
+                    }
+                    onClick={() => updateHop(route.length - 1, n.id)}
+                    aria-pressed={n.id === route.at(-1)}
                     aria-label={`选择节点 ${n.name}`}
                   >
                     <span className="proxy-radio">
-                      {n.id === proxy.selected && proxy.active && (
-                        <Check size={12} />
-                      )}
+                      {n.id === route.at(-1) && <Check size={12} />}
                     </span>
                     <span>
                       <strong>{n.name}</strong>
@@ -377,12 +682,17 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                       </small>
                     </span>
                   </button>
+                  {savedRoute.includes(n.id) && (
+                    <span className="proxy-node-role">
+                      {n.id === proxy.selected ? "当前出口" : "当前中转"}
+                    </span>
+                  )}
                   <span className="proxy-delay">
                     {delays[n.id] || "未测速"}
                   </span>
                   <button
                     aria-label={`测速 ${n.name}`}
-                    title="测试此节点延迟"
+                    title="检测此节点到 www.gstatic.com 的 HTTP 往返延迟，通常不含建连开销，不代表网页首开耗时"
                     disabled={busy || !proxy.running}
                     onClick={() => measure([n.id])}
                   >
@@ -832,7 +1142,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
             : status.job?.message || "正在处理…"}
         </p>
       )}
-      {error && (
+      {error && !(tab === "nodes" && allNodes.length > 0) && (
         <div role="alert" className="error-message">
           {error}
         </div>

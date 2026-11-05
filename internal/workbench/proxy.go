@@ -19,14 +19,15 @@ var (
 )
 
 type proxyInput struct {
-	ID           string `json:"id"`
-	Name         string `json:"name"`
-	URL          string `json:"url"`
-	Content      string `json:"content"`
-	Interval     int    `json:"interval_hours"`
-	HostDownload bool   `json:"host_download"`
-	NodeID       string `json:"node_id"`
-	Port         int    `json:"port"`
+	ID           string   `json:"id"`
+	Name         string   `json:"name"`
+	URL          string   `json:"url"`
+	Content      string   `json:"content"`
+	Interval     int      `json:"interval_hours"`
+	HostDownload bool     `json:"host_download"`
+	NodeID       string   `json:"node_id"`
+	NodeIDs      []string `json:"node_ids"`
+	Port         int      `json:"port"`
 }
 
 func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
@@ -87,7 +88,15 @@ func (s *Server) proxyStatus(w http.ResponseWriter, r *http.Request) {
 		_ = managedproxy.API(ctx, s.profile, "GET", "/version", nil, &version)
 	}
 	_, coreErr := managedproxy.CorePath()
-	jsonReply(w, map[string]any{"sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": active, "state": state, "state_label": label, "network_open": state == "ready", "core_available": coreErr == nil, "version": version.Version, "revision": p.Revision, "bootstrap_dns": strings.Join(managedproxy.BootstrapDNSURLs(), "、"), "udp_blocked": true, "ipv6_blocked": true})
+	route, routeErr := p.Route()
+	if route == nil {
+		route = append([]string{}, p.Chain...)
+	}
+	routeError := ""
+	if routeErr != nil && selected {
+		routeError = routeErr.Error()
+	}
+	jsonReply(w, map[string]any{"route": route, "route_error": routeError, "sources": sources, "selected": p.Selected, "port": p.Port, "running": running, "active": active, "state": state, "state_label": label, "network_open": state == "ready", "core_available": coreErr == nil, "version": version.Version, "revision": p.Revision, "bootstrap_dns": strings.Join(managedproxy.BootstrapDNSURLs(), "、"), "udp_blocked": true, "ipv6_blocked": true})
 }
 func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 	var input proxyInput
@@ -95,7 +104,7 @@ func (s *Server) proxyMutation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := r.PathValue("action")
-	allowed := map[string]bool{"import": true, "refresh": true, "edit": true, "delete": true, "select": true, "restart": true, "stop": true}
+	allowed := map[string]bool{"import": true, "refresh": true, "edit": true, "delete": true, "select": true, "restart": true, "stop": true, "route": true}
 	if !allowed[action] {
 		http.NotFound(w, r)
 		return
@@ -143,12 +152,25 @@ func (s *Server) changeProxy(action string, in proxyInput, resumeVersion *uint64
 		}
 		return managedproxy.Stop(s.profile)
 	}
-	if action == "select" || action == "restart" {
+	if action == "select" || action == "restart" || action == "route" {
+		if action == "route" {
+			if len(in.NodeIDs) == 0 {
+				return errors.New("请至少选择一个最终出口")
+			}
+			p.Chain = append([]string(nil), in.NodeIDs...)
+			p.Selected = p.Chain[len(p.Chain)-1]
+			if _, err := p.Route(); err != nil {
+				return err
+			}
+		}
 		if action == "select" {
 			if _, ok := p.Find(in.NodeID); !ok {
 				return errors.New("所选节点已不存在，请刷新列表")
 			}
 			p.Selected = in.NodeID
+			if len(p.Chain) > 0 {
+				p.Chain[len(p.Chain)-1] = in.NodeID
+			}
 		}
 		if in.Port != 0 {
 			if in.Port < 1024 || in.Port > 65535 {
@@ -169,9 +191,19 @@ func (s *Server) changeProxy(action string, in proxyInput, resumeVersion *uint64
 		if index < 0 {
 			return errors.New("订阅来源不存在")
 		}
+		if len(p.Chain) > 1 {
+			for _, id := range p.Chain {
+				for _, n := range p.Sources[index].Nodes {
+					if n.ID == id {
+						return errors.New("该来源包含当前代理链中的节点，请先选择并应用其他来源的节点")
+					}
+				}
+			}
+		}
 		p.Sources = append(p.Sources[:index], p.Sources[index+1:]...)
 		if _, ok := p.Find(p.Selected); !ok {
 			p.Selected = ""
+			p.Chain = nil
 		}
 	} else if action == "edit" {
 		if index < 0 {

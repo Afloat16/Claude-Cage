@@ -131,7 +131,7 @@ const bell = (t, m, vol) => {
 };
 
 // ---------- score ----------
-const { pain: P, room: R, app: A, perks: K, letter: L, end: En } = TL;
+const { pain: P, room: R, app: A, accounts: C, perks: K, letter: L, end: En } = TL;
 
 // Act 1 · the problem: a driving pulse, an impact on every cut, then silence.
 const kick = (t, vol) => { sine(t, 95, vol, 9, { f1: 42, glide: 0.035, send: 0.08 }); noise(t, 0.012, vol * 0.25, { lo: 1500, hi: 4000, shape: x => 1 - x, send: 0.02 }); };
@@ -143,15 +143,20 @@ const boom = (t, k) => {
 const stamp = (t, vol = 0.3) => { tock(t, vol); noise(t, 0.05, vol * 0.3, { lo: 800, hi: 5000, shape: x => 1 - x, send: 0.15 }); };
 const bpm = 60 / 128;
 pad(0, P.b5 + 0.04, [26, 38, 45, 51], 0.05, { fadeIn: 0.4, fadeOut: 0.04, cutoff: 650, send: 0.45 });
-for (let t = P.slam, i = 0; t < P.b5 - 0.05; t += bpm, i++) {
+for (let t = P.holdShrink, i = 0; t < P.b5 - 0.05; t += bpm, i++) {
   const build = 0.55 + 0.45 * (t / P.b5);
   kick(t, 0.22 * build);
   sine(t, mtof(i % 8 === 6 ? 39 : 38), 0.05 * build, 6, { send: 0.1 });
   noise(t + bpm / 2, 0.02, 0.035 * build, { lo: 5000, hi: 9000, shape: x => 1 - x, send: 0.05, pan: 0.3 });
 }
-boom(P.slam, 1);
-sine(P.slam, mtof(69), 0.08, 1.6, { send: 0.5 });
-sine(P.slam, mtof(70), 0.07, 1.6, { send: 0.5 });
+// The on-hold screen lands like a thunderclap, then the ears ring.
+boom(P.slam, 1.15);
+noise(P.slam, 0.09, 0.3, { lo: 1500, hi: 12000, shape: x => 1 - x, send: 0.6 });
+sine(P.slam, 3150, 0.022, 0.9, { send: 0.15 });
+sine(P.slam, 3170, 0.016, 0.8, { send: 0.15, pan: 0.4 });
+piano(P.holdMark, 38, 0.5, { len: 2, bright: 0.4, send: 0.5 });
+piano(P.holdMark, 39, 0.3, { len: 2, bright: 0.4, send: 0.5 });
+boom(P.holdShrink, 0.8);
 [P.b2, P.b3, P.b4].forEach(t => boom(t, 0.7));
 P.losses.forEach(t => stamp(t, 0.32));
 P.rows.forEach(t => noise(t, 0.05, 0.06, { lo: 2500, hi: 6000, shape: x => 1 - x, send: 0.1 }));
@@ -185,33 +190,56 @@ const beat = 60 / 76, bar = beat * 4, arpStart = A.rise + 0.45;
 const chords = [
   [38, [62, 66, 69]], [37, [61, 64, 69]], [35, [62, 66, 71]], [31, [62, 67, 71]],
   [42, [62, 66, 69]], [40, [62, 67, 71]], [33, [62, 64, 69]], [33, [61, 64, 69]],
+  [38, [62, 66, 69]],
 ];
 chords.forEach(([bass, [a, b, c]], ci) => {
   const t0 = arpStart + ci * bar;
-  if (t0 > A.out) return;
+  if (t0 > C.out) return;
   piano(t0, bass, 0.42, { len: bar + 0.6, bright: 0.5, send: 0.35 });
   piano(t0 + beat * 2, bass + 7, 0.24, { len: bar, bright: 0.5, send: 0.35 });
   const pat = [a, b + 12, c, a + 12, b, c + 12, a + 12, b + 12];
   pat.forEach((m, k) => {
     const t = t0 + k * beat / 2;
-    if (t > A.out + 0.3) return;
+    if (t > C.out + 0.3) return;
     piano(t, m, (k % 2 ? 0.16 : 0.22) * (k === 0 ? 1.2 : 1), { len: 2.6, send: 0.42 });
   });
 });
-noise(A.modalOpen - 0.05, 0.35, 0.03, { lo: 500, hi: 3000, send: 0.3 });
-noise(A.modalClose - 0.05, 0.3, 0.025, { lo: 500, hi: 2500, send: 0.3 });
-[A.clickProxy, A.clickNode, A.clickUse, A.clickLaunch, A.clickTerminal].forEach(t => click(t));
-pip(A.tzFlip - 0.3, 1600, 0.035); pip(A.tzFlip, 2000, 0.04);
-const scale = [74, 76, 78, 79, 81, 83, 85, 86, 88, 90, 91];
-scale.forEach((m, i) => sine(A.checks + 0.15 + i * A.checkStep, mtof(m), 0.05, 7, { send: 0.45, pan: i < 6 ? -0.25 : 0.25 }));
-[74, 78, 81, 86].forEach((m, i) => bell(A.released + i * 0.05, m, 0.09));
-for (let i = 0; i < 6; i++) key(A.typeClaude + i * 0.1, i);
-click(A.enterClaude, 0.1, -0.1);
-const promptLen = [...'帮我给 hello-cage 写一份 README'].length;
-const per = (A.enterPrompt - 0.2 - A.typePrompt) / promptLen;
-for (let i = 0; i < promptLen; i++) key(A.typePrompt + i * per, i);
+// 01 · the safety dialog: one rising plink per passed check, a chime when all eleven pass.
+noise(A.safetyOpen, 0.3, 0.03, { lo: 500, hi: 3000, send: 0.3 });
+[74, 76, 78, 79, 81, 83, 85, 86, 88, 90, 91].forEach((m, i) =>
+  sine(A.checks + 0.15 + i * A.checkStep, mtof(m), 0.05, 7, { send: 0.45, pan: -0.3 + i * 0.06 }));
+[74, 78, 81, 86].forEach((m, i) => bell(A.allPass + i * 0.05, m, 0.09));
+noise(A.safetyClose, 0.3, 0.025, { lo: 500, hi: 2500, send: 0.3 });
+// 01 · ready: one chime per highlighted status item.
+A.rings.forEach((t, i) => sine(t, mtof([79, 83, 86][i]), 0.045, 7, { send: 0.45 }));
+[A.safetyOpen, A.clickDesktop, A.clickInput, A.clickTermIcon, A.clickClaudeTerm, A.clickAuthorize].forEach(t => click(t));
+// 02 · Claude Desktop boots, a message is typed and answered.
+noise(A.desktopBoot - 0.05, 0.45, 0.03, { lo: 500, hi: 3500, send: 0.35 });
+const typeKeys = (text, [a, b]) => { const n = [...text].length; for (let i = 0; i < n; i++) key(a + (i / n) * (b - a), i); };
+typeKeys('帮我把 hello-cage 的 README 改得更清楚', A.typeMsg);
+click(A.send, 0.09, -0.1);
+for (let i = 0; i < 4; i++) pip(A.reply[0] + i * (A.reply[1] - A.reply[0]) / 4, 1250 + i * 80, 0.02);
+// 03 · the Claude terminal starts and asks to sign in.
+noise(A.clickTermIcon + 0.02, 0.2, 0.025, { lo: 900, hi: 4000, send: 0.2 });
+for (let i = 0; i < 7; i++) noise(A.termLines + i * 0.1, 0.015, 0.03, { lo: 2500, hi: 6000, shape: x => 1 - x, send: 0.05 });
+pip(A.opening, 1500, 0.03);
+// 04 · authorise in the Cage browser, then back to the terminal.
+noise(A.browserOpen - 0.05, 0.4, 0.035, { lo: 600, hi: 4000, send: 0.35 });
+[74, 78, 81, 86].forEach((m, i) => bell(A.authDone + i * 0.05, m, 0.085));
+noise(A.backToTerm - 0.05, 0.35, 0.03, { lo: 600, hi: 3500, send: 0.3 });
+typeKeys('给 hello-cage 加一个健康检查接口', A.typePrompt);
 click(A.enterPrompt, 0.1, -0.1);
-A.reply.forEach(t => pip(t, 1250, 0.02));
+A.reply2.forEach(t => pip(t, 1250, 0.02));
+
+// Act 3b · accounts: each new terminal clicks, travels and lands on its account.
+noise(C.panel - 0.05, 0.4, 0.03, { lo: 500, hi: 3000, send: 0.3 });
+C.rows.forEach(t => noise(t, 0.03, 0.035, { lo: 2500, hi: 6000, shape: x => 1 - x, send: 0.1 }));
+C.terms.forEach((t, j) => {
+  click(t, 0.1);
+  noise(t + 0.1, 0.4, 0.02, { lo: 800, hi: 4000, send: 0.25, pan: 0.3 });
+  sine(t + 0.45, mtof([79, 83, 86][j]), 0.05, 6, { send: 0.45, pan: -0.2 });
+});
+sine(C.terms[0] + 0.22, mtof(55), 0.05, 7, { send: 0.3 }); sine(C.terms[0] + 0.3, mtof(52), 0.04, 7, { send: 0.3 }); // skipped account
 
 // Act 4 · perks: a lift to G, one chime per card.
 piano(K.head, 31, 0.4, { len: 5, bright: 0.5, send: 0.45 });

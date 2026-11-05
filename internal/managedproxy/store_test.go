@@ -134,6 +134,9 @@ func TestImportCompilesOnlyOwnedNetworkBoundary(t *testing.T) {
 	if config["tun"].(map[string]any)["enable"] != false {
 		t.Fatal("TUN enabled")
 	}
+	if config["unified-delay"] != true {
+		t.Fatal("node latency includes connection setup instead of an established-connection request")
+	}
 	if s.Sources[0].Nodes[1].Config["dialer-proxy"] != s.Sources[0].Nodes[0].ID {
 		t.Fatal("chain not namespaced")
 	}

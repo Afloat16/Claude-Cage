@@ -764,6 +764,9 @@ button.large {
 .section-title {
   margin-bottom: 23px;
 }
+.network-exit-policy {
+  margin-top: 28px;
+}
 .section-title h3 {
   font-size: 1.1429rem;
   font-weight: 620;
@@ -1067,7 +1070,8 @@ button.large {
   border-radius: 7px;
   padding: 15px;
   margin: 15px 0 0;
-  max-height: 50vh;
+  height: 60dvh;
+  max-height: 640px;
   overflow: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

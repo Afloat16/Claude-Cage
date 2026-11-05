@@ -54,7 +54,7 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
 
-当前版本为 `0.1.5-alpha.1`。源码、主页与发行物公开；安装包的签名、公证和验收范围以对应 Release 说明为准。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
+当前版本为 `0.1.5-alpha.2`。源码、主页与发行物公开；安装包的签名、公证和验收范围以对应 Release 说明为准。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
 
 支持应用内更新的 macOS 和 Windows 版本通过所选代理下载，无直连回退；安装前请保存并停止任务。macOS 要求同一发布者的 Developer ID 签名并通过 Apple 验证，Windows 要求可信 Authenticode 签名和相同发布者公钥。Windows 未签名预览版和 Linux 系统包需手动更新。详见[升级与卸载](docs/getting-started.md#升级与卸载)。
 
@@ -62,7 +62,7 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 ### 1. 选择代理
 
-点击首页“配置网络与代理”，再点击“添加来源”，导入 Clash/Mihomo YAML 订阅或本地 YAML 文件，在“节点”中选择一个节点。没有可用代理时，可以明确勾选“通过主机网络下载这份订阅”，或直接导入本地文件。后续可从“设置 → 网络与代理”管理节点。
+点击首页“配置网络与代理”，再点击“添加来源”，导入 Clash/Mihomo YAML 订阅或本地 YAML 文件，在“节点”中选择最终出口并点击“应用代理”。需要通过中转连接住宅代理时，选择“链式代理”，按顺序选择中转与最终出口。没有可用代理时，可以明确勾选“通过主机网络下载这份订阅”，或直接导入本地文件。后续可从“设置 → 网络与代理”管理节点。
 
 ### 2. 启动环境
 

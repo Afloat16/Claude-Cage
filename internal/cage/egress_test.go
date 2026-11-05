@@ -180,6 +180,60 @@ func TestDNSUsesProxyAndNoFallback(t *testing.T) {
 	}
 }
 
+func TestDNSRetriesOnlyTransientFailuresThroughSameProxy(t *testing.T) {
+	for _, status := range []int{503, 429, 400} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var requests atomic.Int32
+			doh := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if requests.Add(1) <= 2 {
+					w.WriteHeader(status)
+					return
+				}
+				body, _ := io.ReadAll(r.Body)
+				q := new(dns.Msg)
+				if err := q.Unpack(body); err != nil {
+					t.Error(err)
+					return
+				}
+				answer := new(dns.Msg).SetReply(q)
+				body, _ = answer.Pack()
+				w.Write(body)
+			}))
+			defer doh.Close()
+			p, connects := testProxy(t)
+			defer p.Close()
+			c := DefaultConfig()
+			c.ProxyURL, c.DNSURL = p.URL, doh.URL
+			e, err := NewEgress(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer e.client.CloseIdleConnections()
+			e.client.Transport.(*http.Transport).TLSClientConfig = &tls.Config{RootCAs: doh.Client().Transport.(*http.Transport).TLSClientConfig.RootCAs}
+			_, err = e.ExchangeDNS(t.Context(), new(dns.Msg).SetQuestion("example.com.", dns.TypeA))
+			if status == 400 {
+				if err == nil || requests.Load() != 1 {
+					t.Fatalf("permanent failure retried: %v, %d", err, requests.Load())
+				}
+			} else if err != nil || requests.Load() != 3 {
+				t.Fatalf("transient failure not recovered: %v, %d", err, requests.Load())
+			}
+			if connects.Load() == 0 {
+				t.Fatal("DNS bypassed proxy")
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			cancel()
+			before := requests.Load()
+			if _, err := e.ExchangeDNS(ctx, new(dns.Msg).SetQuestion("example.com.", dns.TypeA)); err == nil {
+				t.Fatal("cancel ignored")
+			}
+			if requests.Load() != before {
+				t.Fatal("cancelled lookup sent request")
+			}
+		})
+	}
+}
+
 func TestRejectHostLANAndUDP(t *testing.T) {
 	e, _ := NewEgress(DefaultConfig())
 	for _, addr := range []string{"127.0.0.1:80", "10.0.0.1:80", "192.168.1.1:80", "169.254.169.254:80", "[::1]:80", "[::ffff:127.0.0.1]:80", "100.64.0.1:80"} {

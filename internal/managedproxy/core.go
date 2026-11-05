@@ -114,14 +114,15 @@ func API(ctx context.Context, profile, method, path string, body any, reply any)
 }
 func Running(ctx context.Context, profile string, s Store) bool {
 	var cfg struct {
-		Port      int    `json:"mixed-port"`
-		Interface string `json:"interface-name"`
+		Port         int    `json:"mixed-port"`
+		Interface    string `json:"interface-name"`
+		UnifiedDelay bool   `json:"unified-delay"`
 	}
 	var group struct {
 		Now string `json:"now"`
 	}
 	bound, err := BoundInterface(filepath.Join(Dir(profile), "config.yaml"))
-	return err == nil && bound != "" && API(ctx, profile, "GET", "/configs", nil, &cfg) == nil && cfg.Port == s.Port && cfg.Interface == bound && API(ctx, profile, "GET", "/proxies/"+Group, nil, &group) == nil && group.Now == s.Selected
+	return err == nil && bound != "" && API(ctx, profile, "GET", "/configs", nil, &cfg) == nil && cfg.Port == s.Port && cfg.Interface == bound && cfg.UnifiedDelay && API(ctx, profile, "GET", "/proxies/"+Group, nil, &group) == nil && group.Now == s.Selected
 }
 func label(profile string) string {
 	h := sha256.Sum256([]byte(profile))

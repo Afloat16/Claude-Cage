@@ -46,6 +46,7 @@ type Store struct {
 	Auth     string   `json:"auth"`
 	Revision string   `json:"revision"`
 	Selected string   `json:"selected"`
+	Chain    []string `json:"chain,omitempty"`
 	Sources  []Source `json:"sources"`
 }
 
@@ -263,19 +264,78 @@ func unsafeOption(v any) bool {
 	return false
 }
 
-func (s Store) Runtime(profile string) ([]byte, error) {
+// Route returns the actual hops from entry to exit. Explicit UI chains override
+// dialers at runtime without modifying subscription nodes or their credentials.
+func (s Store) Route() ([]string, error) {
 	if _, ok := s.Find(s.Selected); !ok {
-		return nil, errors.New("请先选择有效节点")
+		return nil, errors.New("请先选择有效的最终出口")
+	}
+	if len(s.Chain) > 0 {
+		if s.Chain[len(s.Chain)-1] != s.Selected {
+			return nil, errors.New("代理链与最终出口不一致，请重新配置代理")
+		}
+		seen := map[string]bool{}
+		for _, id := range s.Chain {
+			if _, ok := s.Find(id); !ok {
+				return nil, errors.New("代理链中的节点已被移除，请重新选择；原配置已保留")
+			}
+			if seen[id] {
+				return nil, errors.New("代理链不能重复使用同一个节点")
+			}
+			seen[id] = true
+		}
+		return append([]string(nil), s.Chain...), nil
+	}
+	var reversed []string
+	seen := map[string]bool{}
+	for id := s.Selected; id != ""; {
+		n, ok := s.Find(id)
+		if !ok || seen[id] {
+			return nil, errors.New("导入的代理链存在循环或缺失节点，请检查来源配置")
+		}
+		seen[id] = true
+		reversed = append(reversed, id)
+		id, _ = n.Config["dialer-proxy"].(string)
+	}
+	for i, j := 0, len(reversed)-1; i < j; i, j = i+1, j-1 {
+		reversed[i], reversed[j] = reversed[j], reversed[i]
+	}
+	return reversed, nil
+}
+
+func (s Store) Runtime(profile string) ([]byte, error) {
+	if _, err := s.Route(); err != nil {
+		return nil, err
+	}
+	dialers := map[string]string{}
+	for i, id := range s.Chain {
+		dialers[id] = ""
+		if i > 0 {
+			dialers[id] = s.Chain[i-1]
+		}
 	}
 	proxies := []map[string]any{}
 	for _, src := range s.Sources {
 		for _, n := range src.Nodes {
-			proxies = append(proxies, n.Config)
+			config := make(map[string]any, len(n.Config))
+			for key, value := range n.Config {
+				config[key] = value
+			}
+			if via, overridden := dialers[n.ID]; overridden {
+				delete(config, "dialer-proxy")
+				if via != "" {
+					config["dialer-proxy"] = via
+				}
+			}
+			proxies = append(proxies, config)
 		}
 	}
 	// Infrastructure DNS bootstraps only the core's server domains. Guest DNS
 	// remains behind Cage Egress, and there is no host-system resolver fallback.
 	dns := map[string]any{"enable": true, "ipv6": false, "use-hosts": false, "use-system-hosts": false, "default-nameserver": BootstrapDNSURLs(), "proxy-server-nameserver": BootstrapDNSURLs(), "nameserver": []string{"https://1.1.1.1/dns-query#" + Group}}
 	config := map[string]any{"mixed-port": s.Port, "bind-address": "127.0.0.1", "allow-lan": false, "authentication": []string{"cage:" + s.Auth}, "skip-auth-prefixes": []string{}, "mode": "rule", "ipv6": false, "log-level": "warning", "find-process-mode": "off", "external-controller-unix": Socket(profile), "tun": map[string]any{"enable": false}, "dns": dns, "geo-auto-update": false, "profile": map[string]any{"store-selected": false}, "proxies": proxies, "proxy-groups": []any{map[string]any{"name": Group, "type": "select", "proxies": []string{s.Selected}}}, "rules": []string{"MATCH," + Group}}
+	// Measure a request on the established connection rather than folding
+	// protocol and TLS setup into the node's displayed HTTP latency.
+	config["unified-delay"] = true
 	return yaml.Marshal(config)
 }

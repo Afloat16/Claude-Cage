@@ -4,6 +4,7 @@
 //   node render.mjs                     full 1920×1080 @ 60 fps → out/claude-cage-promo.mp4
 //   node render.mjs --fps 30 --scale 0.5   quick draft
 //   node render.mjs --frames 12,20.5,33    stills only → out/frame-*.png
+//   node render.mjs --portrait             9:16 cut → out/claude-cage-promo-vertical.mp4 (combines with the flags above)
 //   node render.mjs --preview           serve the page for live preview
 //
 // Chrome: set CHROME_PATH, otherwise the usual install locations on macOS,
@@ -14,6 +15,7 @@ import { createServer } from 'node:http';
 import { createRequire } from 'node:module';
 import { extname, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findChrome } from './chrome.mjs';
 
 const require = createRequire(import.meta.url);
 const here = fileURLToPath(new URL('.', import.meta.url));
@@ -28,7 +30,9 @@ const opt = (name, fallback) => {
 };
 const fps = Number(opt('fps', TL.fps));
 const scale = Number(opt('scale', 1));
-const output = resolve(opt('out', join(outDir, 'claude-cage-promo.mp4')));
+const portrait = args.includes('--portrait');
+const [W, H] = portrait ? [1080, 1920] : [TL.width, TL.height];
+const output = resolve(opt('out', join(outDir, portrait ? 'claude-cage-promo-vertical.mp4' : 'claude-cage-promo.mp4')));
 const audio = resolve(opt('audio', join(outDir, 'soundtrack.wav')));
 
 const TYPES = {
@@ -51,31 +55,6 @@ function serve(port = 0) {
   return new Promise(ok => server.listen(port, '127.0.0.1', () => ok(server)));
 }
 
-function findChrome() {
-  if (process.env.CHROME_PATH) return process.env.CHROME_PATH;
-  const pf = process.env.PROGRAMFILES || 'C:\\Program Files';
-  const pf86 = process.env['PROGRAMFILES(X86)'] || 'C:\\Program Files (x86)';
-  const local = process.env.LOCALAPPDATA || '';
-  const candidates = {
-    darwin: [
-      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-      '/Applications/Chromium.app/Contents/MacOS/Chromium',
-      '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
-    ],
-    win32: [
-      join(pf, 'Google\\Chrome\\Application\\chrome.exe'),
-      join(pf86, 'Google\\Chrome\\Application\\chrome.exe'),
-      join(local, 'Google\\Chrome\\Application\\chrome.exe'),
-      join(pf86, 'Microsoft\\Edge\\Application\\msedge.exe'),
-      join(pf, 'Microsoft\\Edge\\Application\\msedge.exe'),
-    ],
-    linux: ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium'],
-  }[process.platform] || [];
-  const found = candidates.find(p => existsSync(p));
-  if (!found) throw new Error('Chrome not found. Set CHROME_PATH to a Chrome, Chromium or Edge executable.');
-  return found;
-}
-
 async function openPage(server) {
   const { default: puppeteer } = await import('puppeteer-core');
   const browser = await puppeteer.launch({
@@ -84,10 +63,10 @@ async function openPage(server) {
     args: ['--hide-scrollbars', '--force-color-profile=srgb', '--font-render-hinting=none', '--disable-lcd-text'],
   });
   const page = await browser.newPage();
-  await page.setViewport({ width: TL.width, height: TL.height, deviceScaleFactor: scale });
+  await page.setViewport({ width: W, height: H, deviceScaleFactor: scale });
   const { port } = server.address();
   page.on('pageerror', e => console.error('page error:', e.message));
-  await page.goto(`http://127.0.0.1:${port}/promo/index.html?render`, { waitUntil: 'networkidle0', timeout: 120000 });
+  await page.goto(`http://127.0.0.1:${port}/promo/index.html?render${portrait ? '&portrait' : ''}`, { waitUntil: 'networkidle0', timeout: 120000 });
   await page.evaluate(() => window.__promo.ready);
   // Touch every act once so lazily loaded font subsets are in before frame 0.
   for (let t = 0; t < TL.duration; t += 0.5) await page.evaluate(x => window.__promo.seek(x), t);
@@ -101,7 +80,7 @@ async function stills(times) {
   mkdirSync(outDir, { recursive: true });
   for (const t of times) {
     await page.evaluate(x => window.__promo.seek(x), t);
-    const path = join(outDir, `frame-${t.toFixed(2)}.png`);
+    const path = join(outDir, `frame-${portrait ? 'v-' : ''}${t.toFixed(2)}.png`);
     await page.screenshot({ path, type: 'png' });
     console.log(path);
   }
@@ -117,7 +96,7 @@ async function video() {
   const total = Math.round(TL.duration * fps);
   const hasAudio = existsSync(audio);
   if (!hasAudio) console.warn(`No soundtrack at ${audio}; run "node soundtrack.mjs" first. Rendering silent video.`);
-  const w = Math.round(TL.width * scale), h = Math.round(TL.height * scale);
+  const w = Math.round(W * scale), h = Math.round(H * scale);
   const ff = spawn(ffmpeg, [
     '-y', '-loglevel', 'error',
     '-f', 'image2pipe', '-c:v', 'mjpeg', '-framerate', String(fps), '-i', '-',

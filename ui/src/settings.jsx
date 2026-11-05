@@ -9,7 +9,6 @@ import {
   FolderOpen,
   Check,
   LoaderCircle,
-  ShieldCheck,
   RotateCcw,
   ArrowLeft,
   SlidersHorizontal,
@@ -34,7 +33,6 @@ const sections = [
   ["keyboard", "通用", SlidersHorizontal],
   ["appearance", "外观", Palette],
   ["network", "网络与代理", Globe2],
-  ["exit", "IP 变化规则", ShieldCheck],
   ["region", "时区与语言", Clock3],
   ["project", "环境与恢复", RotateCcw],
 ];
@@ -50,6 +48,7 @@ export function SettingsPanel({
   initialSection = "keyboard",
 }) {
   const [accountDirty, setAccountDirty] = useState(false);
+  const [proxyDirty, setProxyDirty] = useState(false);
   const [draft, setDraft] = useState({ ...current }),
     [section, setSection] = useState(initialSection),
     [probe, setProbe] = useState(null),
@@ -95,7 +94,7 @@ export function SettingsPanel({
       return;
     }
     if (
-      (!changed && !accountDirty) ||
+      (!changed && !accountDirty && !proxyDirty) ||
       (await onConfirm({
         title: "放弃尚未保存的修改？",
         body: "当前环境不会改变。关闭后会丢弃这次表单修改。",
@@ -110,7 +109,7 @@ export function SettingsPanel({
       if (status.job.error) setError(status.job.error);
       else {
         onSaved();
-        onClose();
+        if (!proxyDirty) onClose();
       }
     }
   }, [status.job]);
@@ -214,6 +213,7 @@ export function SettingsPanel({
               aria-current={section === id ? "page" : undefined}
               onClick={async () => {
                 if (id !== section && accountDirty && !(await onConfirm({ title: "放弃尚未保存的修改？", body: "已保存的资料和密码保持不变。", confirm: "放弃修改" }))) return;
+                if (id !== section && proxyDirty && !(await onConfirm({ title: "放弃尚未应用的代理修改？", body: "当前代理仍按已应用的链路运行。离开会丢弃这次节点选择。", confirm: "放弃修改" }))) return;
                 setSection(id);
               }}
             >
@@ -239,6 +239,7 @@ export function SettingsPanel({
             {section === "network" && (
               <>
                 <ProxySettings
+                  onDirty={setProxyDirty}
                   status={status}
                   onConfirm={onConfirm}
                   onApplied={async () => {
@@ -290,17 +291,17 @@ export function SettingsPanel({
                 <p className="footnote">
                   代理不可用时，Cage 会停止对外联网。修改表单后需要重新验证。
                 </p>
+                <section className="network-exit-policy" aria-label="IP 变化规则">
+                  <ExitPolicyFields
+                    value={draft.exit_policy}
+                    onChange={(value) => update("exit_policy", value)}
+                    observation={probe}
+                    onProbe={check}
+                    busy={busy}
+                    probing={probing}
+                  />
+                </section>
               </>
-            )}
-            {section === "exit" && (
-              <ExitPolicyFields
-                value={draft.exit_policy}
-                onChange={(value) => update("exit_policy", value)}
-                observation={probe}
-                onProbe={check}
-                busy={busy}
-                probing={probing}
-              />
             )}
             {section === "region" && (
               <>
@@ -642,7 +643,9 @@ export function SettingsPanel({
               <span className="save-note">
                 {status.job?.running
                   ? status.job.message
-                  : changed
+                  : proxyDirty
+                    ? "代理修改待应用，请点击「应用代理」"
+                    : changed
                     ? environmentChanged && status.vm_running
                       ? "网络和系统设置需要重启"
                       : "有尚未保存的修改"

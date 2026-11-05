@@ -140,7 +140,7 @@ export function SafetyPanel({
                     "完成关键检查后，才允许连接外部网站。"}
             </p>
           </div>
-          <button className="text-button" onClick={() => onSettings("exit")}>
+          <button className="text-button" onClick={() => onSettings("network")}>
             <Settings2 size={15} />
             出口规则
           </button>

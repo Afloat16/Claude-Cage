@@ -150,30 +150,59 @@ func (e *Egress) ExchangeDNS(ctx context.Context, q *dns.Msg) (*dns.Msg, error) 
 	if err != nil {
 		return nil, err
 	}
+	// Keep the original total deadline, but allow a fresh connection after an
+	// intermittent EOF or overloaded DoH server. Every attempt uses this same
+	// proxy-only transport and the configured endpoint.
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	defer cancel()
+	for attempt := 0; attempt < 3; attempt++ {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		attemptCtx, done := context.WithTimeout(ctx, 6*time.Second)
+		var answer *dns.Msg
+		var retry bool
+		answer, retry, err = e.exchangeDNSOnce(attemptCtx, q, wire)
+		done()
+		if err == nil || !retry {
+			return answer, err
+		}
+		if attempt < 2 {
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(time.Duration(attempt+1) * 150 * time.Millisecond):
+			}
+		}
+	}
+	return nil, err
+}
+
+func (e *Egress) exchangeDNSOnce(ctx context.Context, q *dns.Msg, wire []byte) (*dns.Msg, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, e.dnsURL, bytes.NewReader(wire))
 	if err != nil {
-		return nil, errors.New("invalid DNS request")
+		return nil, false, errors.New("invalid DNS request")
 	}
 	req.Header.Set("Content-Type", "application/dns-message")
 	req.Header.Set("Accept", "application/dns-message")
 	resp, err := e.client.Do(req)
 	if err != nil {
-		return nil, errors.New("cage DNS upstream unavailable")
+		return nil, true, errors.New("cage DNS upstream unavailable; check the configured DoH endpoint through the selected proxy")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return nil, fmt.Errorf("cage DNS upstream returned HTTP %d", resp.StatusCode)
+		return nil, resp.StatusCode == 429 || resp.StatusCode >= 500, fmt.Errorf("cage DNS upstream returned HTTP %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 65536))
 	if err != nil {
-		return nil, err
+		return nil, true, errors.New("incomplete DNS upstream response")
 	}
 	r := new(dns.Msg)
 	if err = r.Unpack(body); err != nil {
-		return nil, errors.New("invalid DNS upstream response")
+		return nil, false, errors.New("invalid DNS upstream response")
 	}
 	if !r.Response || r.Id != q.Id {
-		return nil, errors.New("mismatched DNS upstream response")
+		return nil, false, errors.New("mismatched DNS upstream response")
 	}
-	return r, nil
+	return r, false, nil
 }

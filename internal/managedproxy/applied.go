@@ -14,5 +14,8 @@ func Applied(profile, endpoint, revision string) (Store, error) {
 	if revision == "" || p.Revision == "" || revision != p.Revision || endpoint != p.Endpoint() {
 		return p, errors.New("代理节点尚未应用或配置不一致，请重新应用节点；外网保持关闭")
 	}
+	if _, err := p.Route(); err != nil {
+		return p, err
+	}
 	return p, nil
 }

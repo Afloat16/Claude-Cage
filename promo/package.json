@@ -4,8 +4,10 @@
   "description": "Claude Cage promo video, rendered from code.",
   "scripts": {
     "preview": "node render.mjs --preview",
+    "plates": "node capture-plates.mjs",
     "soundtrack": "node soundtrack.mjs",
     "render": "node soundtrack.mjs && node render.mjs",
+    "render:vertical": "node soundtrack.mjs && node render.mjs --portrait",
     "render:draft": "node soundtrack.mjs && node render.mjs --fps 30 --scale 0.5"
   },
   "dependencies": {

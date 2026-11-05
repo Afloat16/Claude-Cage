@@ -31,7 +31,7 @@ export function NetworkLatency({ enabled, revision, selected }) {
             setSample({
               label: `${Math.round(result.delay)} ms`,
               detail:
-                "当前节点到 www.gstatic.com 的 HTTP 延迟；每 30 秒更新，点击重新检测。节点连通性与环境外网放行分别检查。",
+                "当前节点到 www.gstatic.com 的 HTTP 往返延迟（统一延迟口径），通常不含建连开销，不代表网页首开耗时。每 30 秒更新，点击重新检测；环境联网状态单独检查。",
             });
           } else {
             setSample({
