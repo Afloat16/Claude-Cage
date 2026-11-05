@@ -9,8 +9,8 @@ const output = new URL(
 await fs.mkdir(output, { recursive: true });
 const { browser, page, state, errors } = await createWorkbench();
 await page.addInitScript(() => {
-  window.EventSource = class {
-    constructor() { window.desktopBrowserEvents = this; }
+  window.EventSource = class extends EventTarget {
+    constructor() { super(); window.desktopBrowserEvents = this; }
     close() {}
   };
 });
