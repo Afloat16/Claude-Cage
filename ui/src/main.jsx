@@ -503,6 +503,10 @@ function App() {
               ...all.filter((item) => !previous.some((p) => p.id === item.id)),
             ];
           });
+          if (initialized.current && b.active && b.active !== activeRef.current && !browserIds.current.has(b.active)) {
+            setDesktopOpen(false);
+            setHome(false);
+          }
           if (
             !activeRef.current ||
             !all.some((item) => item.id === activeRef.current) ||
@@ -604,6 +608,10 @@ function App() {
           ...b.tabs.filter((t) => !previous.some((p) => p.id === t.id)),
         ];
       });
+      if (b.active && b.focus) {
+        setDesktopOpen(false);
+        setHome(false);
+      }
       if (
         b.active &&
         (b.focus ||

@@ -73,6 +73,7 @@ let sequence = 0,
   ready = false;
 let shuttingDown = false;
 const events = new Set();
+let navigation = { id: "", back: false, forward: false }, navigationSequence = 0;
 const auditContexts = new Set();
 const loginBrowser = new LoginBrowser(cdp);
 const pending = new Map(),
@@ -206,6 +207,11 @@ chrome.stdio[4].on("data", (chunk) => {
       broadcastState();
     }
     if (uploadTab && event.method === "Page.loadEventFired") refreshFavicon(uploadTab);
+    if (uploadTab === activeId && (
+      event.method === "Page.loadEventFired" ||
+      event.method === "Page.navigatedWithinDocument" ||
+      (event.method === "Page.frameNavigated" && !p.frame?.parentId)
+    )) void refreshNavigation();
     if (uploadTab && event.method === "Page.fileChooserOpened")
       void uploads.opened(uploadTab, event.sessionId, p).catch(() => {});
     if (uploadTab && event.method === "Page.frameNavigated" && !p.frame?.parentId)
@@ -344,6 +350,7 @@ async function activate(id, focus = false) {
   await cdp("Target.activateTarget", { targetId: id });
   await session(id);
   activeId = id;
+  void refreshNavigation();
   rememberSelection();
   broadcastState(focus);
   const { windowId } = await cdp("Browser.getWindowForTarget", {
@@ -427,20 +434,25 @@ async function tabState() {
   for (const tab of targetInfos)
     if (tab.type === "page" && tab.url !== splitURL && !auditContexts.has(tab.browserContextId))
       targets.set(tab.targetId, loginBrowser.tab(tab, targets.get(tab.targetId)));
-  let back = false,
-    forward = false;
-  if (activeId && targets.has(activeId)) {
-    try {
-      const h = await cdp(
-        "Page.getNavigationHistory",
-        {},
-        await session(activeId),
-      );
-      back = h.currentIndex > 0;
-      forward = h.currentIndex < h.entries.length - 1;
-    } catch {}
+  await refreshNavigation();
+  return publicState();
+}
+async function refreshNavigation() {
+  const id = activeId, sequence = ++navigationSequence;
+  if (!targets.has(id)) return;
+  try {
+    const history = await cdp("Page.getNavigationHistory", {}, await session(id));
+    // A slow response for an earlier navigation must not replace newer state.
+    if (id !== activeId || sequence !== navigationSequence || !targets.has(id)) return;
+    navigation = {
+      id,
+      back: history.currentIndex > 0,
+      forward: history.currentIndex < history.entries.length - 1,
+    };
+    broadcastState();
+  } catch {
+    // Keep the last confirmed state while the browser is temporarily unavailable.
   }
-  return { ...publicState(), back, forward };
 }
 function displayTitle(tab) {
   if (tab.login) return "账号授权";
@@ -463,6 +475,8 @@ function publicState() {
   return {
     active: activeId,
     split: splitView,
+    back: navigation.id === activeId && targets.has(activeId) && navigation.back,
+    forward: navigation.id === activeId && targets.has(activeId) && navigation.forward,
     downloads: downloads.snapshot(),
     uploads: uploads.snapshot(),
     tabs: [...targets.values()].map((t) => ({

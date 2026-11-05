@@ -6,7 +6,51 @@ import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { releaseAssets, checksumFor, releaseMetadata } from './sync-release.mjs';
+import { releaseAssets, checksumFor, releaseMetadata, request, publicManifestRelease } from './sync-release.mjs';
+
+test('exhausted version API falls back to anonymous public manifest and attachment checks', async () => {
+  const calls = [];
+  const tag = 'v0.2.0';
+  const manifest = `${'a'.repeat(64)}  Cage-0.2.0-macos-arm64.dmg\n${'b'.repeat(64)}  mihomo-v1.19.33-source.tar.gz\n`;
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, ...options });
+    assert.equal(options.headers.Authorization, undefined);
+    if (url.startsWith('https://api.github.com/')) return new Response('', { status: 403, headers: { 'x-ratelimit-remaining': '0' } });
+    if (url.endsWith('/SHA256SUMS')) return new Response(manifest);
+    assert.equal(options.method, 'HEAD');
+    return new Response('', { headers: { 'content-length': '100' } });
+  };
+  const response = await request(`https://api.github.com/repos/Lee-xeo/Claude-Cage/releases/tags/${tag}`, 1000, { fetchImpl });
+  assert.equal(releaseAssets(await response.json()).version, '0.2.0');
+  assert.equal(calls.length, 4);
+});
+
+test('ordinary API errors, unversioned lists and other origins do not use a fallback', async () => {
+  for (const [url, status, headers] of [
+    ['https://api.github.com/repos/Lee-xeo/Claude-Cage/releases/tags/v0.2.0', 404, {}],
+    ['https://api.github.com/repos/Lee-xeo/Claude-Cage/releases/tags/v0.2.0', 403, {}],
+    ['https://api.github.com/repos/Lee-xeo/Claude-Cage/releases', 403, { 'x-ratelimit-remaining': '0' }],
+    ['https://github.com/Lee-xeo/Claude-Cage/releases/download/v0.2.0/SHA256SUMS', 403, { 'x-ratelimit-remaining': '0' }],
+    ['https://example.test/repos/Lee-xeo/Claude-Cage/releases', 403, { 'x-ratelimit-remaining': '0' }],
+  ]) {
+    let count = 0;
+    await assert.rejects(request(url, 1000, { fetchImpl: async (_url, options) => {
+      count++; assert.equal(options.headers.Authorization, undefined);
+      return new Response('', { status, headers });
+    } }));
+    assert.equal(count, 1);
+  }
+});
+
+test('manifest fallback rejects missing bytes, duplicate digests, traversal and wrong versions', async () => {
+  const valid = `${'a'.repeat(64)}  Cage-0.2.0-macos-arm64.dmg\n${'b'.repeat(64)}  mihomo-v1.19.33-source.tar.gz\n`;
+  for (const [text, missing] of [[valid, true], [valid + valid, false], [valid.replace('Cage-', '../Cage-'), false], [valid.replace('0.2.0-macos', '0.1.0-macos'), false], ['', false]]) {
+    await assert.rejects(publicManifestRelease('v0.2.0', async (url) => {
+      if (url.endsWith('/SHA256SUMS')) return new Response(text);
+      return new Response('', { status: missing ? 404 : 200, headers: { 'content-length': '100' } });
+    }));
+  }
+});
 
 const hash = 'a'.repeat(64);
 function fixture() {
