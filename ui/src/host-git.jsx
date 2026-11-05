@@ -32,6 +32,8 @@ export function HostGitPreparation({ onClose, onReady }) {
       alive.current = false;
     };
   }, []);
+  // The welcome page shows progress; open a dialog only when input is needed.
+  if (!state && !error) return null;
   return (
     <Modal
       title="启动前，保护本机 Git"

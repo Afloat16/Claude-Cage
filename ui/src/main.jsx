@@ -63,7 +63,7 @@ function App() {
   const windowVisible = useWindowVisibility();
   const windowVisibleRef = useRef(windowVisible);
   windowVisibleRef.current = windowVisible;
-  const [status, setStatus] = useState(null),
+  const [serverStatus, setStatus] = useState(null),
     [settings, setSettings] = useState(null),
     [proxy, setProxy] = useState(null),
     [tabs, setTabs] = useState([]),
@@ -71,6 +71,7 @@ function App() {
     [browser, setBrowser] = useState({ tabs: [] }),
     [settingsOpen, setSettingsOpen] = useState(false),
     [hostGitOpen, setHostGitOpen] = useState(false),
+    [startRequest, setStartRequest] = useState(null),
     [settingsSection, setSettingsSection] = useState("keyboard"),
     [home, setHome] = useState(true),
     [sidebarCollapsed, setSidebarCollapsed] = useState(
@@ -88,6 +89,11 @@ function App() {
     [details, setDetails] = useState(false),
     [safetyOpen, setSafetyOpen] = useState(false),
     [quitting, setQuitting] = useState(null);
+  // Keep feedback continuous until polling observes the accepted start job.
+  const status = serverStatus && (hostGitOpen || startRequest)
+    ? { ...serverStatus, job: { running: true, kind: "start", message: hostGitOpen
+      ? "正在检查本机 Git 安全保护…" : "正在启动 Cage 环境…" } }
+    : serverStatus;
   const { active } = layout;
   const setActive = id => setLayout(previous => focusTab(previous, id));
   const workspaceBox = useRef(null);
@@ -464,6 +470,7 @@ function App() {
         if (!live) return;
         jobRunning = next.job.running;
         setStatus(next);
+        setStartRequest(pending => pending?.id && pending.id === next.job.id ? null : pending);
         setConnectionError("");
         if (
           !next.job.running &&
@@ -966,9 +973,12 @@ function App() {
       {hostGitOpen && (
         <HostGitPreparation
           onClose={() => setHostGitOpen(false)}
-          onReady={() => {
+          onReady={async () => {
+            setStartRequest({ id: null });
             setHostGitOpen(false);
-            action("/start");
+            const result = await action("/start");
+            setStartRequest(result ? { id: result.id } : null);
+            if (result) refreshStatus.current?.();
           }}
         />
       )}
@@ -1449,7 +1459,7 @@ function App() {
             <button
               onClick={stop}
               disabled={
-                (!running && !busy) || (status?.job?.kind === "stop" && busy)
+                Boolean(startRequest) || (!running && !busy) || (status?.job?.kind === "stop" && busy)
               }
               title="停止当前环境"
             >

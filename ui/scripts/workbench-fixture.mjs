@@ -244,6 +244,7 @@ export async function createWorkbench({
       };
       result = { id };
     } else if (path === "/start") {
+      state.status.job = { id: "start", kind: "start", running: false };
       state.settings.workspace = "/Users/shihao/.claude-cage-workspace";
       state.status.environment_workspace = true;
       state.status.ready = true;
