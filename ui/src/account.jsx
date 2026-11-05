@@ -9,14 +9,13 @@ import React, {
 import {
   Camera,
   Check,
-  ChevronUp,
+  ChevronDown,
   Eye,
   EyeOff,
   Fingerprint,
   LockKeyhole,
   LogOut,
   Settings2,
-  UserRound,
 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import logo from "./logo.png";
@@ -213,7 +212,7 @@ export function AccountGate({ children }) {
       setConfirmation("");
       if (creating && rememberLogin && deviceSupport?.supported) {
         try { await deviceAction("enable", "automatic"); }
-        catch (e) { setDeviceNotice(`账户已创建，记住登录未能开启：${e.message}。可在账户设置重试。`); }
+        catch (e) { setDeviceNotice(`账户已创建，记住登录未能开启：${e.message}。可在「设置 → 账户」中重试。`); }
       }
     } catch (e) {
       setError(e.message);
@@ -357,17 +356,20 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
   const root = useRef();
   useEffect(() => {
     if (!open) return;
+    root.current.querySelector('[role="menuitem"]').focus();
     const dismiss = (event) => {
       if (
         event.key === "Escape" ||
-        (event.type === "pointerdown" && !root.current?.contains(event.target))
-      )
+        (event.type === "click" && !root.current?.contains(event.target))
+      ) {
+        if (event.key === "Escape") root.current?.querySelector(".account-trigger")?.focus();
         setOpen(false);
+      }
     };
-    window.addEventListener("pointerdown", dismiss);
+    window.addEventListener("click", dismiss);
     window.addEventListener("keydown", dismiss);
     return () => {
-      window.removeEventListener("pointerdown", dismiss);
+      window.removeEventListener("click", dismiss);
       window.removeEventListener("keydown", dismiss);
     };
   }, [open]);
@@ -402,10 +404,18 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
           <strong>{account.username}</strong>
           <small>本地账户</small>
         </span>
-        <ChevronUp size={15} />
+        <ChevronDown size={15} />
       </button>
       {open && (
-        <div className="account-menu" role="menu" aria-label="本地账户菜单">
+        <div className="account-menu" role="menu" aria-label="本地账户菜单"
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            const items = [...event.currentTarget.querySelectorAll("button:enabled")];
+            const step = event.key === "ArrowDown" ? 1 : -1;
+            items[(items.indexOf(event.target) + step + items.length) % items.length].focus();
+          }}
+        >
           <div className="account-menu-label">你的 Cage</div>
           <button
             role="menuitem"
@@ -414,18 +424,8 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
               onSettings("account");
             }}
           >
-            <UserRound size={16} />
-            账户设置
-          </button>
-          <button
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onSettings("keyboard");
-            }}
-          >
             <Settings2 size={16} />
-            应用设置
+            设置
           </button>
           <div className="account-menu-divider" />
           <button role="menuitem" onClick={() => perform("lock")}>

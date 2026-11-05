@@ -5,10 +5,6 @@ import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
-  ArrowLeft,
-  ArrowRight,
-  ArrowUpRight,
-  Copy,
   Clock3,
   FileCode2,
   FolderOpen,
@@ -16,9 +12,6 @@ import {
   LoaderCircle,
   MapPin,
   MoreHorizontal,
-  Plus,
-  PanelLeftOpen,
-  ChevronRight,
   Power,
   RefreshCw,
   Shield,
@@ -27,15 +20,16 @@ import {
 } from "lucide-react";
 import { api, normalizeURL, native, nativeAvailable } from "./api";
 import { RemoteView, TerminalView, Modal } from "./views";
+import { usePasswordVault } from "./password-vault";
 import { SettingsPanel } from "./settings";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { TerminalMenu } from "./terminal-menu";
 import { ClaudeDesktop } from "./claude-desktop";
+import { useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate } from "./account";
-import { WorkspaceTabs } from "./workspace-tabs";
-import { BrowserFavorites } from "./browser-favorites";
+import { BrowserHeader, TerminalHeader, ExpandSidebar, ExpandPane } from "./pane-headers";
 import { BrowserDownloads, useDownloadNotifications } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
 import { AudioControls, useAudioOutput } from "./audio";
@@ -43,6 +37,8 @@ import { ProjectDialog } from "./project-dialog";
 import {
   readLocal,
   orderedTabs,
+  focusTab,
+  splitTab,
   projectName,
   tabName,
 } from "./workspace-state.mjs";
@@ -58,6 +54,7 @@ import "./appearance.css";
 import { stopAndExit } from "./quit";
 
 function App() {
+  const claudeProfiles = useClaudeAccounts();
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [terminalChoice, setTerminalChoice] = useState(null);
   const terminalTrigger = useRef(null);
@@ -70,9 +67,8 @@ function App() {
     [settings, setSettings] = useState(null),
     [proxy, setProxy] = useState(null),
     [tabs, setTabs] = useState([]),
-    [active, setActive] = useState(localStorage.getItem("cage-active") || ""),
+    [layout, setLayout] = useState(() => ({ active: localStorage.getItem("cage-active") || "" })),
     [browser, setBrowser] = useState({ tabs: [] }),
-    [address, setAddress] = useState(""),
     [settingsOpen, setSettingsOpen] = useState(false),
     [hostGitOpen, setHostGitOpen] = useState(false),
     [settingsSection, setSettingsSection] = useState("keyboard"),
@@ -92,9 +88,12 @@ function App() {
     [details, setDetails] = useState(false),
     [safetyOpen, setSafetyOpen] = useState(false),
     [quitting, setQuitting] = useState(null);
+  const { active } = layout;
+  const setActive = id => setLayout(previous => focusTab(previous, id));
+  const workspaceBox = useRef(null);
+  const [dropSide, setDropSide] = useState(null);
   const terminalControls = useRef(new Map());
   const remote = useRef(),
-    addressField = useRef(),
     activeRef = useRef(active),
     lastBrowserTab = useRef(""),
     readyRef = useRef(false),
@@ -111,9 +110,73 @@ function App() {
   const current = tabs.find((t) => t.id === active),
     terminal = !desktopOpen && current?.kind === "terminal",
     busy = Boolean(status?.job?.running),
-    showHome = !desktopOpen && (home || !status?.vm_running || !current),
-    showRemote = !desktopOpen && status?.ready && !terminal && !showHome;
+    showHome = !desktopOpen && (home || !status?.vm_running || !current);
+  const other = tabs.find(tab => tab.id === layout.other);
+  const split = Boolean(other && current && !showHome && !desktopOpen);
+  const panes = !split ? [current].filter(Boolean)
+    : layout.side === "left" ? [current, other] : [other, current];
+  const webPanes = panes.filter(tab => tab.kind !== "terminal");
+  const passwordVault = usePasswordVault(Boolean(status?.ready), browser.active);
+  const dualBrowser = split && webPanes.length === 2;
+  const leftId = dualBrowser ? panes[0].id : "";
+  const rightId = dualBrowser ? panes[1].id : "";
+  const nativeSplit = browser.split;
+  const splitReady = dualBrowser
+    ? nativeSplit?.left === leftId && nativeSplit?.right === rightId
+    : !nativeSplit;
+  const liveBrowser = webPanes.find(tab => tab.id === browser.active) || webPanes[0];
+  const liveBrowserVisible = !desktopOpen && !showHome && status?.ready &&
+    liveBrowser && splitReady && (!split || browser.active === liveBrowser.id);
+  const splitQueue = useRef(Promise.resolve());
+  const requestedSplit = useRef(false);
+  const nativeSplitRef = useRef(null);
+  nativeSplitRef.current = nativeSplit;
+  useEffect(() => {
+    if (!status?.ready) { requestedSplit.current = false; return; }
+    if (!leftId && !requestedSplit.current && !nativeSplitRef.current) return;
+    requestedSplit.current = Boolean(leftId);
+    let cancelled = false;
+    const apply = async () => {
+      if (cancelled) return;
+      const id = activeRef.current;
+      try {
+        const result = await api("/browser/split", { left: leftId, right: rightId,
+          id: leftId ? (id === rightId ? rightId : leftId) : id });
+        if (!cancelled) setBrowser(previous => ({ ...previous, split: result.split }));
+      } catch {
+        if (!cancelled) {
+          setToast("无法调整浏览器分屏。请确认环境组件已更新，两个网页属于同一浏览器配置，且客机 Chromium 为 155 或更高版本。");
+          setLayout(previous => ({ active: previous.active }));
+        }
+      }
+    };
+    splitQueue.current = splitQueue.current.then(apply);
+    return () => { cancelled = true; };
+  }, [leftId, rightId, status?.ready, Boolean(!leftId && nativeSplit)]);
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
+  useEffect(() => {
+    if (!layout.other) return;
+    if (!status?.vm_running || !other || !current) {
+      const survivor = current || other;
+      setLayout({ active: survivor?.id || "" });
+      if (!current && survivor && survivor.kind !== "terminal" && status?.ready) {
+        api("/browser/activate", { id: survivor.id }).catch(error => setToast(error.message));
+      }
+    }
+  }, [layout, other, current, status?.vm_running, status?.ready]);
+  const paneSide = id => !split ? "" : id === active ? layout.side :
+    layout.side === "left" ? "right" : "left";
   const running = Boolean(status?.vm_running);
+  const mixedBrowserId = split && !dualBrowser ? webPanes[0]?.id : null;
+  useEffect(() => {
+    if (status?.ready && mixedBrowserId && mixedBrowserId !== browser.active)
+      api("/browser/activate", { id: mixedBrowserId }).catch(error => setToast(error.message));
+  }, [mixedBrowserId, status?.ready, browser.active]);
+  const finishedLogins = tabs.filter((tab) => tab.terminalKind === "claude-login" && tab.closed).map((tab) => tab.id).sort().join(",");
+  useEffect(() => {
+    if (finishedLogins) claudeProfiles.load();
+  }, [finishedLogins, claudeProfiles.load]);
   const audio = useAudioOutput(running && !status?.environment_update_required && !connectionError);
   const projects = status?.projects || [];
   const workspace = selectedProject || status?.workspace;
@@ -156,7 +219,7 @@ function App() {
     setSettingsSection(section);
     setSettingsOpen(true);
   };
-  const select = async (id) => {
+  const select = async (id, focusContent = true) => {
     setDesktopOpen(false);
     setHome(false);
     setActive(id);
@@ -166,11 +229,37 @@ function App() {
     if (tab && tab.kind !== "terminal") {
       try {
         await api("/browser/activate", { id });
-        remote.current?.focus();
+        if (activeRef.current === id) {
+          setBrowser(previous => ({ ...previous, active: id }));
+          if (focusContent) remote.current?.focus();
+        }
       } catch (e) {
         notify(e.message);
       }
     }
+  };
+  const destination = (id, x, y) => {
+    const box = workspaceBox.current?.getBoundingClientRect();
+    if (!box || busy || !running || desktopOpen || tabs.length < 2 ||
+        document.elementFromPoint(x, y)?.closest(".chrome") ||
+        !tabs.some(tab => tab.id === id) || x < box.left || x > box.right ||
+        y < box.top || y > box.bottom) return null;
+    return x < box.left + box.width * (dualBrowser && nativeSplit?.fraction || 0.5) ? "left" : "right";
+  };
+  const splitDrag = {
+    clear: () => setDropSide(null),
+    hover(id, x, y) {
+      const side = destination(id, x, y);
+      setDropSide(side);
+      return side;
+    },
+    drop(id, x, y) {
+      const side = destination(id, x, y);
+      if (!side) return false;
+      setLayout(previous => splitTab(previous, tabs, id, side));
+      void select(id);
+      return true;
+    },
   };
   const action = async (path, body = {}) => {
     try {
@@ -218,26 +307,34 @@ function App() {
     setTerminalChoice((previous) =>
       previous?.anchor === anchor ? null : { path, anchor },
     );
-  const createTerminal = async (path, kind) => {
+  const createTerminal = async (path, kind, loginAccountId) => {
     setTerminalChoice(null);
+    const result = await api("/terminals", {
+      workspace: path, kind,
+      ...(loginAccountId && { claude_account_id: loginAccountId }),
+    });
+    const tab = {
+      ...result, id: "terminal:" + result.id, sessionId: result.id,
+      terminalKind: result.kind, kind: "terminal",
+    };
+    setTabs((list) => [...list.filter((t) => t.id !== tab.id), tab]);
+    setSelectedProject(result.workspace);
     setDesktopOpen(false);
     setHome(false);
-    const result = await action("/terminals", { workspace: path, kind });
-    if (result) {
-      setSelectedProject(result.workspace);
-      const tab = {
-        ...result,
-        id: "terminal:" + result.id,
-        sessionId: result.id,
-        kind: "terminal",
-      };
-      setTabs((list) => [...list.filter((t) => t.id !== tab.id), tab]);
-      setActive(tab.id);
+    setActive(tab.id);
+    if (kind === "claude" && result.claude_account_id &&
+        !claudeProfiles.accounts?.some((profile) => profile.id === result.claude_account_id)) {
+      claudeProfiles.load();
     }
   };
   const newTerminalHere = (event) =>
     newTerminal(contentWorkspace, event?.currentTarget?.tagName === "BUTTON"
       ? event.currentTarget : terminalTrigger.current);
+  const terminalMenuAt = (location) => terminalChoice?.anchor?.dataset.terminalLocation === location && (
+    <TerminalMenu choice={terminalChoice} busy={busy}
+      onClose={() => setTerminalChoice(null)}
+      onSelect={(kind) => createTerminal(terminalChoice.path, kind).catch((e) => notify(e.message))} />
+  );
   const openEditor = async (path = workspace) => {
     setDesktopOpen(false);
     setHome(false);
@@ -290,7 +387,11 @@ function App() {
       if (!(await action("/browser/close", { id: tab.id }))) return;
     }
     setTabs((list) => list.filter((t) => t.id !== tab.id));
-    if (active === tab.id) {
+    if (split && (tab.id === active || tab.id === other.id)) {
+      const remaining = tab.id === active ? other.id : active;
+      setLayout({ active: remaining });
+      await select(remaining);
+    } else if (active === tab.id) {
       const group = displayTabs.filter((item) =>
         tab.kind === "terminal"
           ? item.kind === "terminal" && item.workspace === tab.workspace
@@ -302,8 +403,7 @@ function App() {
       else setActive("");
     }
   };
-  const navigate = async (e) => {
-    e?.preventDefault();
+  const navigate = async (id, address) => {
     try {
       const url = normalizeURL(address);
       if (network.mode !== "open" && !isGuestLocalURL(url)) {
@@ -311,12 +411,7 @@ function App() {
         notify("请先完成关键检查，再访问外部网站。");
         return;
       }
-      if (current && current.kind !== "terminal")
-        await action("/browser/navigate", { id: current.id, url });
-      else {
-        const result = await action("/browser/new", { url });
-        if (result) setActive(result.id);
-      }
+      await action("/browser/navigate", { id, url });
       remote.current?.focus();
     } catch (error) {
       notify(error.message);
@@ -395,6 +490,7 @@ function App() {
               ...item,
               id: "terminal:" + item.id,
               sessionId: item.id,
+              terminalKind: item.kind,
               kind: "terminal",
             })),
           ];
@@ -414,7 +510,9 @@ function App() {
               b.active &&
               !browserIds.current.has(b.active))
           ) {
-            setActive(b.active || all[0]?.id || "");
+            // Let split reconciliation promote the remaining pane on close.
+            if (!layoutRef.current.other || all.some(item => item.id === activeRef.current))
+              setActive(b.active || all[0]?.id || "");
           }
           browserIds.current = new Set(b.tabs.map((item) => item.id));
           initialized.current = true;
@@ -476,6 +574,9 @@ function App() {
   useEffect(() => {
     if (!status?.ready) return;
     const stream = new EventSource("/api/browser/events");
+    stream.addEventListener("clipboard", (event) => {
+      remote.current?.receiveCopy(JSON.parse(event.data));
+    });
     stream.onopen = () => { browserStreamReady.current = true; };
     stream.onerror = () => { browserStreamReady.current = false; };
     stream.onmessage = (event) => {
@@ -484,6 +585,13 @@ function App() {
         setDesktopOpen(true);
         setHome(false);
         setSettingsOpen(false);
+      }
+      const previousPair = browserSnapshot.current.split;
+      const local = layoutRef.current;
+      if (previousPair && !b.split && [local.active, local.other].includes(previousPair.left) &&
+          [local.active, local.other].includes(previousPair.right)) {
+        const survivor = b.tabs.some(tab => tab.id === local.active) ? local.active : local.other;
+        setLayout({ active: survivor });
       }
       browserSnapshot.current = b;
       setBrowser((previous) => ({ ...previous, ...b }));
@@ -500,7 +608,7 @@ function App() {
         b.active &&
         (b.focus ||
           !activeRef.current ||
-          !activeRef.current.startsWith("terminal:"))
+          (!layoutRef.current.other && !activeRef.current.startsWith("terminal:")))
       )
         setActive(b.active);
       browserIds.current = new Set(b.tabs.map((t) => t.id));
@@ -513,11 +621,6 @@ function App() {
   useEffect(() => {
     if (current && current.kind !== "terminal")
       lastBrowserTab.current = current.id;
-    if (
-      current?.kind !== "terminal" &&
-      document.activeElement !== addressField.current
-    )
-      setAddress(current?.url === "about:blank" ? "" : current?.url || "");
     document.title =
       (current?.title && current.title !== "新标签页"
         ? current.title + " · "
@@ -590,8 +693,9 @@ function App() {
       if (k === "enter" && event.shiftKey) handle = newTerminalHere;
       if (k === "l")
         handle = () => {
-          addressField.current?.focus();
-          addressField.current?.select();
+          const input = [...document.querySelectorAll("[data-browser-tab]")].find(node => node.dataset.browserTab === active)?.querySelector(".address-bar input");
+          input?.focus();
+          input?.select();
         };
       if (k === "w" && current && !desktopOpen) handle = () => closeTab(current);
       if (/^[1-9]$/.test(k)) {
@@ -736,10 +840,14 @@ function App() {
     desktopOpen,
     terminalChoice,
   ]);
-  const project = projectName(contentWorkspace);
+  const project = projectName(contentWorkspace, status?.environment_directory);
   const tabLayoutKey = status?.environment_directory || status?.workspace;
   const metadata = savedTabs[tabLayoutKey] || {};
-  const displayTabs = orderedTabs(tabs, metadata);
+  const claudeLabels = new Map(claudeProfiles.accounts?.map((account) => [account.id, account.label || account.email]));
+  const terminalAccountName = (tab) => claudeLabels.get(tab.claude_account_id) ||
+    (tab.terminalKind === "claude-login" ? "新账号登录" : tab.claude_account_id ? "Claude 账号" : "");
+  const displayTabs = orderedTabs(tabs, metadata).map((tab) =>
+    tab.claude_account_id || tab.terminalKind === "claude-login" ? { ...tab, claudeLabel: terminalAccountName(tab) } : tab);
   const browserTabs = displayTabs.filter((tab) => tab.kind !== "terminal");
   const switchTabs =
     terminal && !showHome
@@ -747,7 +855,7 @@ function App() {
           (tab) =>
             tab.kind === "terminal" && tab.workspace === current.workspace,
         )
-      : browserTabs;
+      : dualBrowser ? browserTabs.filter(tab => current.id === rightId ? tab.id === rightId : tab.id !== rightId) : browserTabs;
   const renameTab = (tab) =>
     setRename({ id: tab.id, title: tabName(tab, metadata, project) });
   const pinTab = (id) =>
@@ -797,6 +905,54 @@ function App() {
     setDialog(null);
     resolve(value);
   };
+  const sidebarButton = side => sidebarCollapsed && side !== "right" &&
+    <ExpandSidebar onClick={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)} />;
+  const expandButton = tab => split && tab && <ExpandPane onClick={() => {
+    setLayout({ active: tab.id });
+    void select(tab.id);
+  }} />;
+  const focusHeader = tab => {
+    if (tab && tab.id !== activeRef.current) void select(tab.id, false);
+  };
+  const terminalHeader = tab => {
+    const path = tab?.workspace || workspace;
+    const account = tab?.claude_account_id && terminalAccountName(tab);
+    const detail = tab?.terminalKind === "claude-login" ? `登录 · ${account || "新账号"}`
+      : account ? `Claude · ${account}${tab.claude_account_source === "default" ? "（启动时账号）" : ""}` : "";
+    const location = split && tab ? `heading-${tab.id}` : "heading";
+    return <TerminalHeader tab={tab} project={projectName(path, status?.environment_directory)} metadata={metadata}
+      contentWorkspace={path} terminalDetail={detail} terminalDetailHint={tab?.claude_account_source === "default"
+        ? "此终端按启动时的普通终端登录标记。若普通终端已换号，请重新打开工作会话确认身份。" : detail}
+      ready={status.ready} running={running} busy={busy} onHome={() => setHome(true)}
+      sidebarButton={sidebarButton(paneSide(tab?.id))} exitButton={expandButton(tab)}
+      location={location} triggerRef={!tab || tab.id === active ? terminalTrigger : undefined}
+      menu={terminalMenuAt(location)} onClose={() => closeTab(tab)}
+      onEditor={() => openEditor(path)} onNew={event => newTerminal(path, event.currentTarget)} />;
+  };
+  const recoverEditor = async tab => {
+    if (!(await confirm({ title: "重启编辑器？", body: "请先保存文件。浏览器、终端和环境会继续运行。", confirm: "重启编辑器" }))) return;
+    setRecoveringEditor(true);
+    try { await api("/browser/editor-restart", { workspace: tab.workspace || workspace }); notify("编辑器已恢复"); }
+    catch (error) { notify(error.message); }
+    finally { setRecoveringEditor(false); }
+  };
+  const paneTabs = tab => !dualBrowser ? browserTabs : browserTabs.filter(item =>
+    item.id === tab.id || (tab.id === leftId && item.id !== rightId));
+  const browserHeader = tab => <BrowserHeader vault={passwordVault} onManageVault={() => openSettings("vault")} tab={tab} tabs={paneTabs(tab)} metadata={metadata}
+    ready={status.ready} busy={busy} focused={active === tab.id} compact={split} splitDrag={splitDrag}
+    sidebarButton={sidebarButton(paneSide(tab.id))} exitButton={expandButton(tab)}
+    triggerRef={tab.id === active ? terminalTrigger : undefined}
+    location={split ? `heading-${tab.id}` : "heading"} menu={terminalMenuAt(split ? `heading-${tab.id}` : "heading")}
+    back={browser.split?.history?.[tab.id]?.back ?? (tab.id === browser.active && browser.back)}
+    forward={browser.split?.history?.[tab.id]?.forward ?? (tab.id === browser.active && browser.forward)}
+    action={action} onSelect={select} onClose={closeTab} onRename={renameTab} onPin={pinTab} onReorder={reorder}
+    onNew={newPage} onNavigate={address => navigate(tab.id, address)} onOpen={openBrowserPage}
+    downloads={browser.downloads} onStatus={notify} onRemote={async command => {
+      if (browser.active !== tab.id) await select(tab.id, false);
+      if (activeRef.current === tab.id) remote.current?.[command]();
+    }}
+    onEditor={() => openEditor(tab.workspace || workspace)} recoveringEditor={recoveringEditor}
+    onRecover={() => recoverEditor(tab)} />;
   const dialogs = (
     <>
       {hostGitOpen && (
@@ -935,9 +1091,11 @@ function App() {
             onClose={closeTab}
             onRename={renameTab}
             onPin={pinTab}
+            splitDrag={splitDrag}
             onReorder={reorder}
             onProjectSelect={setSelectedProject}
             onNewTerminal={newTerminal}
+            terminalMenuAt={terminalMenuAt}
             onBrowser={openBrowser}
             desktopOpen={desktopOpen}
             onClaudeWeb={() => openBrowserPage("https://claude.ai/")}
@@ -953,260 +1111,7 @@ function App() {
           />
         )}
         <div className="workbench-main">
-          {!desktopOpen && <header className="chrome">
-            {!showHome && !terminal ? (
-              <div className="browser-tab-bar">
-                {sidebarCollapsed && (
-                  <button
-                    className="icon-button sidebar-expand"
-                    aria-label="展开侧栏"
-                    onClick={() =>
-                      persist(
-                        "cage-sidebar-collapsed",
-                        false,
-                        setSidebarCollapsed,
-                      )
-                    }
-                  >
-                    <img className="sidebar-expand-logo" src={logo} alt="" />
-                    <PanelLeftOpen className="sidebar-expand-icon" size={18} />
-                  </button>
-                )}
-                <WorkspaceTabs
-                  tabs={browserTabs}
-                  saved={metadata}
-                  active={active}
-                  label="浏览器标签页"
-                  horizontal
-                  busy={busy}
-                  ready={status.ready}
-                  onSelect={select}
-                  onClose={closeTab}
-                  onRename={renameTab}
-                  onPin={pinTab}
-                  onReorder={reorder}
-                />
-                <button
-                  className="icon-button browser-new-tab"
-                  ref={terminalTrigger}
-                  aria-label="新建网页"
-                  title={shortcut("新建网页 ⌘T")}
-                  disabled={!status.ready || busy}
-                  onClick={newPage}
-                >
-                  <Plus size={17} />
-                </button>
-              </div>
-            ) : (
-              <div className="content-heading">
-                {sidebarCollapsed && (
-                  <button
-                    className="icon-button sidebar-expand"
-                    aria-label="展开侧栏"
-                    title="展开侧栏"
-                    onClick={() =>
-                      persist(
-                        "cage-sidebar-collapsed",
-                        false,
-                        setSidebarCollapsed,
-                      )
-                    }
-                  >
-                    <img className="sidebar-expand-logo" src={logo} alt="" />
-                    <PanelLeftOpen className="sidebar-expand-icon" size={18} />
-                  </button>
-                )}
-                <div className="content-breadcrumb">
-                  <button
-                    onClick={() => setHome(true)}
-                    title={contentWorkspace}
-                  >
-                    <FolderOpen size={15} />
-                    <span>{project}</span>
-                  </button>
-                  {!showHome && current && (
-                    <>
-                      <ChevronRight size={13} />
-                      <span className="current-title">
-                        {tabName(current, metadata, project)}
-                      </span>
-                    </>
-                  )}
-                </div>
-                <div className="heading-actions">
-                  <button
-                    className="quiet-button"
-                    onClick={() => openEditor(contentWorkspace)}
-                    disabled={!status.ready || busy}
-                  >
-                    <FileCode2 size={15} />
-                    <span>打开文件</span>
-                  </button>
-                  <button
-                    className="icon-button"
-                    aria-label="新建终端"
-                    aria-haspopup="menu"
-                    ref={terminalTrigger}
-                    title={shortcut("新建终端 ⌘⇧↵")}
-                    onClick={newTerminalHere}
-                    disabled={!running || busy}
-                  >
-                    <TerminalSquare size={17} />
-                  </button>
-                  {current && !showHome && (
-                    <button
-                      className="icon-button"
-                      aria-label="关闭当前标签"
-                      title={shortcut("关闭当前标签 ⌘W")}
-                      onClick={() => closeTab(current)}
-                      disabled={busy}
-                    >
-                      <X size={16} />
-                    </button>
-                  )}
-                </div>
-              </div>
-            )}
-            {!showHome && (
-              <div className="navigation-row">
-                {!terminal ? (
-                  <>
-                    <div className="nav-actions">
-                      <button
-                        className="icon-button"
-                        aria-label="后退"
-                        disabled={!status.ready || !browser.back}
-                        onClick={() =>
-                          action("/browser/back", { id: current?.id })
-                        }
-                      >
-                        <ArrowLeft size={17} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="前进"
-                        disabled={!status.ready || !browser.forward}
-                        onClick={() =>
-                          action("/browser/forward", { id: current?.id })
-                        }
-                      >
-                        <ArrowRight size={17} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="重新加载网页"
-                        disabled={!showRemote}
-                        onClick={() =>
-                          action("/browser/reload", { id: current?.id })
-                        }
-                      >
-                        <RefreshCw size={15} />
-                      </button>
-                    </div>
-                    <form className="address-bar" onSubmit={navigate}>
-                      <Globe2 size={13} />
-                      <input
-                        ref={addressField}
-                        aria-label="网页地址或搜索"
-                        value={address}
-                        onChange={(e) => setAddress(e.target.value)}
-                        onFocus={(e) => e.target.select()}
-                        placeholder={
-                          status.ready
-                            ? "输入网址或搜索，在 Cage 内打开"
-                            : "启动环境后浏览网页"
-                        }
-                        disabled={!status.ready}
-                        spellCheck="false"
-                      />
-                      <button
-                        className="address-go"
-                        type="submit"
-                        aria-label="打开地址"
-                        disabled={!status.ready}
-                      >
-                        <ArrowUpRight size={15} />
-                      </button>
-                    </form>
-                    <BrowserFavorites current={current} ready={status.ready && !busy} onOpen={openBrowserPage} />
-                    <BrowserDownloads downloads={browser.downloads} ready={status.ready && !busy} onStatus={notify} />
-                    {current?.kind === "editor" && <button className="icon-button" aria-label="恢复编辑器" title="单独重启编辑器" disabled={!status.ready || busy || recoveringEditor} onClick={async () => {
-                      if (!(await confirm({ title: "重启编辑器？", body: "请先保存文件。浏览器、终端和环境会继续运行。", confirm: "重启编辑器" }))) return;
-                      setRecoveringEditor(true);
-                      try { await api("/browser/editor-restart", { workspace: current.workspace || contentWorkspace }); notify("编辑器已恢复"); }
-                      catch (error) { notify(error.message); }
-                      finally { setRecoveringEditor(false); }
-                    }}><RefreshCw size={15} className={recoveringEditor ? "spin" : ""} /></button>}
-                    <div className="clipboard-actions">
-                      <button
-                        className="icon-button"
-                        aria-label="复制到本机"
-                        title="复制到本机"
-                        disabled={!showRemote}
-                        onClick={() => remote.current?.copy()}
-                      >
-                        <Copy size={15} />
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="粘贴到 Cage"
-                        title="粘贴到 Cage"
-                        disabled={!showRemote}
-                        onClick={() => remote.current?.paste()}
-                      >
-                        <svg
-                          width="15"
-                          height="15"
-                          viewBox="0 0 24 24"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.7"
-                        >
-                          <path d="M9 5H5v16h14V5h-4M9 3h6v4H9zM8 12h8M8 16h5" />
-                        </svg>
-                      </button>
-                      <button
-                        className="icon-button"
-                        aria-label="文本传递"
-                        title="文本传递"
-                        disabled={!showRemote}
-                        onClick={() => remote.current?.transfer()}
-                      >
-                        <MoreHorizontal size={17} />
-                      </button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="terminal-path">
-                      <TerminalSquare size={15} />
-                      <span>{current?.workspace || status.workspace}</span>
-                      <span className="terminal-kind">Linux · bash</span>
-                    </div>
-                    <button
-                      className="text-button"
-                      aria-haspopup="menu"
-                      onClick={newTerminalHere}
-                      disabled={busy}
-                    >
-                      <Plus size={15} />
-                      新建终端
-                    </button>
-                  </>
-                )}
-                <button
-                  className="icon-button files-button"
-                  title="打开文件编辑器"
-                  aria-label="打开文件编辑器"
-                  disabled={!status.ready || busy}
-                  onClick={() => openEditor(contentWorkspace)}
-                >
-                  <FileCode2 size={17} />
-                </button>
-              </div>
-            )}
-            {busy && <div className="progress-line" />}
-          </header>}
+          {showHome && terminalHeader(null)}
           {connectionError && (
             <div className="connection-banner" role="alert">
               工作台连接中断，后台状态暂时未知。
@@ -1219,7 +1124,9 @@ function App() {
               </button>
             </div>
           )}
-          <main className="workspace">
+          <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox}
+            style={{ "--split-left": `${100 * (dualBrowser && nativeSplit?.fraction || 0.5)}%` }}>
+            {dropSide && <div aria-hidden="true" className={`split-drop split-${dropSide}`}>{dropSide === "left" ? "放到左侧" : "放到右侧"}</div>}
             {desktopOpen && <ClaudeDesktop
               onProjectOpened={() => refreshStatus.current?.()}
               status={status} visible={!settingsOpen} remoteRef={remote}
@@ -1236,49 +1143,51 @@ function App() {
             )}
             {(status.vm_running || terminal) && (
               <>
-                {status.ready && !desktopOpen ? (
-                  <RemoteView
-                    ref={remote}
-                    visible={Boolean(showRemote && !settingsOpen)}
-                    keyboard={status.keyboard}
-                    tabId={current?.id}
-                    onStatus={notify}
-                    onFallback={(text, message) =>
-                      setTransfer({ text, message })
-                    }
-                  />
-                ) : (
-                  !desktopOpen && !terminal &&
-                  !showHome && (
-                    <div className="view-overlay">
-                      <RefreshCw />
-                      <h3>浏览器连接暂时不可用</h3>
-                      <p>环境和终端仍可运行；恢复浏览器不会停止现有终端。</p>
-                      <button
-                        className="primary"
-                        disabled={busy}
-                        onClick={() => setHostGitOpen(true)}
-                      >
-                        恢复浏览器
-                      </button>
+                {!desktopOpen && !showHome && webPanes.length > 0 && (
+                  <section className={`pane-lane browser-lane ${dualBrowser ? "" : "split-" + paneSide(webPanes[0].id)}`}>
+                    <div className="browser-headers">{webPanes.map(tab =>
+                      <div key={paneSide(tab.id) || "single"} className="browser-header-cell" data-focused={active === tab.id}
+                        onPointerDownCapture={() => focusHeader(tab)} onFocusCapture={() => focusHeader(tab)}>
+                        {browserHeader(tab)}
+                      </div>)}</div>
+                    <div className="pane-body" onPointerDownCapture={() => {
+                      if (!dualBrowser && liveBrowser?.id !== active) focusHeader(liveBrowser);
+                    }}>
+                      {status.ready && <RemoteView ref={remote} visible={Boolean(liveBrowserVisible && !settingsOpen)}
+                        copyScope={webPanes.map(tab => `${tab.id}:${tab.document || ""}`).join("|")}
+                        focused={dualBrowser || liveBrowser?.id === active} keyboard={status.keyboard}
+                        tabId={liveBrowser?.id} onStatus={notify}
+                        onFallback={(text, message) => setTransfer({ text, message })} />}
+                      {!status.ready && <div className="view-overlay">
+                        <RefreshCw /><h3>浏览器连接暂时不可用</h3>
+                        <p>环境和终端仍可运行；恢复浏览器不会停止现有终端。</p>
+                        <button className="primary" disabled={busy} onClick={() => setHostGitOpen(true)}>恢复浏览器</button>
+                      </div>}
+                      {status.ready && !splitReady && <div className="view-overlay">正在调整浏览器布局…</div>}
                     </div>
-                  )
+                  </section>
                 )}
-                {tabs
-                  .filter((t) => t.kind === "terminal")
-                  .map((tab) => (
-                    <TerminalView
-                      key={tab.id}
-                      session={{ ...tab, id: tab.sessionId }}
-                      onControls={(control) =>
-                        control
-                          ? terminalControls.current.set(tab.id, control)
-                          : terminalControls.current.delete(tab.id)
-                      }
-                      visible={!desktopOpen && active === tab.id && !showHome && !settingsOpen}
-                      onStatus={notify}
-                    />
-                  ))}
+                {tabs.filter(t => t.kind === "terminal").map(tab => {
+                  const visible = !desktopOpen && !showHome && panes.some(pane => pane.id === tab.id);
+                  return <section key={tab.id} className={`pane-lane terminal-lane split-${paneSide(tab.id)}`}
+                    data-focused={active === tab.id} hidden={!visible}
+                    onPointerDownCapture={() => focusHeader(tab)} onFocusCapture={() => focusHeader(tab)}>
+                    {visible && terminalHeader(tab)}
+                    <div className="pane-body">
+                      <TerminalView
+                        session={{ ...tab, id: tab.sessionId }}
+                        onControls={(control) =>
+                          control
+                            ? terminalControls.current.set(tab.id, control)
+                            : terminalControls.current.delete(tab.id)
+                        }
+                        visible={visible && !settingsOpen}
+                        focused={active === tab.id}
+                        onStatus={notify}
+                      />
+                    </div>
+                  </section>;
+                })}
               </>
             )}
             {showHome && (
@@ -1362,6 +1271,7 @@ function App() {
                       </span>
                       <button
                         className="primary"
+                        data-terminal-location="start"
                         disabled={busy || Boolean(connectionError)}
                         onClick={(event) => {
                           if (!running && setupProxy) openSettings("network");
@@ -1398,10 +1308,11 @@ function App() {
                                 : "新建终端"}
                       </button>
                     </div>
+                    {terminalMenuAt("start")}
                   </div>
                   {running && (
                     <div className="welcome-shortcuts">
-                      <button onClick={newTerminalHere} aria-haspopup="menu" disabled={busy}>
+                      <button onClick={newTerminalHere} data-terminal-location="shortcuts" aria-haspopup="menu" disabled={busy}>
                         <TerminalSquare size={16} />
                         新建终端
                       </button>
@@ -1414,6 +1325,7 @@ function App() {
                       </button>
                     </div>
                   )}
+                  {terminalMenuAt("shortcuts")}
                   {!running && (
                     <p className="welcome-hint">
                       {setupProxy
@@ -1545,6 +1457,9 @@ function App() {
           current={settings}
           status={status}
           initialSection={settingsSection}
+          claudeProfiles={claudeProfiles}
+          terminalTabs={tabs}
+          onClaudeLogin={(id) => createTerminal(workspace, "claude-login", id)}
           onClose={() => setSettingsOpen(false)}
           onSaved={refreshSettings}
           onConfirm={confirm}
@@ -1557,14 +1472,6 @@ function App() {
           initialPath={projectDialog.path}
           onClose={() => setProjectDialog(null)}
           onOpened={openedProject}
-        />
-      )}
-      {terminalChoice !== null && (
-        <TerminalMenu
-          choice={terminalChoice}
-          busy={busy}
-          onClose={() => setTerminalChoice(null)}
-          onSelect={(kind) => createTerminal(terminalChoice.path, kind)}
         />
       )}
       {rename && (

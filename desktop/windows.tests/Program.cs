@@ -5,6 +5,7 @@ using Cage.Windows;
 if (args is ["prepare-update", "--json", "--stop"])
 {
     File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "controller-invoked"), Environment.ProcessId.ToString());
+    File.WriteAllText(Path.Combine(AppContext.BaseDirectory, "profile-invoked"), Environment.GetEnvironmentVariable("CLAUDE_CAGE_CONFIG") ?? "missing");
     if (File.Exists(Path.Combine(AppContext.BaseDirectory, "broken-backend")))
     {
         Console.WriteLine("{\"status\":\"failed\"}"); Environment.Exit(7);
@@ -44,8 +45,11 @@ Console.WriteLine($"Windows update/bridge policy: {assertions} assertions passed
 
 var integration = Path.Combine(Path.GetTempPath(), "cage-recovery-" + Guid.NewGuid());
 Directory.CreateDirectory(integration);
+var savedProfile = Environment.GetEnvironmentVariable("CLAUDE_CAGE_CONFIG");
 try
 {
+    var selectedProfile = Path.Combine(integration, "selected profile", "config.json");
+    Environment.SetEnvironmentVariable("CLAUDE_CAGE_CONFIG", Path.GetRelativePath(Environment.CurrentDirectory, selectedProfile));
     var backup = Path.Combine(integration, "old application");
     var candidate = Path.Combine(integration, "new application");
     void InstallFixture(string app, bool broken)
@@ -62,6 +66,7 @@ try
     await UpdateRecovery.PrepareRollback(backup);
     Check(File.Exists(Path.Combine(backup, "resources", "controller-invoked")), "recovery did not execute the old backend");
     Check(!File.Exists(Path.Combine(candidate, "resources", "controller-invoked")), "recovery executed the broken candidate backend");
+    Check(File.ReadAllText(Path.Combine(backup, "resources", "profile-invoked")) == selectedProfile, "recovery child switched away from the original relative profile");
     File.WriteAllText(Path.Combine(backup, "resources", "running-environment"), "still running");
     var rejected = false;
     try { await UpdateRecovery.PrepareRollback(backup); } catch (IOException) { rejected = true; }
@@ -89,4 +94,7 @@ try
     }
     Console.WriteLine($"Windows recovery integration: {assertions - 22} assertions passed; actual child process and filesystem failures exercised.");
 }
-finally { Directory.Delete(integration, true); }
+finally {
+    Environment.SetEnvironmentVariable("CLAUDE_CAGE_CONFIG", savedProfile);
+    Directory.Delete(integration, true);
+}

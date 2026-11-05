@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { chooseInline, createWorkbench } from "./workbench-fixture.mjs";
 const output = fileURLToPath(
   new URL("../../docs/test-reports/2026-10-31-appearance/", import.meta.url),
 );
@@ -90,7 +90,7 @@ try {
       .evaluate((el) => getComputedStyle(el).cursor),
     "pointer",
   );
-  await page.getByLabel("减少动态效果", { exact: true }).selectOption("on");
+  await chooseInline(page.getByLabel("减少动态效果", { exact: true }), "on");
   await saved();
   assert.equal(
     await page.evaluate(() => document.documentElement.dataset.reducedMotion),
@@ -144,6 +144,7 @@ try {
     .getByRole("button", { name: "新建终端", exact: true })
     .first()
     .click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
   const count = state.terminalConnections;
   await showAppearance();

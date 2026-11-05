@@ -11,6 +11,27 @@ const {browser,page,state,errors} = await createWorkbench({nativeRequest: async 
 }});
 await page.exposeFunction('fixtureLaunchAcks', () => launchAcks);
 const accountMenu = () => page.getByRole('button', { name: /^账户菜单，/ });
+async function checkMenuLayout() {
+  const trigger = accountMenu();
+  const settings = page.getByRole('button', { name: '设置', exact: true });
+  const list = page.getByRole('menu', { name: '本地账户菜单' });
+  const projects = page.locator('.sidebar-scroll');
+  const before = await Promise.all([trigger.boundingBox(), settings.boundingBox(), projects.boundingBox()]);
+  await trigger.click();
+  const menu = await list.boundingBox();
+  assert.ok(menu.y >= 0 && menu.y + menu.height <= before[0].y);
+  assert.deepEqual(await trigger.boundingBox(), before[0]);
+  assert.deepEqual(await settings.boundingBox(), before[1]);
+  const projectBox = await projects.boundingBox();
+  assert.ok(projectBox.y + projectBox.height <= menu.y);
+  assert.equal(await page.getByRole('menuitem', {name:'设置',exact:true}).evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('ArrowDown');
+  assert.equal(await page.getByRole('menuitem', {name:/锁定 Cage/}).evaluate(el => el === document.activeElement), true);
+  await page.keyboard.press('Escape');
+  await list.waitFor({state:'hidden'});
+  assert.equal(await trigger.evaluate(el => el === document.activeElement), true);
+  assert.deepEqual(await projects.boundingBox(), before[2]);
+}
 try {
   Object.assign(state.account, {exists:false,unlocked:false,username:''});
   const previousAcks = launchAcks;
@@ -23,10 +44,15 @@ try {
   await page.getByLabel('确认密码',{exact:true}).fill('fixture-password');
   await page.getByRole('button',{name:'创建本地账户',exact:true}).click();
   await accountMenu().waitFor();
-  await accountMenu().click();
+  await checkMenuLayout();
+  await accountMenu().press('Enter');
   await page.screenshot({path:output+'menu.png'});
-  await page.getByRole('menuitem',{name:'账户设置',exact:true}).click();
+  await page.keyboard.press('Enter');
   await page.getByRole('heading',{name:'账户',exact:true}).waitFor();
+  const groups = page.getByRole('navigation',{name:'设置分组'});
+  await groups.getByRole('button',{name:'通用',exact:true}).click();
+  await page.getByRole('heading',{name:'键盘习惯',exact:true}).waitFor();
+  await groups.getByRole('button',{name:'账户',exact:true}).click();
   await page.getByLabel('用户名',{exact:true}).fill('山雀的工作室');
   await page.getByLabel('选择头像图片').setInputFiles(fileURLToPath(new URL('../src/logo.png',import.meta.url)));
   state.failAccountSave=true;
@@ -49,7 +75,7 @@ try {
   state.status.vm_running=true;state.status.ready=true;
   await page.reload();
   await page.getByRole('button',{name:/^在 .* 新建终端$/}).click();
-  await page.getByRole('button',{name:'新建普通终端',exact:true}).click();
+  await page.getByRole('menuitem',{name:'普通终端',exact:true}).click();
   const ids=state.terminals.map(x=>x.id);
   await accountMenu().click();
   await page.getByRole('menuitem',{name:/锁定 Cage/}).click();
@@ -69,11 +95,12 @@ try {
   await accountMenu().waitFor();
   assert.match(await accountMenu().getAttribute('aria-label'),/山雀的工作室/);
   await accountMenu().click();
-  await page.getByRole('menuitem',{name:'账户设置',exact:true}).click();
+  await page.getByRole('menuitem',{name:'设置',exact:true}).click();
   assert.equal(await page.getByLabel('用户名',{exact:true}).inputValue(),'山雀的工作室');
   await page.setViewportSize({width:820,height:558});
   await page.screenshot({path:output+'settings-small.png'});
   await page.getByRole('button',{name:'返回工作台',exact:true}).click();
+  await checkMenuLayout();
   await accountMenu().click();
   await page.getByRole('menuitem',{name:'退出账户',exact:true}).click();
   await page.getByRole('dialog').getByRole('button',{name:'停止环境并退出账户',exact:true}).click();

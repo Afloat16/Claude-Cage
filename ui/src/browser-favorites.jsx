@@ -1,3 +1,4 @@
+import { InlineSelect } from "./inline-select";
 import { shortcut } from "./platform.mjs";
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -15,7 +16,7 @@ import { Modal } from "./views";
 
 // The saved page is primary, folder context secondary, management actions quiet.
 // Reuse paper/strong/muted/line tokens, 8/12/16px spacing and existing modal forms.
-export function BrowserFavorites({ current, ready, onOpen }) {
+export function BrowserFavorites({ current, ready, onOpen, shortcuts = true }) {
   const [data, setData] = useState(null);
   const [open, setOpen] = useState(false);
   const [editor, setEditor] = useState(null);
@@ -63,13 +64,13 @@ export function BrowserFavorites({ current, ready, onOpen }) {
     setOpen(true);
     void load();
   };
-  state.current = { open, editor, addCurrent, show };
+  state.current = { open, editor, addCurrent, show, shortcuts };
   useEffect(() => {
     void load();
   }, []);
   useEffect(() => {
-    const add = () => state.current.addCurrent();
-    const show = () => state.current.show();
+    const add = () => state.current.shortcuts && state.current.addCurrent();
+    const show = () => state.current.shortcuts && state.current.show();
     const close = () => {
       if (!state.current.editor && !savingRef.current) setOpen(false);
     };
@@ -237,10 +238,10 @@ export function BrowserFavorites({ current, ready, onOpen }) {
                 />
               </label>
               <div className="favorites-folder-select">
-                <select
+                <InlineSelect
                   aria-label="筛选收藏夹"
                   value={folder}
-                  onChange={(event) => setFolder(event.target.value)}
+                  onValueChange={(next) => setFolder(next)}
                 >
                   <option value="all">全部收藏</option>
                   <option value="">未分类</option>
@@ -249,7 +250,7 @@ export function BrowserFavorites({ current, ready, onOpen }) {
                       {item.title}
                     </option>
                   ))}
-                </select>
+                </InlineSelect>
                 {selectedFolder && (
                   <>
                     <button
@@ -424,14 +425,14 @@ export function BrowserFavorites({ current, ready, onOpen }) {
                     </label>
                     <label>
                       收藏夹
-                      <select
+                      <InlineSelect
                         aria-label="保存到收藏夹"
                         value={editor.folder_id}
                         disabled={Boolean(editor.newFolder)}
-                        onChange={(event) =>
+                        onValueChange={(next) =>
                           setEditor({
                             ...editor,
-                            folder_id: event.target.value,
+                            folder_id: next,
                           })
                         }
                       >
@@ -441,7 +442,7 @@ export function BrowserFavorites({ current, ready, onOpen }) {
                             {item.title}
                           </option>
                         ))}
-                      </select>
+                      </InlineSelect>
                     </label>
                     <label>
                       新建收藏夹（可选）

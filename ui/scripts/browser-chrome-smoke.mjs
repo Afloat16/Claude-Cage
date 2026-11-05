@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { chooseInline, createWorkbench } from "./workbench-fixture.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const output = path.join(
@@ -64,6 +64,13 @@ async function start() {
     body: JSON.stringify({ token: new URL(url).hash.slice(1) }),
   });
   cookie = session.headers.get("set-cookie").split(";")[0];
+  const headers = { Origin: origin, Cookie: cookie, "Content-Type": "application/json" };
+  const account = await (await fetch(origin + "/api/account", { headers })).json();
+  const password = "favorites-fixture-only";
+  const unlocked = await fetch(origin + "/api/account/" + (account.exists ? "unlock" : "create"), {
+    method: "POST", headers, body: JSON.stringify({ username: "收藏测试", password, confirm_password: password }),
+  });
+  assert.ok(unlocked.ok, "the isolated favorites fixture requires an unlocked local account");
 }
 try {
   await start();
@@ -246,7 +253,7 @@ try {
   await panel
     .getByRole("button", { name: "编辑收藏 待重试的收藏", exact: true })
     .click();
-  await page.getByLabel("保存到收藏夹", { exact: true }).selectOption("");
+  await chooseInline(page.getByLabel("保存到收藏夹", { exact: true }), "");
   await page.getByRole("button", { name: "保存", exact: true }).click();
   await page
     .getByRole("dialog", { name: "编辑收藏", exact: true })
@@ -256,9 +263,8 @@ try {
   );
   assert.equal(saved.items[0].folder_id, "");
   await page.getByLabel("搜索收藏", { exact: true }).fill("");
-  await page
-    .getByLabel("筛选收藏夹", { exact: true })
-    .selectOption(saved.folders[0].id);
+  await chooseInline(page
+    .getByLabel("筛选收藏夹", { exact: true }), saved.folders[0].id);
   await page.getByRole("button", { name: "重命名收藏夹", exact: true }).click();
   await page.getByLabel("收藏名称", { exact: true }).fill("常用资料");
   await page.getByRole("button", { name: "保存", exact: true }).click();

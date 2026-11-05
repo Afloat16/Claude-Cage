@@ -1,9 +1,8 @@
 import { shortcut } from "./platform.mjs";
 import React, { useEffect, useState } from "react";
 import {
-  ArrowUpRight,
+  ExternalLink,
   ChevronDown,
-  FileCode2,
   FolderOpen,
   Globe2,
   Home,
@@ -12,6 +11,7 @@ import {
   PanelLeftClose,
   Plus,
   Settings2,
+  SquareTerminal,
 } from "lucide-react";
 import { EnvironmentShield } from "./environment-shield";
 import logo from "./logo.png";
@@ -40,7 +40,9 @@ export function WorkspaceSidebar({
   onRename,
   onPin,
   onReorder,
+  splitDrag,
   onNewTerminal,
+  terminalMenuAt,
   onBrowser,
   downloadAction,
   onClaudeWeb,
@@ -100,23 +102,6 @@ export function WorkspaceSidebar({
           <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>
         </div>
         {downloadAction}
-        <button
-          className="sidebar-link"
-          onClick={() => onOpenProject()}
-          disabled={busy || !running}
-        >
-          <FolderOpen size={17} />
-          打开项目<kbd>{shortcut("⌘O")}</kbd>
-        </button>
-        <button
-          className="sidebar-link"
-          onClick={() => onEditor()}
-          disabled={!ready || busy}
-        >
-          <FileCode2 size={17} />
-          项目文件
-          <ArrowUpRight size={14} className="navigation-trailing" />
-        </button>
       </nav>
       <div className="sidebar-scroll">
         <div className="sidebar-section-heading">
@@ -132,10 +117,7 @@ export function WorkspaceSidebar({
           </button>
         </div>
         {projects.map((path) => {
-          const project =
-            path === defaultWorkspace && path.endsWith("-workspace")
-              ? "默认工作区"
-              : projectName(path);
+          const project = projectName(path, defaultWorkspace);
           const terminals = tabs.filter(
             (tab) => tab.kind === "terminal" && tab.workspace === path,
           );
@@ -170,9 +152,19 @@ export function WorkspaceSidebar({
                 </button>
                 <button
                   className="icon-button"
+                  aria-label={`打开 ${project} 的编辑器`}
+                  title="在 code-server 中打开项目目录"
+                  disabled={!ready || busy}
+                  onClick={() => onEditor(path)}
+                >
+                  <ExternalLink size={15} />
+                </button>
+                <button
+                  className="icon-button"
                   aria-label={`在 ${project} 新建终端`}
                   title="新建终端"
                   aria-haspopup="menu"
+                  data-terminal-location={path}
                   disabled={!running || busy}
                   onClick={(event) => {
                     setCollapsed((previous) => ({
@@ -182,9 +174,10 @@ export function WorkspaceSidebar({
                     onNewTerminal(path, event.currentTarget);
                   }}
                 >
-                  <Plus size={15} />
+                  <SquareTerminal size={15} />
                 </button>
               </div>
+              {terminalMenuAt(path)}
               <div
                 className={`project-children ${expanded ? "expanded" : ""}`}
                 inert={!expanded}
@@ -203,12 +196,11 @@ export function WorkspaceSidebar({
                       onRename={onRename}
                       onPin={onPin}
                       onReorder={onReorder}
+                      splitDrag={splitDrag}
                     />
                   )}
-                  {!terminals.length && (
-                    <p className="sidebar-empty">
-                      {running ? "点击 + 新建终端" : "启动后可新建终端"}
-                    </p>
+                  {!terminals.length && !running && (
+                    <p className="sidebar-empty">启动后可新建终端</p>
                   )}
                 </div>
               </div>

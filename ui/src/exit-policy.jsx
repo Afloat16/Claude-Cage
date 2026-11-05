@@ -1,3 +1,4 @@
+import { InlineSelect } from "./inline-select";
 import React from "react";
 import { Globe2, LoaderCircle } from "lucide-react";
 import { canonicalExitPolicy } from "./safety-state.mjs";
@@ -65,36 +66,36 @@ export function ExitPolicyFields({
         <>
           <label>
             动态 IP 的允许范围
-            <select
+            <InlineSelect
+              aria-label="动态 IP 的允许范围"
               value={policy.scope}
-              onChange={(e) => update("scope", e.target.value)}
+              onValueChange={(next) => update("scope", next)}
             >
               <option value="city">同一城市</option>
               <option value="country">同一国家／地区</option>
               <option value="any">不限地区</option>
-            </select>
+            </InlineSelect>
           </label>
           {policy.scope !== "any" && (
             <>
               <label>
                 允许的国家／地区代码
-                <input
-                  list="cage-country-codes"
+                <InlineSelect editable
+                  aria-label="允许的国家／地区代码"
                   value={policy.country_code}
-                  onChange={(e) =>
-                    update("country_code", e.target.value.toUpperCase())
+                  onValueChange={(next) =>
+                    update("country_code", next.toUpperCase())
                   }
                   placeholder="例如 US；留空则在首次保存时绑定"
                   maxLength={2}
                   spellCheck="false"
-                />
-                <datalist id="cage-country-codes">
+                >
                   {countries.map((code) => (
                     <option key={code} value={code}>
                       {names.of(code)}
                     </option>
                   ))}
-                </datalist>
+                </InlineSelect>
               </label>
               {policy.scope === "city" && (
                 <div className="field-row">

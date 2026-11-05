@@ -1,4 +1,4 @@
-import { terminalModifier } from "./platform.mjs";
+import { isMac, terminalModifier } from "./platform.mjs";
 import React, {
   useEffect,
   useRef,
@@ -21,7 +21,7 @@ import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import "@xterm/xterm/css/xterm.css";
 
 export const RemoteView = forwardRef(function RemoteView(
-  { visible, keyboard, tabId, onStatus, onFallback, desktop = false, zoom = 1 },
+  { visible, focused = true, keyboard, tabId, copyScope = tabId, onStatus, onFallback, desktop = false, zoom = 1 },
   ref,
 ) {
   const windowVisible = useWindowVisibility();
@@ -31,12 +31,13 @@ export const RemoteView = forwardRef(function RemoteView(
     input = useRef(),
     current = useRef({ visible, keyboard, onStatus, onFallback }),
     displayResize = useRef();
-  current.current = { visible: screenVisible, keyboard, tabId, onStatus, onFallback, zoom };
+  current.current = { visible: screenVisible && focused, keyboard, tabId, onStatus, onFallback, zoom };
   const failures = useRef(0);
   const [connection, setConnection] = useState("connecting"),
     [attempt, setAttempt] = useState(0),
     [sizeError, setSizeError] = useState(false);
   useEffect(() => { displayResize.current?.update(); }, [zoom]);
+  useEffect(() => { input.current?.cancelCopy(); }, [copyScope]);
   useImperativeHandle(ref, () => ({
     focus: () => rfb.current?.focus(),
     edit: (action) =>
@@ -44,6 +45,7 @@ export const RemoteView = forwardRef(function RemoteView(
         ? input.current?.edit(action)
         : false,
     copy: () => input.current?.copy(),
+    receiveCopy: (value) => input.current?.receiveCopy(value),
     paste: () => input.current?.readAndPaste(),
     pasteText: (text) => input.current?.paste(text),
     transfer: () =>
@@ -98,6 +100,17 @@ export const RemoteView = forwardRef(function RemoteView(
           resizeObserver.observe(box.current);
           resize();
           input.current = installRemoteInput(client, box.current, {
+            setCopyContext: desktop ? undefined : (context, valid) => client.cageRunInput(async () => {
+              if (!valid()) return;
+              try { await api("/browser/copy-context", { id: current.current.tabId, context }); }
+              catch {
+                if (valid()) {
+                  input.current?.cancelCopy();
+                  current.current.onStatus("复制按钮同步暂未就绪，可使用复制快捷键或文本传递");
+                }
+                // A metadata failure must not cancel the user's queued click.
+              }
+            }),
             pasteContent: (content) => {
               const id = current.current.tabId;
               const valid = () => !disposed && current.current.visible && current.current.tabId === id;
@@ -139,7 +152,7 @@ export const RemoteView = forwardRef(function RemoteView(
             onStatus: (t) => current.current.onStatus(t),
             onFallback: (...args) => current.current.onFallback(...args),
           });
-          if (current.current.visible) client.focus();
+          if (current.current.visible && !document.activeElement?.closest(".chrome")) client.focus();
         });
         client.addEventListener("disconnect", () => {
           if (disposed) return;
@@ -170,11 +183,11 @@ export const RemoteView = forwardRef(function RemoteView(
     };
   }, [attempt, screenVisible, desktop]);
   useEffect(() => {
-    if (screenVisible && connection === "connected") {
-      const t = setTimeout(() => rfb.current?.focus(), 80);
+    if (focused && screenVisible && connection === "connected") {
+      const t = setTimeout(() => { if (!document.activeElement?.closest(".chrome")) rfb.current?.focus(); }, 80);
       return () => clearTimeout(t);
     }
-  }, [screenVisible, connection]);
+  }, [focused, screenVisible, connection]);
   return (
     <div className={`remote-view ${visible ? "" : "concealed"}`}>
       <div className="remote-canvas" ref={box} />
@@ -205,7 +218,7 @@ export const RemoteView = forwardRef(function RemoteView(
   );
 });
 
-export function TerminalView({ session, visible, onStatus, onControls }) {
+export function TerminalView({ session, visible, focused = true, onStatus, onControls }) {
   const { appearance, theme, variant } = useAppearance();
   const box = useRef(),
     instance = useRef(),
@@ -215,6 +228,8 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
     [attempt, setAttempt] = useState(0);
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
+  const focusedRef = useRef(focused);
+  focusedRef.current = focused;
   useEffect(() => {
     let disposed = false, emittingPaste = false, inputChain = Promise.resolve();
     const enqueue = (action) => {
@@ -229,6 +244,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       fontSize: appearance.codeFontSize,
       lineHeight: 1.3,
       cursorBlink: true,
+      macOptionClickForcesSelection: true,
       minimumContrastRatio: 4.5,
       scrollback: 6000,
       theme: terminalTheme(theme, variant),
@@ -260,7 +276,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
     ws.onopen = () => {
       setConnected(true);
       resize();
-      if (visibleRef.current) terminal.focus();
+      if (visibleRef.current && focusedRef.current) terminal.focus();
     };
     ws.onmessage = (event) => terminal.write(new Uint8Array(event.data));
     ws.onclose = () => setConnected(false);
@@ -279,17 +295,17 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       void enqueue(async () => {
         const { value, error } = await ready;
         if (error) throw error;
-        if (disposed || !visibleRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
+        if (disposed || !visibleRef.current || !focusedRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
         let text = value.text || "";
         if (value.files || value.fileSelection) {
-          const result = await sendFiles(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && ws.readyState === WebSocket.OPEN });
+          const result = await sendFiles(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && focusedRef.current && ws.readyState === WebSocket.OPEN });
           text = shellFilePaths(result.paths);
         }
         if (value.png) {
           const result = await sendImage(value, "terminal", session.id);
           text = `'${result.path}' `;
         }
-        if (disposed || !visibleRef.current) throw new Error("终端已切换，请回到原终端重新粘贴");
+        if (disposed || !visibleRef.current || !focusedRef.current) throw new Error("终端已切换，请回到原终端重新粘贴");
         // Honor xterm's bracketed-paste mode without enqueuing behind this job.
         emittingPaste = true;
         try { terminal.paste(text); } finally { emittingPaste = false; }
@@ -317,14 +333,23 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
     host.addEventListener("paste", onPaste, true);
     host.addEventListener("dragover", onDragOver);
     host.addEventListener("drop", onDrop);
+    const copySelection = () => {
+      const text = terminal.getSelection();
+      if (!text) {
+        onStatus(terminal.modes.mouseTrackingMode === "none"
+          ? "请先拖选要复制的终端文字"
+          : `当前程序接管了鼠标。请按住 ${isMac ? "Option" : "Shift"} 拖选文字，再复制。`);
+        return;
+      }
+      void writeClipboard(text)
+        .then(() => onStatus("已复制终端选中文本"))
+        .catch(() => onStatus("无法写入本机剪贴板"));
+    };
     onControls?.({
       edit(action) {
         if (!box.current?.contains(document.activeElement)) return false;
         if (action === "copy") {
-          if (terminal.hasSelection())
-            void writeClipboard(terminal.getSelection()).catch(() =>
-              onStatus("无法写入本机剪贴板"),
-            );
+          copySelection();
           return true;
         }
         if (action === "paste") {
@@ -343,10 +368,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       const key = event.key.toLowerCase();
       if (key === "c") {
         event.preventDefault();
-        if (terminal.hasSelection())
-          writeClipboard(terminal.getSelection())
-            .then(() => onStatus("已复制终端选中文本"))
-            .catch(() => onStatus("请使用右键菜单复制选中文本"));
+        copySelection();
         return false;
       }
       if (key === "v") {
@@ -389,13 +411,13 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
   useEffect(() => {
     if (visible) {
       fit.current?.fit();
-      instance.current?.focus();
+      if (focused) instance.current?.focus();
       const ws = socket.current,
         t = instance.current;
       if (ws?.readyState === WebSocket.OPEN && t)
         ws.send(JSON.stringify({ type: "resize", cols: t.cols, rows: t.rows }));
     }
-  }, [visible]);
+  }, [visible, focused]);
   useEffect(() => {
     if (!instance.current) return;
     instance.current.options.theme = terminalTheme(theme, variant);
@@ -409,7 +431,7 @@ export function TerminalView({ session, visible, onStatus, onControls }) {
       {!connected && (
         <div className="terminal-note">
           {session.closed
-            ? "终端会话已结束。可从项目旁的 + 新建终端。"
+            ? "终端会话已结束。可点击项目右侧的终端图标新建终端。"
             : "正在连接终端…"}
           {!session.closed && (
             <button onClick={() => setAttempt((v) => v + 1)}>
@@ -440,6 +462,7 @@ export function Modal({ title, children, onClose, wide = false, footer }) {
       )
         return;
       if (e.key === "Escape") {
+        if (e.target.closest('[role="combobox"][aria-expanded="true"]')) return;
         e.preventDefault();
         e.stopPropagation();
         closeRef.current?.();

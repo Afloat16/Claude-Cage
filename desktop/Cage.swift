@@ -39,6 +39,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     }
 
     static func main() {
+        CageProfile.pinEnvironment()
         NSSetUncaughtExceptionHandler { exception in CageDiagnostics.record("Uncaught native exception: \(exception.name.rawValue): \(exception.reason ?? "")\n\(exception.callStackSymbols.joined(separator: "\n"))") }
         let app = NSApplication.shared
         let delegate = CageApp()

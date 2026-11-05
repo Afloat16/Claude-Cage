@@ -46,6 +46,7 @@ type Server struct {
 	guestUpdateError                                 string
 	closing                                          bool
 	shutdown                                         func()
+	claudeAccounts                                   claudeAccountManager
 	favoritesMu                                      sync.Mutex
 	diagnosticMu                                     sync.Mutex
 	diagnosticRateMu                                 sync.Mutex
@@ -222,6 +223,11 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/diagnostics", s.diagnosticStatus)
 	mux.HandleFunc("POST /api/diagnostics/events", s.diagnosticEvent)
 	mux.HandleFunc("GET /api/diagnostics/export", s.diagnosticExport)
+	mux.HandleFunc("GET /api/claude-accounts", s.listClaudeAccounts)
+	mux.HandleFunc("POST /api/claude-accounts", s.mutateClaudeAccounts)
+	mux.HandleFunc("GET /api/vault", s.vaultList)
+	mux.HandleFunc("POST /api/vault", s.vaultMutation)
+	mux.HandleFunc("POST /api/vault/browser", s.vaultBrowser)
 	mux.HandleFunc("GET /api/account", s.accountStatus)
 	mux.HandleFunc("POST /api/account/{action}", s.accountAction)
 	mux.HandleFunc("GET /api/settings", s.getSettings)

@@ -22,6 +22,46 @@ enum UpdatesTests {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("cage-updates-test-" + UUID().uuidString)
         try CageUpdateFiles.privateDirectory(root)
         defer { try? FileManager.default.removeItem(at: root) }
+        do {
+            let saved = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"]
+            let directory = FileManager.default.currentDirectoryPath
+            defer {
+                _ = FileManager.default.changeCurrentDirectoryPath(directory)
+                if let saved { setenv("CLAUDE_CAGE_CONFIG", saved, 1) } else { unsetenv("CLAUDE_CAGE_CONFIG") }
+            }
+            setenv("CLAUDE_CAGE_CONFIG", "", 1)
+            try expect(CageProfile.configURL() == FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/config.json"), "empty profile agrees with backend default")
+            try expect(FileManager.default.changeCurrentDirectoryPath(root.path), "enter isolated launch directory")
+            let launchDirectory = FileManager.default.currentDirectoryPath
+            setenv("CLAUDE_CAGE_CONFIG", "selected profile/config.json", 1)
+            CageProfile.pinEnvironment()
+            let pinned = CageProfile.configURL()
+            try expect(pinned.path == launchDirectory + "/selected profile/config.json", "relative profile pinned at launch")
+            try expect(FileManager.default.changeCurrentDirectoryPath(directory), "simulate helper working directory")
+            try expect(CageProfile.configURL() == pinned, "helper keeps original profile after cwd changes")
+            let inherited = try CageUpdateFiles.run("/bin/sh", ["-c", "printf '%s' \"$CLAUDE_CAGE_CONFIG\""])
+            try expect(String(data: inherited, encoding: .utf8) == pinned.path, "actual child process inherits absolute profile")
+        }
+        let personalFiles = [
+            "account.json", "favorites.json", "projects.json", "appearance.json", "workbench.json",
+            "state/lima/persistent/disk", "webview/data/Local Storage/leveldb/000001.log",
+            "workspace/project.txt"
+        ]
+        let profile = root.appendingPathComponent("profile")
+        var personalData: [String: Data] = [:]
+        for name in personalFiles {
+            let file = profile.appendingPathComponent(name)
+            try CageUpdateFiles.privateDirectory(file.deletingLastPathComponent())
+            let bytes = Data("Keep \(name): 历史、收藏和登录状态\n\0".utf8)
+            try CageUpdateFiles.write(bytes, to: file)
+            personalData[name] = bytes
+        }
+        func verifyPersonalData() throws {
+            for (name, expected) in personalData {
+                let actual = try Data(contentsOf: profile.appendingPathComponent(name))
+                try expect(actual == expected, "application replacement or rollback changed personal data: \(name)")
+            }
+        }
         // Exercise the production lipo invocation against a real Mach-O binary.
         // lipo consumes every argument after -verify_arch as an architecture.
         try CageUpdateFiles.verifyArchitecture(URL(fileURLWithPath: CommandLine.arguments[0]))
@@ -46,7 +86,9 @@ enum UpdatesTests {
             let marker = try String(contentsOf: $0.appendingPathComponent("marker"), encoding: .utf8)
             try expect(marker == "new", "new content reaches final install path")
         }
+        try verifyPersonalData()
         try CageUpdateFiles.restore(backup: backup, target: old, manager: .default)
+        try verifyPersonalData()
         let restored = try String(contentsOf: old.appendingPathComponent("marker"), encoding: .utf8)
         try expect(restored == "old", "launch failure can restore original")
         try CageUpdateFiles.privateDirectory(next)
@@ -56,6 +98,7 @@ enum UpdatesTests {
         }
         let rollback = try String(contentsOf: old.appendingPathComponent("marker"), encoding: .utf8)
         try expect(rollback == "old", "failed validation leaves original installed")
+        try verifyPersonalData()
         try CageUpdateFiles.privateDirectory(next)
         try Data("invalid-after-replace".utf8).write(to: next.appendingPathComponent("marker"))
         var replaced = false
@@ -70,6 +113,7 @@ enum UpdatesTests {
         let retainedBackup = try String(contentsOf: backup.appendingPathComponent("marker"), encoding: .utf8)
         try expect(failedTarget == "invalid-after-replace" && retainedBackup == "old", "double failure must retain the original backup and report the changed target")
         try CageUpdateFiles.restore(backup: backup, target: old, manager: .default)
+        try verifyPersonalData()
         try rejects("unsigned application refused") { _ = try CageUpdateFiles.signingInfo(old, bundle: true) }
 
         // A real child that ignores SIGTERM must not keep cancellation pending.
@@ -137,6 +181,6 @@ enum UpdatesTests {
             try rejects("real signature tampering refused") { _ = try CageUpdateFiles.signingInfo(tampered, bundle: true, expectedTeam: team) }
             print("PASS: real App architecture and Developer ID signature, wrong publisher, and tampered App checks")
         }
-        print("PASS: versions, private files, containment, replacement/double-failure rollback, process cancellation, and temporary image cleanup")
+        print("PASS: absolute profile inheritance, personal data preservation, versions, containment, replacement/double-failure rollback, process cancellation, and temporary image cleanup")
     }
 }

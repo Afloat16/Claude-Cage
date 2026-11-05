@@ -21,6 +21,8 @@ const settings = async () => {
 const tabs = () => page.getByRole("tablist", { name: "浏览器标签页" });
 try {
   await shot("main");
+  const navigation = page.getByRole("navigation", { name: "主导航" });
+  assert.equal(await navigation.getByRole("button", { name: /打开项目|项目文件/ }).count(), 0);
   await page
     .getByRole("button", { name: "启动 Cage 环境", exact: true })
     .click();
@@ -28,8 +30,7 @@ try {
     .getByRole("heading", { name: "Cage 环境已就绪", exact: true })
     .waitFor();
   await page
-    .getByRole("navigation", { name: "主导航" })
-    .getByRole("button", { name: /^打开项目/ })
+    .getByRole("button", { name: "添加项目", exact: true })
     .click();
   await page.getByRole("button", { name: "添加本机项目…", exact: true }).click();
   await page.waitForFunction(
@@ -96,10 +97,27 @@ try {
     .getByRole("button", { name: "新建终端", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
-  await page.getByRole("button", { name: "管理 终端 1", exact: true }).click();
-  await page.getByRole("menuitem", { name: "重命名标签" }).click();
+  const terminalHeader = page.locator("header.chrome");
+  assert.equal(await terminalHeader.locator(".navigation-row").count(), 0);
+  assert.equal(await terminalHeader.getByRole("button", { name: "新建终端", exact: true }).count(), 1);
+  assert.equal(await terminalHeader.getByRole("button", { name: "design-lab", exact: true }).getAttribute("title"), state.chosenFolder);
+  const terminalTab = page.getByRole("tab", { name: "终端 1", exact: true });
+  const actions = page.getByRole("group", { name: "终端 1 的操作", exact: true });
+  await terminalTab.hover();
+  await actions.waitFor();
+  await page.getByRole("button", { name: "工作台", exact: true }).hover();
+  await actions.waitFor({ state: "hidden" });
+  await terminalTab.focus();
+  await page.keyboard.press("Tab");
+  assert.equal(await page.locator(":focus").getAttribute("aria-label"), "置顶");
+  await page.keyboard.press("Enter");
+  await actions.getByRole("button", { name: "取消置顶", exact: true }).click();
+  const renameButton = actions.getByRole("button", { name: "重命名", exact: true });
+  await renameButton.hover();
+  await actions.getByText("重命名", { exact: true }).waitFor();
+  await renameButton.click();
   await page.getByLabel("标签名称").fill("开发终端");
   await page.getByRole("button", { name: "保存名称" }).click();
   await page.getByRole("tab", { name: "开发终端" }).waitFor();
@@ -114,7 +132,7 @@ try {
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "置顶标签", exact: true }).click();
   assert.equal(await tabs().getByRole("tab").first().innerText(), "本地预览");
-  await page.getByRole("button", { name: "项目文件", exact: true }).click();
+  await page.getByRole("button", { name: "打开 design-lab 的编辑器", exact: true }).click();
   await page
     .getByRole("tab", { name: "文件 · design-lab", exact: true })
     .waitFor();
@@ -256,8 +274,7 @@ try {
   await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "放弃修改", exact: true }).click();
   await page
-    .getByRole("navigation", { name: "主导航" })
-    .getByRole("button", { name: /^打开项目/ })
+    .getByRole("button", { name: "添加项目", exact: true })
     .click();
   await page.getByRole("button", { name: "添加本机项目…", exact: true }).click();
   await page
@@ -281,7 +298,7 @@ try {
   await page
     .getByRole("button", { name: "在 another-project 新建终端", exact: true })
     .click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page
     .getByRole("region", { name: "项目 another-project", exact: true })
     .getByRole("tab", { name: "终端 2", exact: true })
@@ -293,7 +310,7 @@ try {
   await page
     .getByRole("button", { name: "在 design-lab 新建终端", exact: true })
     .click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page
     .getByRole("region", { name: "项目 design-lab", exact: true })
     .getByRole("tab", { name: "终端 3", exact: true })
@@ -310,14 +327,30 @@ try {
     3,
   );
   assert.equal(await tabs().getByRole("tab").count(), 2);
-  await page.getByRole("button", { name: "项目文件", exact: true }).click();
+  await page.getByRole("button", { name: "打开 another-project 的编辑器", exact: true }).click();
+  await tabs().getByRole("tab", { name: "文件 · another-project", exact: true }).waitFor();
+  await page.getByRole("button", { name: "打开 design-lab 的编辑器", exact: true }).click();
   await tabs()
     .getByRole("tab", { name: "文件 · design-lab", exact: true })
     .waitFor();
-  assert.equal(state.tabs.filter((tab) => tab.kind === "editor").length, 1);
+  assert.equal(state.tabs.filter((tab) => tab.kind === "editor").length, 2);
+  assert.equal(state.tabs.find((tab) => tab.id === state.active)?.workspace, state.chosenFolder);
   checks.push(
     "两个项目终端各自归组、指定目录新建不受最后打开项目影响、浏览器与终端保持运行",
   );
+  const deleteTab = page.getByRole("tab", { name: "终端 3", exact: true });
+  const remove = page.getByRole("group", { name: "终端 3 的操作" }).getByRole("button", { name: "删除" });
+  await deleteTab.hover();
+  await remove.click();
+  const confirmClose = page.getByRole("dialog", { name: "关闭这个终端会话？" });
+  await confirmClose.getByRole("button", { name: "取消" }).click();
+  assert.equal(state.terminals.length, 3);
+  await deleteTab.hover();
+  await remove.click();
+  await confirmClose.getByRole("button", { name: "关闭终端" }).click();
+  await deleteTab.waitFor({ state: "detached" });
+  assert.equal(state.terminals.length, 2);
+  checks.push("终端行悬停展开、键盘置顶、重命名、取消和确认删除指定终端");
   await page.getByRole("button", { name: "工作台", exact: true }).click();
   await shot("main-minimum");
   await page.getByRole("button", { name: "收起侧栏", exact: true }).click();

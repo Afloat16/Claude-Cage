@@ -1,10 +1,14 @@
 package workbench
 
 import (
+	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os/exec"
 	"sync"
+	"time"
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/vmname"
@@ -19,8 +23,9 @@ var (
 )
 
 type terminalRequest struct {
-	Workspace string `json:"workspace"`
-	Kind      string `json:"kind"`
+	Workspace       string `json:"workspace"`
+	Kind            string `json:"kind"`
+	ClaudeAccountID string `json:"claude_account_id"`
 }
 
 // terminalManager owns host PTYs; subscriptions only borrow their output. The
@@ -34,7 +39,7 @@ type terminalManager struct {
 	workers  sync.WaitGroup
 }
 
-func (m *terminalManager) start(cmd *exec.Cmd, workspace, kind string) (*terminalSession, error) {
+func (m *terminalManager) startSession(cmd *exec.Cmd, workspace, kind string, selection claudeSelection, finished func()) (*terminalSession, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err := m.admissionErrorLocked(); err != nil {
@@ -48,15 +53,29 @@ func (m *terminalManager) start(cmd *exec.Cmd, workspace, kind string) (*termina
 	title := fmt.Sprintf("终端 %d", m.sequence)
 	if kind == "claude" {
 		title = fmt.Sprintf("Claude %d", m.sequence)
+	} else if kind == "claude-login" {
+		title = "Claude 账号登录"
 	}
 	session := newTerminalSession(file)
 	session.id, session.title, session.workspace, session.cmd = randomToken()[:16], title, workspace, cmd
+	session.kind, session.claudeAccountID = kind, selection.ID
+	if selection.GuestID == "default" {
+		session.claudeAccountSource = "default"
+	} else if selection.ID != "" {
+		session.claudeAccountSource = "managed"
+	}
 	if m.sessions == nil {
 		m.sessions = make(map[string]*terminalSession)
 	}
 	m.sessions[session.id] = session
 	m.workers.Add(1)
-	go func() { defer m.workers.Done(); session.run() }()
+	go func() {
+		defer m.workers.Done()
+		session.run()
+		if finished != nil {
+			finished()
+		}
+	}()
 	return session, nil
 }
 
@@ -113,13 +132,40 @@ func (m *terminalManager) get(id string) *terminalSession {
 	return m.sessions[id]
 }
 
+// Reattaching a repeated login request must not create a second OAuth flow.
+// A profile can serve many normal terminals or a single exclusive login.
+func (m *terminalManager) existingClaudeLogin(id string, login bool) (*terminalSession, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, session := range m.sessions {
+		if session.claudeAccountID != id {
+			continue
+		}
+		select {
+		case <-session.done:
+			continue
+		default:
+		}
+		if session.kind == "claude-login" && login {
+			return session, nil
+		}
+		if login || session.kind == "claude-login" {
+			return nil, errors.New("请先结束此账号的登录或运行中的终端，再更改登录身份")
+		}
+	}
+	return nil, nil
+}
+
 func (m *terminalManager) remove(id string) {
 	m.mu.Lock()
 	session := m.sessions[id]
-	delete(m.sessions, id)
 	m.mu.Unlock()
 	if session != nil {
+		// Keep its Claude account reserved until the old PTY has exited.
 		session.close()
+		m.mu.Lock()
+		delete(m.sessions, id)
+		m.mu.Unlock()
 	}
 }
 
@@ -143,8 +189,7 @@ func (m *terminalManager) close() {
 	m.closed = true
 	m.mu.Unlock()
 	m.closeAll()
-	// A remove may already have taken a session out of the map while its
-	// process is still exiting. Admission is sealed, so waiting is safe.
+	// The final login-status observation also belongs to the session worker.
 	m.workers.Wait()
 }
 
@@ -155,6 +200,7 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 	defer s.op.Unlock()
 	s.mu.Lock()
 	closing := s.closing
+	componentUpdate := s.guestUpdateRequired
 	command := claudeTerminalCommand(s.preferences)
 	s.mu.Unlock()
 	if closing {
@@ -165,20 +211,131 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 	}
 	// Reject a full manager before opening project shares. start checks again
 	// atomically with process publication because shutdown can race this work.
-	if err := s.terminals.canStart(); err != nil {
-		return nil, err
+	if input.Kind != "claude-login" {
+		if err := s.terminals.canStart(); err != nil {
+			return nil, err
+		}
 	}
-	if input.Kind != "" && input.Kind != "shell" && input.Kind != "claude" {
+	if input.Kind != "" && input.Kind != "shell" && input.Kind != "claude" && input.Kind != "claude-login" {
 		return nil, errors.New("终端类型无效")
 	}
-	workspace, err := s.connectProject(input.Workspace, false)
-	if err != nil {
-		return nil, err
+	managed := input.Kind == "claude" || input.Kind == "claude-login"
+	if !managed && input.ClaudeAccountID != "" {
+		return nil, errors.New("普通终端不能指定 Claude 账号")
+	}
+	// Login works even when the last project is disconnected or has moved.
+	// It always runs from the guest home, without loading project settings.
+	workspace := s.workspace()
+	var err error
+	if input.Kind != "claude-login" {
+		workspace, err = s.connectProject(input.Workspace, false)
+		if err != nil {
+			return nil, err
+		}
 	}
 	name := vmname.Name(s.environmentDir())
 	script := terminalScript(guestPath(workspace), input.Kind, command)
+	var selection claudeSelection
+	var finished func()
+	if managed {
+		login := input.Kind == "claude-login"
+		selection, err = s.selectClaudeAccount(input.ClaudeAccountID, login, workspace)
+		if err != nil {
+			return nil, err
+		}
+		if selection.ID != "" {
+			if componentUpdate {
+				return nil, errGuestUpdateRequired
+			}
+			if !validClaudeID(selection.ID) || !validClaudeGuestID(selection.GuestID) || (login && selection.GuestID == "default") {
+				return nil, errors.New("Claude 账号 ID 无效")
+			}
+			if existing, conflict := s.terminals.existingClaudeLogin(selection.ID, login); existing != nil || conflict != nil {
+				return existing, conflict
+			}
+			if !login && selection.Subject == "" {
+				return nil, errors.New("Claude 账号状态已变化，请重试")
+			}
+			script = managedClaudeTerminalScript(guestPath(workspace), command, selection.GuestID, selection.Subject, login)
+			if login {
+				finished = func() {
+					ctx, cancel := context.WithTimeout(s.lifetimeContext(), 12*time.Second)
+					defer cancel()
+					_ = s.confirmClaudeLogin(ctx, selection.ID)
+				}
+			}
+		}
+	}
 	cmd := s.sshCommand(s.lifetimeContext(), "-tt", "lima-"+name, "--", script)
-	return s.terminals.start(cmd, workspace, input.Kind)
+	session, err := s.terminals.startSession(cmd, workspace, input.Kind, selection, finished)
+	if err == nil && input.Kind == "claude" && selection.ID != "" {
+		s.noteClaudeSelection(selection.ID, workspace)
+	}
+	return session, err
+}
+
+func validClaudeGuestID(id string) bool { return id == "default" || validClaudeID(id) }
+
+func (s *Server) readClaudeGuestSnapshot(ctx context.Context, id string) (claudeGuestSnapshot, error) {
+	return s.readClaudeGuestReport(ctx, id, claudeSnapshotCommand(id))
+}
+
+func (s *Server) readClaudeGuestUsage(ctx context.Context, id, subject string) (claudeGuestSnapshot, error) {
+	if _, err := hex.DecodeString(subject); err != nil || len(subject) != 64 {
+		return claudeGuestSnapshot{}, errors.New("Claude 账号身份无效")
+	}
+	return s.readClaudeGuestReport(ctx, id, claudeGuestReportCommand(id, subject))
+}
+
+func (s *Server) readClaudeGuestReport(ctx context.Context, id, command string) (claudeGuestSnapshot, error) {
+	var snapshot claudeGuestSnapshot
+	if !validClaudeGuestID(id) {
+		return snapshot, errors.New("Claude 账号 ID 无效")
+	}
+	data, err := s.guest(ctx, command)
+	if err != nil || json.Unmarshal(data, &snapshot) != nil {
+		return snapshot, errors.New("无法读取账号状态，请确认环境已启动并同步环境组件")
+	}
+	return snapshot, nil
+}
+
+func claudeSnapshotCommand(id string) string {
+	return claudeGuestReportCommand(id, "")
+}
+
+func claudeGuestReportCommand(id, subject string) string {
+	command := "exec /usr/local/bin/cage-claude-account snapshot " + id
+	if subject != "" {
+		command = "exec /usr/local/bin/cage-claude-account usage " + id + " " + shellescape.Quote(subject)
+	}
+	if id == "default" {
+		// Use the same login shell a regular terminal opens, including its
+		// configured API/provider environment. Isolate startup banners from
+		// the JSON output and keep the probe outside every shared project.
+		command = `set -o pipefail; cd "$HOME" && env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 /bin/bash -lic ` +
+			shellescape.Quote(`printf '\nCAGE_CLAUDE_SNAPSHOT '; `+command) +
+			` | sed -n 's/^CAGE_CLAUDE_SNAPSHOT //p'`
+	}
+	return command
+}
+
+func managedClaudeTerminalScript(workspace, command, accountID, subject string, login bool) string {
+	if login {
+		return "cd \"$HOME\" && exec /usr/local/bin/cage-claude-account login " + shellescape.Quote(accountID)
+	}
+	// The interactive shell still interprets the user's saved command and
+	// remains useful when Claude exits. The shim scopes subsequent invocations
+	// in this shell to the same official CLI profile.
+	env := `export CAGE_CLAUDE_ACCOUNT_ID=` + shellescape.Quote(accountID) +
+		` CAGE_CLAUDE_SUBJECT=` + shellescape.Quote(subject) + "; "
+	if accountID != "default" {
+		env += `export CLAUDE_CONFIG_DIR="$HOME/.local/share/cage/claude-accounts/$CAGE_CLAUDE_ACCOUNT_ID/config"; `
+	}
+	env += `export PATH="/usr/local/lib/cage-claude-bin:$PATH"; `
+	body := env + `eval "$CAGE_TERMINAL_COMMAND"; unset CAGE_TERMINAL_COMMAND; exec bash -i`
+	return "cd " + shellescape.Quote(workspace) +
+		" && exec env TERM=xterm-256color COLORTERM=truecolor CAGE_WORKBENCH=1 CAGE_TERMINAL_COMMAND=" +
+		shellescape.Quote(command) + " bash -lic " + shellescape.Quote(body)
 }
 
 // The saved command is interpreted only by the guest's interactive shell.

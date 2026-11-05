@@ -17,23 +17,26 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 		t.Skip("node unavailable")
 	}
 	for _, tc := range []struct {
-		name, url, path string
-		fail            bool
+		name, url, path, login string
+		fail                   bool
 	}{
-		{"callback", "claude://login?code=private-test-value", "/desktop-focus", false},
-		{"failed-callback", "claude://login?code=private-test-value", "", true},
-		{"web-link", "https://example.com/login", "/new", false},
+		{"callback", "claude://login?code=private-test-value", "/desktop-focus", "", false},
+		{"failed-callback", "claude://login?code=private-test-value", "", "", true},
+		{"web-link", "https://example.com/login", "/new", "", false},
+		{"cli-login", "https://claude.ai/oauth/authorize?state=private-test-value", "/login-open", "1234567890abcdef", false},
+		{"finish-cli-login", "--finish-login", "/login-finish", "1234567890abcdef", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			type request struct{ Path, Auth, URL string }
+			type request struct{ Path, Auth, URL, Login string }
 			requests := make(chan request, 2)
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				var body struct {
-					URL string `json:"url"`
+					URL   string `json:"url"`
+					Login string `json:"login"`
 				}
 				_ = json.NewDecoder(r.Body).Decode(&body)
-				requests <- request{r.URL.Path, r.Header.Get("Authorization"), body.URL}
+				requests <- request{r.URL.Path, r.Header.Get("Authorization"), body.URL, body.Login}
 				w.Write([]byte(`{"ok":true}`))
 			}))
 			defer server.Close()
@@ -54,7 +57,7 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 				code = "1"
 			}
 			cmd := exec.Command("sh", "-c", script, "cage-open", tc.url)
-			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "CALLBACK_EXIT="+code)
+			cmd.Env = append(os.Environ(), "PATH="+dir+":"+os.Getenv("PATH"), "TEST_NODE="+node, "CALLBACK_EXIT="+code, "CAGE_CLAUDE_LOGIN="+tc.login)
 			out, err := cmd.CombinedOutput()
 			if tc.fail {
 				if err == nil {
@@ -73,10 +76,10 @@ func TestDesktopCallbackFocusAfterHandoff(t *testing.T) {
 			select {
 			case r := <-requests:
 				wantURL := ""
-				if tc.path == "/new" {
+				if tc.path == "/new" || tc.path == "/login-open" {
 					wantURL = tc.url
 				}
-				if r.Path != tc.path || r.Auth != "Bearer test-only" || r.URL != wantURL {
+				if r.Path != tc.path || r.Auth != "Bearer test-only" || r.URL != wantURL || r.Login != tc.login {
 					t.Fatalf("unexpected request: %+v", r)
 				}
 			default:

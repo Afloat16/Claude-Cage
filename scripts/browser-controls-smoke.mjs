@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { once } from "node:events";
-import { mkdtemp, readFile, writeFile, copyFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile, copyFile, cp, rm } from "node:fs/promises";
 import http from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -95,10 +95,12 @@ try {
   assert.ok(source.includes(listen), "Update the isolated control-listener adapter");
   await writeFile(join(directory, "agent.mjs"), source
     .replaceAll("/home/cage-browser", directory)
+    .replaceAll("/usr/local/lib/cage-split", join(directory, "split-extension"))
     .replace("/etc/claude-cage/browser-control.json", join(directory, "control.json"))
     .replace(listen, 'server.listen(0, "127.0.0.1", () => console.log("CONTROL_PORT=" + server.address().port));'));
-  await copyFile(new URL("../internal/cage/browser-audit.mjs", import.meta.url), join(directory, "browser-audit.mjs"));
-  await copyFile(new URL("../internal/cage/browser-downloads.mjs", import.meta.url), join(directory, "browser-downloads.mjs"));
+  for (const name of ["browser-audit", "browser-downloads", "browser-uploads", "browser-login", "browser-vault", "browser-clipboard", "native-input"])
+    await copyFile(new URL(`../internal/cage/${name}.mjs`, import.meta.url), join(directory, `${name}.mjs`));
+  await cp(new URL("../internal/cage/split-extension", import.meta.url), join(directory, "split-extension"), { recursive: true });
   await writeFile(join(directory, "control.json"), JSON.stringify({ token, workspace: directory }));
   await writeFile(join(directory, "homepage.json"), JSON.stringify({ url: origin + "/first" }));
   await start();

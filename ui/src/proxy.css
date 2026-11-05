@@ -70,7 +70,7 @@
   opacity: 0.65;
   font-size: 12px;
 }
-.proxy-toolbar select {
+.proxy-toolbar .inline-select {
   max-width: 150px;
 }
 .settings-content label.proxy-search {
@@ -301,7 +301,7 @@
   .proxy-source {
     align-items: flex-start;
   }
-  .proxy-toolbar select {
+  .proxy-toolbar .inline-select {
     max-width: 120px;
   }
 }

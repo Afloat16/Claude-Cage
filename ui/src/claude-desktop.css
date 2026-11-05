@@ -8,11 +8,17 @@
 .claude-desktop-toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 4px 12px;
   border-bottom: 1px solid var(--line);
-  background: var(--chrome);
-  min-height: 55px;
+  background: var(--toolbar);
+  color: var(--toolbar-ink);
+  min-height: var(--workbench-header-height);
+}
+.claude-desktop-toolbar > strong {
+  font-size: 0.9286rem;
+  font-weight: 500;
 }
 .desktop-version,
 .desktop-note {
@@ -29,7 +35,17 @@
   color: var(--muted);
   font-size: 12px;
 }
-.desktop-display-size select {
+.desktop-display-size .inline-select {
+  position: relative;
+  width: 11.5em;
+}
+.desktop-display-size .inline-select-list {
+  position: absolute;
+  top: 100%;
+  inset-inline: 0;
+  z-index: 1;
+}
+.desktop-display-size .inline-select-trigger {
   width: auto;
   padding: 5px 7px;
   border: 1px solid var(--line);
@@ -40,7 +56,7 @@
 }
 @media (max-width: 900px) {
   .desktop-display-size { font-size: 0; }
-  .desktop-display-size select { font-size: 12px; }
+  .desktop-display-size .inline-select { font-size: 12px; }
 }
 .desktop-screen {
   position: relative;

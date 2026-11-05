@@ -28,7 +28,7 @@ try {
  await page.getByLabel('设置密码',{exact:true}).fill('fixture-password');
  await page.getByLabel('确认密码',{exact:true}).fill('fixture-password');
  await page.getByRole('button',{name:'创建本地账户',exact:true}).click();await menu().waitFor();
- await menu().click();await page.getByRole('menuitem',{name:'账户设置',exact:true}).click();
+ await menu().click();await page.getByRole('menuitem',{name:'设置',exact:true}).click();
  const automatic=page.getByRole('checkbox',{name:/记住登录/});
  const biometric=page.getByRole('checkbox',{name:/使用 Touch ID 解锁/});
  await page.waitForFunction(()=>document.querySelector('.account-device-settings input')?.checked);
@@ -39,9 +39,9 @@ try {
  // A genuine reopen keeps enrollment but starts with a locked server.
  state.account.unlocked=false;await page.reload();await menu().waitFor();
  assert.equal(calls.filter(x=>x.operation==='unlock'&&x.kind==='automatic').length,1);
- await menu().click();await page.getByRole('menuitem',{name:'账户设置',exact:true}).click();
+ await menu().click();await page.getByRole('menuitem',{name:'设置',exact:true}).click();
  await automatic.click();await page.getByRole('status').filter({hasText:'已关闭'}).waitFor();
- await page.reload();await menu().click();await page.getByRole('menuitem',{name:'账户设置',exact:true}).click();
+ await page.reload();await menu().click();await page.getByRole('menuitem',{name:'设置',exact:true}).click();
  assert.equal(await automatic.isChecked(),false,'explicit opt-out was overridden');
  await automatic.click();await page.getByRole('status').filter({hasText:'已开启'}).waitFor();
  await page.getByRole('button',{name:'返回工作台',exact:true}).click();

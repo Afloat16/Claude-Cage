@@ -10,6 +10,7 @@ final class CageUpdateInstaller: NSObject, NSApplicationDelegate {
     private var originalVersion = ""
 
     static func main() {
+        CageProfile.pinEnvironment()
         let app = NSApplication.shared
         let delegate = CageUpdateInstaller(); app.delegate = delegate
         app.setActivationPolicy(.accessory)

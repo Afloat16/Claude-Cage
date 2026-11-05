@@ -1,3 +1,4 @@
+import { InlineSelect } from "./inline-select";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -146,11 +147,11 @@ function ThemeCard({ variant, value, active, onChange }) {
       <div className="theme-card-heading">
         <strong>{label}</strong>
         {active && <small>当前使用</small>}
-        <select
+        <InlineSelect
           aria-label={label + "预设"}
           value={value.preset}
-          onChange={(e) =>
-            onChange(applyThemePreset(value, variant, e.target.value))
+          onValueChange={(next) =>
+            onChange(applyThemePreset(value, variant, next))
           }
         >
           {presetGroups.map((group) => (
@@ -169,7 +170,7 @@ function ThemeCard({ variant, value, active, onChange }) {
               {presetNames[value.preset] || "自定义"}
             </option>
           )}
-        </select>
+        </InlineSelect>
       </div>
       <div
         className="theme-miniature"
@@ -315,27 +316,35 @@ function ThemeCard({ variant, value, active, onChange }) {
           </label>
           <label>
             界面字体
-            <input
+            <InlineSelect editable
               aria-label={label + "界面字体"}
-              list="ui-fonts"
               value={value.fonts.ui}
               placeholder="系统默认"
-              onChange={(e) =>
-                patch({ fonts: { ...value.fonts, ui: e.target.value } })
+              onValueChange={(next) =>
+                patch({ fonts: { ...value.fonts, ui: next } })
               }
-            />
+            >
+              <option value="system-ui" />
+              <option value="PingFang SC" />
+              <option value="Helvetica Neue" />
+              <option value="Arial" />
+            </InlineSelect>
           </label>
           <label>
             代码字体
-            <input
+            <InlineSelect editable
               aria-label={label + "代码字体"}
-              list="code-fonts"
               value={value.fonts.code}
               placeholder="系统等宽字体"
-              onChange={(e) =>
-                patch({ fonts: { ...value.fonts, code: e.target.value } })
+              onValueChange={(next) =>
+                patch({ fonts: { ...value.fonts, code: next } })
               }
-            />
+            >
+              <option value="SF Mono" />
+              <option value="Menlo" />
+              <option value="Monaco" />
+              <option value="JetBrains Mono" />
+            </InlineSelect>
           </label>
           <label className="appearance-switch">
             <span>半透明侧栏</span>
@@ -509,12 +518,12 @@ function ThemeLibrary({ appearance, update, saving, onError }) {
         }}
       />
       <div className="theme-library-fields">
-        <select
+        <InlineSelect
           aria-label="已保存的主题"
           value={current?.id || ""}
           disabled={busy || saving}
-          onChange={(e) => {
-            const item = themes.find((theme) => theme.id === e.target.value);
+          onValueChange={(next) => {
+            const item = themes.find((theme) => theme.id === next);
             if (item) apply(item);
           }}
         >
@@ -527,7 +536,7 @@ function ThemeLibrary({ appearance, update, saving, onError }) {
               {item.id === current?.id && dirty ? " · 已修改" : ""}
             </option>
           ))}
-        </select>
+        </InlineSelect>
         <input
           aria-label="主题名称"
           placeholder="为当前配色命名"
@@ -733,15 +742,15 @@ export function AppearanceSettings() {
           </label>
         </SettingRow>
         <SettingRow label="减少动态效果">
-          <select
+          <InlineSelect
             aria-label="减少动态效果"
             value={appearance.reducedMotion}
-            onChange={(e) => patch({ reducedMotion: e.target.value })}
+            onValueChange={(next) => patch({ reducedMotion: next })}
           >
             <option value="system">跟随系统</option>
             <option value="on">开启</option>
             <option value="off">关闭</option>
-          </select>
+          </InlineSelect>
         </SettingRow>
         <div className="appearance-import">
           <div>
@@ -783,18 +792,6 @@ export function AppearanceSettings() {
           {syncError || error}
         </div>
       )}
-      <datalist id="ui-fonts">
-        <option value="system-ui" />
-        <option value="PingFang SC" />
-        <option value="Helvetica Neue" />
-        <option value="Arial" />
-      </datalist>
-      <datalist id="code-fonts">
-        <option value="SF Mono" />
-        <option value="Menlo" />
-        <option value="Monaco" />
-        <option value="JetBrains Mono" />
-      </datalist>
     </div>
   );
 }

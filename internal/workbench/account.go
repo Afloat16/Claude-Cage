@@ -38,6 +38,9 @@ func (s *Server) accountAction(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &input, 3<<20) {
 		return
 	}
+	s.account.mu.Lock()
+	vaultLease := s.account.vaultLease
+	s.account.mu.Unlock()
 	var err error
 	switch action {
 	case "create":
@@ -78,6 +81,9 @@ func (s *Server) accountAction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		requestError(w, err)
 		return
+	}
+	if action == "lock" || action == "suspend" {
+		s.clearBrowserVault(vaultLease)
 	}
 	s.accountStatus(w, r)
 }

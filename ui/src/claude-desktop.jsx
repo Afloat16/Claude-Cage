@@ -1,3 +1,4 @@
+import { InlineSelect } from "./inline-select";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -142,13 +143,13 @@ export function ClaudeDesktop({
         {desktop?.running && (
           <label className="desktop-display-size">
             显示大小
-            <select aria-label="Desktop 显示大小" value={zoom} onChange={(event) => {
-              const value = Number(event.target.value);
+            <InlineSelect aria-label="Desktop 显示大小" value={zoom} onValueChange={(next) => {
+              const value = Number(next);
               setZoom(value);
               try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
             }}>
               {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? "（默认）" : ""}</option>)}
-            </select>
+            </InlineSelect>
           </label>
         )}
         {desktop?.running && (

@@ -24,3 +24,4 @@ dist
 *.p8
 *.p12
 *.keychain-db
+/promo/out/

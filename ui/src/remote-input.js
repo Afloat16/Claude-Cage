@@ -11,7 +11,7 @@ import {
 export function installRemoteInput(
   rfb,
   container,
-  { mode, onStatus, onFallback, isActive, insertText, insertComposition, caretRect, tabId: getTargetId = () => "", pasteContent },
+  { mode, onStatus, onFallback, isActive, insertText, insertComposition, caretRect, tabId: getTargetId = () => "", pasteContent, setCopyContext },
 ) {
   const listeners = [],
     handled = new Set(),
@@ -19,6 +19,7 @@ export function installRemoteInput(
     remote = new Map();
   let lastText = "",
     copyRequested = false,
+    copyContext = "",
     copyTimer,
     pending = 0,
     composing = false,
@@ -51,6 +52,19 @@ export function installRemoteInput(
     isActive() &&
     (nativeOwned || container.contains(document.activeElement) ||
       document.activeElement === target);
+  const cancelCopy = () => {
+    copyContext = "";
+    copyRequested = false;
+    clearTimeout(copyTimer);
+  };
+  const prepareCopy = () => {
+    if (!setCopyContext || !isActive() || disposed) return;
+    copyContext = crypto.randomUUID().replaceAll("-", "");
+    const context = copyContext;
+    void setCopyContext(context, () => !disposed && isActive() && context === copyContext).catch(() => {
+      if (copyContext === context) cancelCopy();
+    });
+  };
   const deactivateNative = () => {
     const owner = nativeOwner;
     nativeOwned = false;
@@ -119,6 +133,7 @@ export function installRemoteInput(
         target.blur();
       }
       position(event.clientX, event.clientY);
+      if (event.isTrusted && event.button === 0) prepareCopy();
     },
     true,
   );
@@ -203,7 +218,14 @@ export function installRemoteInput(
     resetComposition();
   });
   on(document, "focusin", (event) => {
+    if (!container.contains(event.target)) cancelCopy();
     if (nativeOwned && !container.contains(event.target)) deactivateNative();
+  });
+  on(document, "pointerdown", (event) => {
+    if (!container.contains(event.target)) cancelCopy();
+  }, true);
+  on(document, "visibilitychange", () => {
+    if (document.visibilityState === "hidden") cancelCopy();
   });
   on(window, "cage-native-input", (event) => {
     const value = event.detail;
@@ -294,7 +316,7 @@ export function installRemoteInput(
   };
   on(rfb, "clipboard", async (event) => {
     lastText = event.detail.text;
-    if (!copyRequested) return;
+    if (!copyRequested || !isActive()) return;
     copyRequested = false;
     clearTimeout(copyTimer);
     try {
@@ -305,6 +327,7 @@ export function installRemoteInput(
     }
   });
   const release = () => {
+    cancelCopy();
     for (const [code, keysym] of remote) rfb.sendKey(keysym, code, false);
     remote.clear();
     physical.clear();
@@ -316,6 +339,8 @@ export function installRemoteInput(
     "keydown",
     (event) => {
       if (!focused()) return;
+      if (event.isTrusted && (!copyContext || ["Enter", " ", "Tab"].includes(event.key) ||
+          event.ctrlKey || event.metaKey || event.altKey)) prepareCopy();
       if (
         composing ||
         event.isComposing ||
@@ -478,6 +503,21 @@ export function installRemoteInput(
   });
   return {
     copy,
+    cancelCopy,
+    async receiveCopy({ id, text, context }) {
+      const valid = () => !disposed && Boolean(copyContext) && context === copyContext && id === getTargetId() && focused() &&
+        document.visibilityState !== "hidden" && document.hasFocus();
+      if (typeof text !== "string" || text.length > 65536 || !valid()) return;
+      lastText = text;
+      copyRequested = false;
+      clearTimeout(copyTimer);
+      try {
+        await writeClipboard(text);
+        if (valid()) say("已复制到本机");
+      } catch {
+        if (valid()) onFallback(text, "请在这里复制到本机。");
+      }
+    },
     readAndPaste,
     paste,
     text: () => lastText,

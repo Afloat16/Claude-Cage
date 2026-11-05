@@ -18,12 +18,14 @@ function fixture(native = false, browserComposition = false) {
     pastes = [],
     texts = [],
     compositions = [],
+    copyContexts = [],
     writes = [],
     statuses = [];
   let reads = 0,
     mode = "mac",
     currentTabId = "tab-1";
   doc.activeElement = canvas;
+  doc.hasFocus = () => true;
   doc.body = { append() {} };
   const target = Object.assign(new EventTarget(), {
     value: "",
@@ -79,19 +81,21 @@ function fixture(native = false, browserComposition = false) {
     },
   };
   const install = vm.runInNewContext(source + "\ninstallRemoteInput;", context);
-  const controller = install(
-    rfb,
-    Object.assign(new EventTarget(), {
+  const container = Object.assign(new EventTarget(), {
       querySelector: () => null,
       contains: (element) => element === canvas || element === target,
       append() {},
       getBoundingClientRect: () => ({ left: 0, top: 0 }),
-    }),
+    });
+  const controller = install(
+    rfb,
+    container,
     {
       mode: () => mode,
       onStatus: (t) => statuses.push(t),
       onFallback() {},
       isActive: () => true,
+      setCopyContext: async (context, valid) => { if (valid()) copyContexts.push(context); },
       insertText: async (text) => {
         texts.push(text);
       },
@@ -133,6 +137,13 @@ function fixture(native = false, browserComposition = false) {
     compositions,
     writes,
     statuses,
+    armCopy: () => {
+      const event = new Event("pointerdown");
+      Object.defineProperty(event, "isTrusted", { value: true });
+      Object.assign(event, { button: 0, clientX: 20, clientY: 20 });
+      container.dispatchEvent(event);
+      return copyContexts.at(-1);
+    },
     controller,
     key,
     local,
@@ -384,6 +395,80 @@ test("a clipboard read finishing after disconnect is not pasted into a stale con
   f.controller.dispose();
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.pastes.length, 0);
+});
+
+test("verified page copies only write to the host from the focused live tab", async () => {
+  const f = fixture();
+  const context = f.armCopy();
+  const copy = (id = "tab-1", text = "实际复制的文字🙂") => f.controller.receiveCopy({ id, text, context });
+  try {
+    await copy();
+    assert.deepEqual(f.writes, ["实际复制的文字🙂"]);
+    await copy("other-tab");
+    f.doc.hasFocus = () => false;
+    await copy();
+    f.doc.hasFocus = () => true;
+    f.doc.visibilityState = "hidden";
+    await copy();
+    f.doc.visibilityState = "visible";
+    f.doc.activeElement = f.local;
+    await copy();
+    f.doc.activeElement = f.target;
+    await copy("tab-1", "x".repeat(65537));
+    assert.equal(f.writes.length, 1);
+    f.controller.dispose();
+    await copy();
+    assert.equal(f.writes.length, 1);
+  } finally { f.controller.dispose(); }
+});
+
+test("copy results from before a focus or tab round-trip cannot write after returning", async () => {
+  const f = fixture();
+  try {
+    const context = f.armCopy();
+    const oldCopy = { id: "tab-1", text: "old pending copy", context };
+    f.win.dispatchEvent(new Event("blur"));
+    const next = f.armCopy();
+    assert.notEqual(context, next);
+    await f.controller.receiveCopy(oldCopy);
+    f.setTabId("tab-2");
+    f.controller.cancelCopy();
+    f.setTabId("tab-1");
+    const latest = f.armCopy();
+    await f.controller.receiveCopy({ ...oldCopy, context: next });
+    assert.equal(f.writes.length, 0);
+    await f.controller.receiveCopy({ ...oldCopy, text: "new copy", context: latest });
+    assert.deepEqual(f.writes, ["new copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("clicking between split panes rejects earlier copies after returning", async () => {
+  const f = fixture();
+  try {
+    const leftContext = f.armCopy();
+    f.setTabId("tab-2");
+    const rightContext = f.armCopy();
+    f.setTabId("tab-1");
+    const currentContext = f.armCopy();
+
+    // Both panes share one input surface, so these clicks do not cause blur.
+    await f.controller.receiveCopy({ id: "tab-1", text: "old left copy", context: leftContext });
+    await f.controller.receiveCopy({ id: "tab-2", text: "old right copy", context: rightContext });
+    assert.deepEqual(f.writes, []);
+    await f.controller.receiveCopy({ id: "tab-1", text: "current left copy", context: currentContext });
+    assert.deepEqual(f.writes, ["current left copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("an unrelated RFB clipboard update never authorizes a host write", async () => {
+  const f = fixture();
+  try {
+    const event = new Event("clipboard");
+    event.detail = { text: "unrelated guest application" };
+    f.rfb.dispatchEvent(event);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(f.writes.length, 0);
+  } finally { f.controller.dispose(); }
 });
 
 test("malformed native Command letters retain clipboard and redo semantics", async () => {

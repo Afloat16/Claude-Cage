@@ -22,6 +22,8 @@
 |---|---|
 | 从源码构建、修改和验证代码 | [参与开发](../CONTRIBUTING.md) |
 | 理解工作台、浏览器与后台的职责 | [工作台设计](design/workbench.md) |
+| 保存网站账号密码，了解本地加密与填充范围 | [使用密码保险箱](getting-started.md#保存网站账号密码) · [密码保险箱设计](design/password-vault.md) |
+| 将多个订阅用于新建的 Claude Code 终端，了解调度、额度与 Desktop 的适用范围 | [账号面板](design/workbench.md#claude-code-账号面板) · [调研与集成取舍](research/2026-11-04-claude-account-pool.md) |
 | 评估主机输入法、原位拼音与候选窗跟随 | [原生输入法研究](research/2026-11-04-native-ime.md) |
 | 定位作业、终端、浏览器连接与退出流程的代码 | [控制服务职责](design/control-service.md) |
 | 理解网络检查、暂停与恢复 | [网络检查设计](design/network-checks.md) |

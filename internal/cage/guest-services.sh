@@ -7,6 +7,10 @@ if ! command -v X0tigervnc >/dev/null || ! command -v Xtigervnc >/dev/null || ! 
   sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --no-install-recommends tigervnc-standalone-server tigervnc-scraping-server tigervnc-tools openbox x11-xserver-utils xdotool libgtk-3-0 ibus ibus-gtk3 gir1.2-ibus-1.0 python3-gi
 fi
 sudo install -d -m 0755 /etc/claude-cage /usr/local/lib
+# New website passwords belong to the host vault. Keep existing browser data.
+sudo install -d -m 0755 /etc/chromium/policies/managed
+printf '%s\n' '{"PasswordManagerEnabled":false}' | sudo tee /etc/chromium/policies/managed/cage-password-vault.json >/dev/null
+sudo chmod 0644 /etc/chromium/policies/managed/cage-password-vault.json
 sudo tee /usr/local/bin/cage-editor-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu

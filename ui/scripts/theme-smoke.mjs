@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { chooseInline, createWorkbench } from "./workbench-fixture.mjs";
 import {
   themeDocument,
   parseThemeDocument,
@@ -158,9 +158,8 @@ try {
     await page.getByLabel("浅色主题背景", { exact: true }).inputValue(),
     "#fafafa",
   );
-  await page
-    .getByLabel("已保存的主题", { exact: true })
-    .selectOption(second.id);
+  await chooseInline(page
+    .getByLabel("已保存的主题", { exact: true }), second.id);
   await saved();
   assert.equal(
     await page.getByLabel("浅色主题背景", { exact: true }).inputValue(),
@@ -172,9 +171,8 @@ try {
     .click();
   await saved();
   assert.equal(state.appearance.customThemes.length, 2);
-  await page
-    .getByLabel("已保存的主题", { exact: true })
-    .selectOption(second.id);
+  await chooseInline(page
+    .getByLabel("已保存的主题", { exact: true }), second.id);
   await saved();
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.getByRole("button", { name: "删除", exact: true }).click();
@@ -233,6 +231,7 @@ try {
     .getByRole("button", { name: "新建终端", exact: true })
     .first()
     .click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
   await page.waitForFunction(() =>
     [...document.querySelectorAll(".xterm-scrollable-element")].some(

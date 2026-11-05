@@ -110,14 +110,14 @@ try {
   );
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).click();
   await page
-    .getByRole("dialog")
-    .getByText("claude --continue --model sonnet", { exact: true })
+    .getByRole("menu")
+    .getByRole("menuitem", { name: "Claude 终端", exact: true })
     .waitFor();
   await page.screenshot({
     path: fileURLToPath(new URL("terminal-choice.png", output)),
   });
   await page
-    .getByRole("button", { name: "新建 Claude 终端", exact: true })
+    .getByRole("menuitem", { name: "Claude 终端", exact: true })
     .click();
   const terminalRequests = () =>
     state.requests.filter(
@@ -137,7 +137,7 @@ try {
     "reconnect must not relaunch Claude",
   );
   await page.getByRole("button", { name: /^在 .* 新建终端$/ }).click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   assert.equal(terminalRequests().at(-1).body.kind, "shell");
   await page.setViewportSize({ width: 820, height: 558 });
   await page

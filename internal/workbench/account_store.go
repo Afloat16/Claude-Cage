@@ -39,6 +39,7 @@ type localAccount struct {
 	path        string
 	record      *accountRecord
 	key         []byte
+	vaultLease  string
 	epoch       context.Context
 	cancel      context.CancelFunc
 	nextAttempt time.Time
@@ -167,6 +168,7 @@ func (a *localAccount) setKey(key []byte) {
 	}
 	clear(a.key)
 	a.key = key
+	a.vaultLease = randomToken()
 	a.epoch, a.cancel = context.WithCancel(context.Background())
 }
 

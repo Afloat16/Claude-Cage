@@ -7,6 +7,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
   const stats = { connections: 0, closed: 0, frames: 0 };
   const sockets = new Set();
   const displays = new Set();
+  const clipboardWriters = new Set();
   let width = 640, height = 480;
   const server = http.createServer((req, res) => {
     if (req.url.startsWith("/api/")) {
@@ -35,6 +36,13 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
       if (header.length === 10) header.writeBigUInt64BE(BigInt(length), 2);
       socket.write(Buffer.concat([header, payload]));
     };
+    const clipboard = (text) => {
+      const bytes = Buffer.from(text, "latin1"), message = Buffer.alloc(8 + bytes.length);
+      message[0] = 3;
+      message.writeUInt32BE(bytes.length, 4);
+      bytes.copy(message, 8);
+      send(message);
+    };
     let wire = Buffer.alloc(0), rfb = Buffer.alloc(0), phase = 0, timer, frame;
     const makeFrame = () => {
       frame = Buffer.alloc(16 + width * height * 4);
@@ -52,6 +60,7 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
       if (phase === 0 && rfb.length >= 12) { rfb = rfb.subarray(12); phase = 1; send(Buffer.from([1, 1])); }
       if (phase === 1 && rfb.length >= 1) { rfb = rfb.subarray(1); phase = 2; send(Buffer.alloc(4)); }
       if (phase === 2 && rfb.length >= 1) {
+        rfb = rfb.subarray(1);
         phase = 3;
         const name = Buffer.from("Cage test display");
         const init = Buffer.alloc(24 + name.length);
@@ -60,15 +69,41 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
         for (const offset of [8, 10, 12]) init.writeUInt16BE(255, offset);
         init.set([16, 8, 0], 14);
         init.writeUInt32BE(name.length, 20); name.copy(init, 24); send(init);
+        const fence = Buffer.alloc(9);
+        fence[0] = 248;
+        fence.writeUInt32BE(0x80000000, 4);
+        send(fence);
         makeFrame();
         displays.add(resize);
+        clipboardWriters.add(clipboard);
         timer = setInterval(() => {
           if (socket.writableLength > frame.length * 2) return;
           frame.fill(stats.frames % 255, 16);
           send(frame); stats.frames++;
         }, frameInterval);
       }
-      if (phase === 3) rfb = Buffer.alloc(0);
+      while (phase === 3 && rfb.length) {
+        const type = rfb[0];
+        let length = { 0: 20, 3: 10, 4: 8, 5: 6, 150: 10 }[type];
+        if (type === 2) {
+          if (rfb.length < 4) return;
+          length = 4 + 4 * rfb.readUInt16BE(2);
+        } else if (type === 6) {
+          if (rfb.length < 8) return;
+          length = 8 + Math.abs(rfb.readInt32BE(4));
+        } else if (type === 248) {
+          if (rfb.length < 9) return;
+          length = 9 + rfb[8];
+        }
+        if (!length) { socket.destroy(); return; }
+        if (rfb.length < length) return;
+        if (type === 248 && (rfb.readUInt32BE(4) & 0x80000000)) {
+          const response = Buffer.from(rfb.subarray(0, length));
+          response.writeUInt32BE(rfb.readUInt32BE(4) & 3, 4);
+          send(response);
+        }
+        rfb = rfb.subarray(length);
+      }
     };
     socket.on("data", (data) => {
       wire = Buffer.concat([wire, data]);
@@ -89,13 +124,14 @@ export async function startDisplay(upstream, { frameInterval = 50 } = {}) {
       }
     });
     socket.on("error", () => {});
-    socket.on("close", () => { clearInterval(timer); displays.delete(resize); sockets.delete(socket); stats.closed++; });
+    socket.on("close", () => { clearInterval(timer); displays.delete(resize); clipboardWriters.delete(clipboard); sockets.delete(socket); stats.closed++; });
     send(Buffer.from("RFB 003.008\n"));
   });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   return {
     url: `http://127.0.0.1:${server.address().port}`,
     stats,
+    clipboard(text) { for (const write of clipboardWriters) write(text); },
     resize(size) { width = size.width; height = size.height; for (const resize of displays) resize(); },
     close: async () => {
       for (const socket of sockets) socket.destroy();

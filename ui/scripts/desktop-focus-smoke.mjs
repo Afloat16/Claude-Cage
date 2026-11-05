@@ -6,8 +6,9 @@ import { createWorkbench } from "./workbench-fixture.mjs";
 const { browser, page, state, errors } = await createWorkbench();
 try {
   await page.addInitScript(() => {
-    window.EventSource = class {
+    window.EventSource = class extends EventTarget {
       constructor() {
+        super();
         window.testBrowserEvents = this;
         queueMicrotask(() => this.onopen?.());
       }

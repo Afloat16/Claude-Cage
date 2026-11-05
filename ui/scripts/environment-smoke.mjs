@@ -16,7 +16,7 @@ const shot = (name) =>
   });
 try {
   assert.equal(
-    await page.getByRole("button", { name: /^打开项目/ }).isDisabled(),
+    await page.getByRole("button", { name: "添加项目", exact: true }).isDisabled(),
     true,
   );
   assert.equal(

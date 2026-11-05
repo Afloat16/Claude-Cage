@@ -5,21 +5,35 @@ import {
   FileCode2,
   ChevronDown,
   Globe2,
-  MoreHorizontal,
+  Pencil,
   Pin,
+  PinOff,
   TerminalSquare,
   X,
 } from "lucide-react";
 import { tabName } from "./workspace-state.mjs";
 
-export const TabIcon = ({ kind, size = 16 }) =>
-  kind === "terminal" ? (
-    <TerminalSquare size={size} />
-  ) : kind === "editor" ? (
-    <FileCode2 size={size} />
-  ) : (
-    <Globe2 size={size} />
+export function TabIcon({ kind, favicon, size = 16 }) {
+  const [failed, setFailed] = useState("");
+  if (kind === "terminal") return <TerminalSquare size={size} />;
+  if (kind === "editor") return <FileCode2 size={size} />;
+  if (typeof favicon === "string" && favicon.length <= 8192 &&
+      /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(favicon) && failed !== favicon)
+    return <img src={favicon} className="tab-favicon" alt="" width={size} height={size}
+      draggable={false} onError={() => setFailed(favicon)} />;
+  return <Globe2 size={size} />;
+}
+
+function TerminalAction({ label, icon: Icon, disabled, onClick }) {
+  return (
+    <>
+      <button className="icon-button" aria-label={label} disabled={disabled} onClick={onClick}>
+        <Icon size={14} />
+      </button>
+      <span className="terminal-action-label" aria-hidden="true">{label}</span>
+    </>
   );
+}
 
 // Active content carries the strongest emphasis; titles and actions use the
 // existing paper/selected/muted tokens, 14px type and 8px spacing in both layouts.
@@ -36,9 +50,9 @@ export function WorkspaceTabs({
   onRename,
   onPin,
   onReorder,
+  splitDrag,
 }) {
   const [menu, setMenu] = useState(null);
-  const [dragged, setDragged] = useState(null);
   const [drag, setDrag] = useState(null);
   const [allOpen, setAllOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -73,13 +87,22 @@ export function WorkspaceTabs({
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
-  const finishDrag = (commit) => {
+  const finishDrag = (commit, event) => {
     const current = pointer.current;
     pointer.current = null;
     setDrag(null);
-    if (current?.moved) {
-      suppressClick.current = true;
-      if (commit) onReorder(current.id, null, current.order);
+    splitDrag.clear();
+    if (!current?.moved) return;
+    suppressClick.current = true;
+    if (!commit) return;
+    const { clientX, clientY } = event;
+    if (splitDrag.drop(current.id, clientX, clientY)) return;
+    const over = document.elementFromPoint(clientX, clientY);
+    if (!list.current?.contains(over)) return;
+    if (horizontal) onReorder(current.id, null, current.order);
+    else {
+      const target = over?.closest("[data-tab-id]")?.dataset.tabId;
+      if (target && target !== current.id) onReorder(current.id, target);
     }
   };
   useEffect(() => {
@@ -93,46 +116,39 @@ export function WorkspaceTabs({
     document.addEventListener("keydown", cancel, true);
     return () => document.removeEventListener("keydown", cancel, true);
   }, [Boolean(drag)]);
+  useEffect(() => () => splitDrag.clear(), []);
   const startDrag = (event, tab) => {
-    if (
-      !horizontal ||
-      busy ||
-      !ready ||
-      event.button !== 0 ||
-      event.target.closest(".tab-close")
-    )
-      return;
     suppressClick.current = false;
-    const items = [...list.current.children].map((node) => ({
+    if (busy || (!ready && tab.kind !== "terminal") || event.button !== 0 ||
+        !event.isPrimary || event.target.closest(".tab-close, .terminal-row-actions")) return;
+    const items = [...list.current.querySelectorAll(":scope > [data-tab-id]")].map((node) => ({
       id: node.dataset.tabId,
       left: node.offsetLeft,
       width: node.getBoundingClientRect().width,
     }));
-    const group = items.filter(
-      (item) =>
-        Boolean(saved[item.id]?.pinned) === Boolean(saved[tab.id]?.pinned),
-    );
+    const group = items.filter(item =>
+      Boolean(saved[item.id]?.pinned) === Boolean(saved[tab.id]?.pinned));
     pointer.current = {
-      id: tab.id,
-      startX: event.clientX,
-      items,
-      group,
-      order: items.map((item) => item.id),
-      moved: false,
+      id: tab.id, startX: event.clientX, startY: event.clientY,
+      items, group, order: items.map(item => item.id), moved: false,
     };
+    (event.target.closest("button") || event.currentTarget).setPointerCapture(event.pointerId);
   };
   const moveDrag = (event) => {
     const current = pointer.current;
     if (!current) return;
-    if (event.buttons === 0) {
-      finishDrag(false);
+    if (!event.buttons) return finishDrag(false);
+    let dx = event.clientX - current.startX;
+    if (!current.moved && Math.hypot(dx, event.clientY - current.startY) < 5) return;
+    current.moved = true;
+    const dropSide = splitDrag.hover(current.id, event.clientX, event.clientY);
+    if (!horizontal || dropSide) {
+      setDrag({ id: current.id, offsets: {}, widths: {} });
       return;
     }
-    const item = current.items.find((item) => item.id === current.id);
-    let dx = event.clientX - current.startX;
-    if (!current.moved && Math.abs(dx) < 5) return;
-    if (!current.moved) event.currentTarget.setPointerCapture(event.pointerId);
-    current.moved = true;
+    const item = current.items.find(item => item.id === current.id);
+    // Clamp the tab's drawing to its group, but let the pointer cross the last tab's center.
+    const center = item.left + item.width / 2 + dx;
     dx = Math.max(
       current.group[0].left - item.left,
       Math.min(
@@ -143,7 +159,6 @@ export function WorkspaceTabs({
           item.width,
       ),
     );
-    const center = item.left + item.width / 2 + dx;
     const rest = current.group.filter((other) => other.id !== item.id);
     const target = rest.filter(
       (other) => center > other.left + other.width / 2,
@@ -171,6 +186,11 @@ export function WorkspaceTabs({
   };
   const showMenu = (tab, event) => {
     event.preventDefault();
+    if (!horizontal) {
+      event.currentTarget.focus();
+      event.currentTarget.parentElement.querySelector(".terminal-row-actions button:not(:disabled)")?.focus();
+      return;
+    }
     trigger.current = event.currentTarget;
     const rect = event.currentTarget.getBoundingClientRect();
     setMenu({
@@ -195,9 +215,52 @@ export function WorkspaceTabs({
         trigger.current?.focus();
       }
     };
+    const outside = (event) => {
+      if (event.target.closest(".all-tabs-menu") || trigger.current?.contains(event.target)) return;
+      setAllOpen(false);
+    };
     document.addEventListener("keydown", dismiss);
-    return () => document.removeEventListener("keydown", dismiss);
+    document.addEventListener("click", outside, true);
+    return () => {
+      document.removeEventListener("keydown", dismiss);
+      document.removeEventListener("click", outside, true);
+    };
   }, [menu, allOpen]);
+  const actions = menu && (
+    <div className="menu workspace-tab-menu"
+      style={{ top: menu.top, left: menu.left }}
+      role="menu" aria-label="标签操作">
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onRename(menu.tab);
+                }}
+              >
+                重命名标签
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onPin(menu.tab.id);
+                }}
+              >
+                <Pin size={14} />
+                {saved[menu.tab.id]?.pinned ? "取消置顶" : "置顶标签"}
+              </button>
+              <button
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onClose(menu.tab);
+                }}
+              >
+                <X size={15} />
+                关闭标签<kbd>{shortcut("⌘W")}</kbd>
+              </button>
+    </div>
+  );
   return (
     <>
       <div
@@ -239,7 +302,7 @@ export function WorkspaceTabs({
               }
               onPointerDown={(event) => startDrag(event, tab)}
               onPointerMove={moveDrag}
-              onPointerUp={() => finishDrag(true)}
+              onPointerUp={(event) => finishDrag(true, event)}
               onPointerCancel={() => finishDrag(false)}
               onLostPointerCapture={() => {
                 if (pointer.current) finishDrag(false);
@@ -251,25 +314,10 @@ export function WorkspaceTabs({
                   suppressClick.current = false;
                 }
               }}
-              draggable={!horizontal && !busy}
-              onDragStart={(event) => {
-                setDragged(tab.id);
-                event.dataTransfer.setData("text/plain", tab.id);
-                event.dataTransfer.effectAllowed = "move";
-              }}
-              onDragOver={(event) => {
-                if (dragged) event.preventDefault();
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                if (dragged) onReorder(dragged, tab.id);
-                setDragged(null);
-              }}
-              onDragEnd={() => setDragged(null)}
             >
               <button
                 role="tab"
-                aria-label={title}
+                aria-label={tab.claudeLabel ? `${title} · ${tab.claudeLabel}` : title}
                 aria-selected={tab.id === active}
                 tabIndex={
                   tab.id === active ||
@@ -278,7 +326,7 @@ export function WorkspaceTabs({
                     : -1
                 }
                 disabled={!ready && tab.kind !== "terminal"}
-                title={tab.url ? `${title}\n${tab.url}` : title}
+                title={tab.url ? `${title}\n${tab.url}` : tab.claudeLabel ? `${title} · ${tab.claudeLabel}` : title}
                 onClick={() => onSelect(tab.id)}
                 onContextMenu={(event) => showMenu(tab, event)}
                 onKeyDown={(event) => {
@@ -303,8 +351,9 @@ export function WorkspaceTabs({
                   onSelect(tabs[at].id);
                 }}
               >
-                <TabIcon kind={tab.kind} size={15} />
+                <TabIcon kind={tab.kind} favicon={tab.favicon} size={15} />
                 <span>{title}</span>
+                {tab.claudeLabel && <small className="claude-tab-profile">{tab.claudeLabel}</small>}
                 {saved[tab.id]?.pinned && <Pin size={11} className="tab-pin" />}
               </button>
               {horizontal ? (
@@ -317,14 +366,12 @@ export function WorkspaceTabs({
                   <X size={14} />
                 </button>
               ) : (
-                <button
-                  className="tab-more icon-button"
-                  aria-label={`管理 ${title}`}
-                  onClick={(event) => showMenu(tab, event)}
-                  disabled={busy}
-                >
-                  <MoreHorizontal size={15} />
-                </button>
+                <div className="terminal-row-actions" role="group" aria-label={`${title} 的操作`}>
+                  <TerminalAction label={saved[tab.id]?.pinned ? "取消置顶" : "置顶"}
+                    icon={saved[tab.id]?.pinned ? PinOff : Pin} disabled={busy} onClick={() => onPin(tab.id)} />
+                  <TerminalAction label="重命名" icon={Pencil} disabled={busy} onClick={() => onRename(tab)} />
+                  <TerminalAction label="删除" icon={X} disabled={busy} onClick={() => onClose(tab)} />
+                </div>
               )}
             </div>
           );
@@ -347,7 +394,7 @@ export function WorkspaceTabs({
           </button>
           {allOpen && (
             <>
-              <div className="menu-dismiss" onClick={() => setAllOpen(false)} />
+
               <div
                 className="menu all-tabs-menu"
                 role="dialog"
@@ -373,7 +420,7 @@ export function WorkspaceTabs({
                         onSelect(tab.id);
                       }}
                     >
-                      <TabIcon kind={tab.kind} />
+                      <TabIcon kind={tab.kind} favicon={tab.favicon} />
                       <span>{tabName(tab, saved)}</span>
                       {tab.id === active && (
                         <span className="current-tab-marker">当前</span>
@@ -390,42 +437,7 @@ export function WorkspaceTabs({
         createPortal(
           <>
             <div className="menu-dismiss" onClick={() => setMenu(null)} />
-            <div
-              className="menu workspace-tab-menu"
-              style={{ top: menu.top, left: menu.left }}
-              role="menu"
-              aria-label="标签操作"
-            >
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenu(null);
-                  onRename(menu.tab);
-                }}
-              >
-                重命名标签
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenu(null);
-                  onPin(menu.tab.id);
-                }}
-              >
-                <Pin size={14} />
-                {saved[menu.tab.id]?.pinned ? "取消置顶" : "置顶标签"}
-              </button>
-              <button
-                role="menuitem"
-                onClick={() => {
-                  setMenu(null);
-                  onClose(menu.tab);
-                }}
-              >
-                <X size={15} />
-                关闭标签<kbd>{shortcut("⌘W")}</kbd>
-              </button>
-            </div>
+            {actions}
           </>,
           document.body,
         )}

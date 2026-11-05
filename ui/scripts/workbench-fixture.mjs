@@ -259,7 +259,11 @@ export async function createWorkbench({
       state.status.ready = false;
       state.status.vm_running = false;
     } else if (path === "/browser/tabs")
-      result = { tabs: state.tabs, active: state.active };
+      result = { tabs: state.tabs, active: state.active, split: state.split || null };
+    else if (path === "/browser/split") {
+      state.split = body.left ? { left: body.left, right: body.right, fraction: 0.5 } : null;
+      result = { split: state.split };
+    }
     else if (path === "/browser/events")
       return route.fulfill({
         contentType: "text/event-stream",
@@ -338,4 +342,9 @@ export async function createWorkbench({
   await page.goto(url || process.env.CAGE_UI_URL || "http://127.0.0.1:5198");
   if (!startupFailure) await page.getByRole("heading", { name: "先启动 Cage 环境" }).waitFor();
   return { browser, context, page, state, errors };
+}
+
+export async function chooseInline(picker, value) {
+  await picker.click();
+  await picker.locator("..").getByRole("option").and(picker.page().locator(`[data-value=${JSON.stringify(String(value))}]`)).click();
 }

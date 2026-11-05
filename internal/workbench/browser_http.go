@@ -12,7 +12,7 @@ func (s *Server) browser(w http.ResponseWriter, r *http.Request) {
 		action = "tabs"
 	}
 	switch action {
-	case "tabs", "new", "activate", "close", "navigate", "back", "forward", "reload", "editor", "editor-restart", "download-retry", "upload-finish", "upload-cancel", "resize", "insert-text":
+	case "tabs", "split", "new", "activate", "close", "navigate", "back", "forward", "reload", "editor", "editor-restart", "download-retry", "upload-finish", "upload-cancel", "resize", "insert-text", "copy-context":
 	default:
 		http.NotFound(w, r)
 		return

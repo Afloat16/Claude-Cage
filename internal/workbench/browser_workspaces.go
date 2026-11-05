@@ -93,12 +93,17 @@ func (s *Server) writeBrowserEvents(ctx context.Context, w http.ResponseWriter, 
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 16<<10), (1<<20)+16)
 	controller := http.NewResponseController(w)
+	eventName := ""
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		line := scanner.Bytes()
-		if bytes.HasPrefix(line, []byte("data: ")) {
+		if bytes.HasPrefix(line, []byte("event: ")) {
+			eventName = string(line[len("event: "):])
+		}
+		// Clipboard notifications are one-shot payloads, not tab snapshots.
+		if bytes.HasPrefix(line, []byte("data: ")) && eventName != "clipboard" {
 			mapped, err := s.browserStateForHost(line[len("data: "):])
 			if err != nil {
 				return err
@@ -116,6 +121,7 @@ func (s *Server) writeBrowserEvents(ctx context.Context, w http.ResponseWriter, 
 			return err
 		}
 		if len(line) == 0 {
+			eventName = ""
 			if err := controller.Flush(); err != nil {
 				return err
 			}

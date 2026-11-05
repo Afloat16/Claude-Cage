@@ -15,6 +15,10 @@ import (
 	"time"
 )
 
+func (m *terminalManager) start(cmd *exec.Cmd, workspace, kind string) (*terminalSession, error) {
+	return m.startSession(cmd, workspace, kind, claudeSelection{}, nil)
+}
+
 // This subprocess uses the same platform PTY implementation as workbench SSH.
 func TestTerminalServiceChild(t *testing.T) {
 	if os.Getenv("CAGE_TERMINAL_SERVICE_CHILD") != "1" {

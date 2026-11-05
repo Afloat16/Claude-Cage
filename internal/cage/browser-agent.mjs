@@ -6,10 +6,13 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, constants }
 import { open } from "node:fs/promises";
 import http from "node:http";
 import { auditBrowser } from "./browser-audit.mjs";
+import { BrowserVault } from "./browser-vault.mjs";
+import { LoginBrowser } from "./browser-login.mjs";
+import { BrowserClipboard } from "./browser-clipboard.mjs";
 import { nativeInput } from "./native-input.mjs";
 import { DownloadManager } from "./browser-downloads.mjs";
 import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 const config = JSON.parse(
   readFileSync("/etc/claude-cage/browser-control.json", "utf8"),
@@ -26,7 +29,7 @@ try {
 } catch {}
 function rememberSelection() {
   const tab = targets.get(activeId);
-  if (tab)
+  if (tab && !tab.login)
     try {
       writeFileSync(selectionFile, JSON.stringify({ url: tab.url }), {
         mode: 0o600,
@@ -35,7 +38,15 @@ function rememberSelection() {
 }
 const downloadPath = "/home/cage-browser/Downloads";
 mkdirSync(downloadPath, { recursive: true });
+const splitDirectory = "/usr/local/lib/cage-split";
+const extensionId = createHash("sha256").update(splitDirectory).digest("hex").slice(0, 32)
+  .replace(/./g, c => String.fromCharCode(97 + parseInt(c, 16)));
+const splitURL = `chrome-extension://${extensionId}/control.html`;
+let splitView = null, splitSession, splitOpening, resizeTimer;
+const favicons = new Map(), faviconRequests = new Map(), documents = new Map();
+
 const flags = [
+  `--load-extension=${splitDirectory}`,
   "--user-data-dir=/home/cage-browser/profile",
   "--remote-debugging-pipe",
   // The pipe manages tabs for a human-operated browser. Keep it private while
@@ -63,9 +74,16 @@ let sequence = 0,
 let shuttingDown = false;
 const events = new Set();
 const auditContexts = new Set();
+const loginBrowser = new LoginBrowser(cdp);
 const pending = new Map(),
   targets = new Map(),
   sessions = new Map();
+const browserClipboard = new BrowserClipboard(cdp, ({ id, text, context }) => {
+  if (id !== activeId || !targets.has(id)) return;
+  const payload = "event: clipboard\ndata: " + JSON.stringify({ id, text, context }) + "\n\n";
+  for (const stream of events) stream.write(payload);
+});
+const vault = new BrowserVault({ cdp, active: () => activeId, tab: id => targets.get(id) });
 const downloads = new DownloadManager({
   directory: "/home/cage-browser",
   changed: () => broadcastState(),
@@ -124,15 +142,33 @@ chrome.stdio[4].on("data", (chunk) => {
         : call.resolve(event.result);
       continue;
     }
+    vault.event(event);
     const p = event.params || {};
+    browserClipboard.event(event);
+    if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
+        p.name === "cageFaviconChanged") refreshFavicon(p.payload);
+    if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
+        p.name === "cagePaneActivated" && splitView &&
+        [splitView.left, splitView.right].includes(p.payload) && p.payload !== activeId) {
+      activeId = p.payload;
+      rememberSelection();
+      broadcastState(true);
+    }
+    if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
+        p.name === "cagePaneSeparated" && splitView && [splitView.left, splitView.right].includes(p.payload)) {
+      splitView = null;
+      broadcastState();
+    }
+    if (splitView && ["Page.frameResized", "Page.frameNavigated", "Page.navigatedWithinDocument"].includes(event.method))
+      scheduleSplitMeasure();
     if (
       event.method === "Target.targetCreated" ||
       event.method === "Target.targetInfoChanged"
     ) {
       const t = p.targetInfo;
-      if (t.type === "page" && !auditContexts.has(t.browserContextId)) {
+      if (t.type === "page" && t.url !== splitURL && !auditContexts.has(t.browserContextId)) {
         const fresh = !targets.has(t.targetId);
-        targets.set(t.targetId, t);
+        targets.set(t.targetId, loginBrowser.tab(t, targets.get(t.targetId)));
         if (fresh) void session(t.targetId).catch(() => {});
         if (t.targetId === activeId) rememberSelection();
         broadcastState();
@@ -143,7 +179,13 @@ chrome.stdio[4].on("data", (chunk) => {
     }
     if (event.method === "Target.targetDestroyed") {
       if (!targets.has(p.targetId)) continue;
+      vault.remove(p.targetId);
       targets.delete(p.targetId);
+      browserClipboard.detachTab(p.targetId);
+      favicons.delete(p.targetId);
+      documents.delete(p.targetId);
+      faviconRequests.delete(p.targetId);
+      if (splitView && [splitView.left, splitView.right].includes(p.targetId)) splitView = null;
       uploads.cancelTab(p.targetId);
       for (const [sid, tab] of uploadSessions) if (tab === p.targetId) uploadSessions.delete(sid);
       sessions.delete(p.targetId);
@@ -157,6 +199,13 @@ chrome.stdio[4].on("data", (chunk) => {
       downloads.begin(p.guid, p.suggestedFilename);
     if (event.method === "Browser.downloadProgress") downloads.progress(p);
     const uploadTab = uploadSessions.get(event.sessionId);
+    if (uploadTab && event.method === "Page.frameNavigated" && !p.frame?.parentId) {
+      documents.set(uploadTab, p.frame.loaderId);
+      favicons.delete(uploadTab);
+      faviconRequests.delete(uploadTab);
+      broadcastState();
+    }
+    if (uploadTab && event.method === "Page.loadEventFired") refreshFavicon(uploadTab);
     if (uploadTab && event.method === "Page.fileChooserOpened")
       void uploads.opened(uploadTab, event.sessionId, p).catch(() => {});
     if (uploadTab && event.method === "Page.frameNavigated" && !p.frame?.parentId)
@@ -185,11 +234,109 @@ async function session(id) {
         uploadSessions.set(r.sessionId, id);
         await cdp("Page.enable", {}, r.sessionId);
         await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId);
+        await browserClipboard.attach(r.sessionId, id).then(result => {
+          if (result?.skipped.length) console.warn("Browser copy observer skipped a modified or replaced document; reload the page to enable copy buttons.");
+        }).catch(() => console.warn("Browser copy observer unavailable for this page."));
+        await vault.attach(id, r.sessionId).catch(() => {});
         return r.sessionId;
       }).catch(error => { sessions.delete(id); throw error; }),
     );
   return sessions.get(id);
 }
+function scheduleSplitMeasure() {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(async () => {
+    const pair = splitView;
+    if (!pair) return;
+    try {
+      const pages = await Promise.all([pair.left, pair.right].map(async id => {
+        const sid = await session(id);
+        const [metrics, history] = await Promise.all([
+          cdp("Page.getLayoutMetrics", {}, sid), cdp("Page.getNavigationHistory", {}, sid),
+        ]);
+        return { width: metrics.cssLayoutViewport.clientWidth, back: history.currentIndex > 0,
+          forward: history.currentIndex < history.entries.length - 1 };
+      }));
+      if (pair !== splitView) return;
+      const fraction = pages[0].width / (pages[0].width + pages[1].width);
+      if (fraction > 0 && fraction < 1) pair.fraction = fraction;
+      pair.history = Object.fromEntries([pair.left, pair.right].map((id, index) =>
+        [id, { back: pages[index].back, forward: pages[index].forward }]));
+      broadcastState();
+    } catch { /* A closing tab may already have lost its renderer. */ }
+  }, 80);
+}
+
+async function splitController() {
+  if (splitSession) return splitSession;
+  if (splitOpening) return splitOpening;
+  splitOpening = openSplitController().finally(() => { splitOpening = null; });
+  return splitOpening;
+}
+
+async function openSplitController() {
+  const { targetId } = await cdp("Target.createTarget", { url: splitURL, hidden: true, background: true });
+  try {
+    const { sessionId } = await cdp("Target.attachToTarget", { targetId, flatten: true });
+    await cdp("Runtime.enable", {}, sessionId);
+    await cdp("Runtime.addBinding", { name: "cagePaneActivated" }, sessionId);
+    await cdp("Runtime.addBinding", { name: "cagePaneSeparated" }, sessionId);
+    await cdp("Runtime.addBinding", { name: "cageFaviconChanged" }, sessionId);
+    const loaded = await cdp("Runtime.evaluate", { awaitPromise: true, returnByValue: true,
+      expression: `new Promise(resolve => {
+        const ready = () => resolve(typeof setCageSplit === "function");
+        document.readyState !== "complete" ? addEventListener("DOMContentLoaded", ready, { once: true }) : ready();
+      })` }, sessionId);
+    if (!loaded.result.value) throw new Error("Split controller unavailable");
+    splitSession = sessionId;
+    for (const id of targets.keys()) refreshFavicon(id);
+    return sessionId;
+  } catch (error) {
+    await cdp("Target.closeTarget", { targetId }).catch(() => {});
+    throw error;
+  }
+}
+
+function refreshFavicon(id) {
+  if (!targets.has(id) || !splitSession) return;
+  const request = {};
+  faviconRequests.set(id, request);
+  void cdp("Runtime.evaluate", {
+    expression: `readCageFavicon(${JSON.stringify(id)})`, awaitPromise: true, returnByValue: true,
+  }, splitSession).then(({ result }) => {
+    if (faviconRequests.get(id) !== request) return;
+    const icon = result.value;
+    if (!icon || icon.url !== targets.get(id)?.url || typeof icon.favicon !== "string" ||
+        icon.favicon.length > 8192 || (icon.favicon && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(icon.favicon))) return;
+    if ((favicons.get(id) || "") === icon.favicon) return;
+    favicons.set(id, icon.favicon);
+    broadcastState();
+  }).catch(() => {}).finally(() => {
+    if (faviconRequests.get(id) === request) faviconRequests.delete(id);
+  });
+}
+
+async function setSplit({ left, right, id }) {
+  if (left && (!targets.has(left) || !targets.has(right) || left === right ||
+      ![left, right].includes(id))) throw new Error("Invalid split tabs");
+  const sid = await splitController();
+  const result = await cdp("Runtime.evaluate", { awaitPromise: true, returnByValue: true,
+    expression: `setCageSplit(${JSON.stringify(left || "")}, ${JSON.stringify(right || "")})`,
+  }, sid);
+  splitView = null;
+  if (result.exceptionDetails) {
+    broadcastState();
+    throw new Error("Cannot split these Chromium tabs");
+  }
+  if (left) {
+    splitView = { left, right, fraction: 0.5 };
+    scheduleSplitMeasure();
+  }
+  if (id && targets.has(id)) await activate(id);
+  else broadcastState();
+  return { split: splitView };
+}
+
 async function activate(id, focus = false) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
   // Restored background tabs may have no live renderer until activated.
@@ -278,7 +425,8 @@ async function restartEditor(workspace) {
 async function tabState() {
   const { targetInfos } = await cdp("Target.getTargets");
   for (const tab of targetInfos)
-    if (tab.type === "page" && !auditContexts.has(tab.browserContextId)) targets.set(tab.targetId, tab);
+    if (tab.type === "page" && tab.url !== splitURL && !auditContexts.has(tab.browserContextId))
+      targets.set(tab.targetId, loginBrowser.tab(tab, targets.get(tab.targetId)));
   let back = false,
     forward = false;
   if (activeId && targets.has(activeId)) {
@@ -295,6 +443,7 @@ async function tabState() {
   return { ...publicState(), back, forward };
 }
 function displayTitle(tab) {
+  if (tab.login) return "账号授权";
   if (tab.url === "about:blank") return "新标签页";
   const title = tab.title;
   if (
@@ -313,12 +462,15 @@ function displayTitle(tab) {
 function publicState() {
   return {
     active: activeId,
+    split: splitView,
     downloads: downloads.snapshot(),
     uploads: uploads.snapshot(),
     tabs: [...targets.values()].map((t) => ({
       id: t.targetId,
       title: displayTitle(t),
       url: t.url,
+      document: documents.get(t.targetId) || "",
+      favicon: favicons.get(t.targetId) || "",
       kind: t.url.startsWith("http://127.0.0.1:18080/") ? "editor" : "web",
       workspace: t.url.startsWith("http://127.0.0.1:18080/") ? new URL(t.url).searchParams.get("folder") || config.workspace : undefined,
     })),
@@ -337,7 +489,7 @@ async function resizeDisplay(width, height) {
   if (
     !Number.isInteger(width) ||
     !Number.isInteger(height) ||
-    width < 640 ||
+    width < 320 ||
     height < 480 ||
     width > 8192 ||
     height > 8192
@@ -488,6 +640,20 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const result = await mutate(async () => {
+      if (req.url === "/vault") {
+        try { return await vault.request(input); }
+        catch (error) { return { vaultError: error.message }; }
+      }
+      if (req.url === "/login-open") {
+        return loginBrowser.open(input.login, input.url, async tab => {
+          if (!targets.has(tab.targetId)) targets.set(tab.targetId, loginBrowser.tab(tab));
+          await activate(tab.targetId, true);
+        });
+      }
+      if (req.url === "/login-finish") {
+        await loginBrowser.finish(input.login);
+        return { ok: true };
+      }
       if (req.url === "/homepage") {
         const url = checkedURL(input.url);
         if (url === "about:blank") throw new Error("Homepage must be an HTTP(S) URL");
@@ -501,6 +667,7 @@ const server = http.createServer(async (req, res) => {
         }
         return { ok: true };
       }
+      if (req.url === "/split") return setSplit(input);
       if (req.url === "/resize")
         return resizeDisplay(input.width, input.height);
       if (req.url === "/new") return newTab(input.url || undefined);
@@ -515,6 +682,16 @@ const server = http.createServer(async (req, res) => {
       const id = input.id || activeId;
       if (!targets.has(id)) throw new Error("Tab no longer exists");
       switch (req.url) {
+        case "/copy-context": {
+          if (!/^[a-f0-9]{32}$/.test(input.context || "") || id !== activeId)
+            throw new Error("Copy target changed");
+          const ids = splitView ? [splitView.left, splitView.right] : [id];
+          for (const tab of ids) {
+            await session(tab);
+            await browserClipboard.setContext(tab, input.context);
+          }
+          break;
+        }
         case "/paste-image":
           if (input.id !== activeId) throw new Error("Image target changed");
           await pasteImage(input.png);
@@ -572,7 +749,7 @@ server.listen(18500, "127.0.0.1");
   await cdp("Target.setDiscoverTargets", { discover: true });
   const { targetInfos } = await cdp("Target.getTargets");
   for (const t of targetInfos)
-    if (t.type === "page") targets.set(t.targetId, t);
+    if (t.type === "page" && t.url !== splitURL) targets.set(t.targetId, t);
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allowAndName",
     downloadPath,
@@ -584,6 +761,7 @@ server.listen(18500, "127.0.0.1");
       [...targets.values()].find((t) => t.url === restoreURL)?.targetId ||
         [...targets.keys()][0],
     );
+  await setSplit({}).catch(() => {});
   ready = true;
 })().catch(error => {
   console.error("Browser startup failed:", error.message);

@@ -16,6 +16,8 @@ var (
 type browserInputError struct{ error }
 
 type browserInput struct {
+	Left           string `json:"left,omitempty"`
+	Right          string `json:"right,omitempty"`
 	ID             string `json:"id"`
 	URL            string `json:"url"`
 	Width          int    `json:"width,omitempty"`
@@ -61,6 +63,9 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 	var body []byte
 	if input != nil {
 		method = http.MethodPost
+		if action == "copy-context" && (input.ID == "" || !validInputToken(input.Context)) {
+			return nil, browserInputError{errors.New("复制操作或目标标签无效")}
+		}
 		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {
 			return nil, browserInputError{errors.New("输入文字或目标标签无效")}
 		}

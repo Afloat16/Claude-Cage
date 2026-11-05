@@ -73,6 +73,8 @@ go test github.com/containers/gvisor-tap-vsock/pkg/services/dns \
 
 修改浏览器启动或控制逻辑时，在 Linux 客机的独立 X 显示中运行 `DISPLAY=:183 node scripts/browser-controls-smoke.mjs`。该检查使用临时配置和真实控制器，验证人工浏览标记、标签与导航、重启后的页面及 Cookie 恢复，并检查未认证请求和跨来源请求仍被拒绝。
 
+修改网站图标或网页复制时，运行 `node --test internal/cage/browser-clipboard.test.mjs`、`node scripts/browser-clipboard-smoke.mjs`、`node scripts/favicon-extension-smoke.mjs` 和 `node scripts/browser-metadata-smoke.mjs`。后两项通过 `CAGE_TEST_BROWSER_PATH` 指定支持扩展的 Chromium，复制脚本使用隔离 headless 剪贴板。生产控制器测试只适配路径、监听端口和 headless 模式，完整 Linux 客机会话仍需上述独立显示测试。前端开发服务启动后，运行 `node ui/scripts/browser-metadata-smoke.mjs` 验证图标、复制事件、RFB 消息和焦点隔离；该脚本用记录替身接收原生剪贴板写入。Playwright 模块与前端地址可分别通过 `CAGE_PLAYWRIGHT_MODULE`、`CAGE_UI_URL` 指定。
+
 修改更新或恢复界面时，运行 `node ui/scripts/recovery-ui-smoke.mjs`；修改画面可见性时，运行 `node ui/scripts/remote-visibility-smoke.mjs`。两者需要可用的 Playwright 和已启动的前端开发服务，可通过 `CAGE_UI_URL` 指定地址；测试使用隔离接口，后者还使用真实 RFB 握手与帧验证停止和恢复，不连接日常 VM。修改原生更新流程时运行 `bash scripts/test-app-updates.sh`，正式签名、公证及真实安装仍须单独验收。组件清单、固定工具安装器和网络续租回归已包含在上述 Go 包测试中，无需重复执行一套独立命令。
 
 修改上游源码时，保持 `patches/` 与 `third_party/` 一致，并按 `patches/README.md` 核对同步方式。UI 改动需要在实际 App 中验证状态、失败恢复和关键交互；编译通过不能证明登录、联网或用户操作已成功。

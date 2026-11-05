@@ -19,6 +19,20 @@ var guestDependencies string
 //go:embed guest-services.sh
 var guestServices string
 
+//go:embed claude-account.py
+var claudeAccountHelper string
+
+func claudeAccountScript() string {
+	return "sudo tee /usr/local/bin/cage-claude-account >/dev/null <<'CAGE_CLAUDE_ACCOUNT'\n" + claudeAccountHelper + "\nCAGE_CLAUDE_ACCOUNT\nsudo chmod 0755 /usr/local/bin/cage-claude-account\n" +
+		`sudo install -d -m 0755 /usr/local/lib/cage-claude-bin
+sudo tee /usr/local/lib/cage-claude-bin/claude >/dev/null <<'CAGE_CLAUDE_SHIM'
+#!/bin/sh
+exec /usr/local/bin/cage-claude-account run "$CAGE_CLAUDE_ACCOUNT_ID" "$@"
+CAGE_CLAUDE_SHIM
+sudo chmod 0755 /usr/local/lib/cage-claude-bin/claude
+`
+}
+
 //go:embed guest-audio.sh
 var guestAudio string
 
@@ -31,8 +45,34 @@ var novncPatch string
 //go:embed clipboard.js
 var clipboardJS string
 
+//go:embed browser-vault.mjs
+var browserVault string
+
 //go:embed browser-agent.mjs
 var browserAgent string
+
+//go:embed browser-clipboard.mjs
+var browserClipboard string
+
+//go:embed split-extension/manifest.json
+var splitManifest string
+
+//go:embed split-extension/control.html
+var splitPage string
+
+//go:embed split-extension/control.js
+var splitControl string
+
+func splitExtensionScript() string {
+	return "sudo install -d -m 0755 /usr/local/lib/cage-split\n" +
+		"sudo tee /usr/local/lib/cage-split/manifest.json >/dev/null <<'CAGE_MANIFEST'\n" + splitManifest + "\nCAGE_MANIFEST\n" +
+		"sudo tee /usr/local/lib/cage-split/control.html >/dev/null <<'CAGE_HTML'\n" + splitPage + "\nCAGE_HTML\n" +
+		"sudo tee /usr/local/lib/cage-split/control.js >/dev/null <<'CAGE_CONTROL'\n" + splitControl + "\nCAGE_CONTROL\n"
+}
+
+func browserClipboardScript() string {
+	return "sudo tee /usr/local/lib/browser-clipboard.mjs >/dev/null <<'CAGE_BROWSER_CLIPBOARD'\n" + browserClipboard + "\nCAGE_BROWSER_CLIPBOARD\n"
+}
 
 //go:embed browser-audit.mjs
 var browserAudit string
@@ -80,7 +120,7 @@ func imageInputScript() string {
 }
 
 func browserServices() string {
-	return guestMemory + "\n" + guestDiagnostics() + guestAudio + "\n" + guestOpenScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee /usr/share/novnc/cage-clipboard.js >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
+	return "\nsudo tee /usr/local/lib/browser-vault.mjs >/dev/null <<'CAGE_BROWSER_VAULT'\n" + browserVault + "\nCAGE_BROWSER_VAULT\n" + guestMemory + "\n" + guestDiagnostics() + guestAudio + "\n" + guestOpenScript() + splitExtensionScript() + browserClipboardScript() + imageInputScript() + "\nsudo tee /usr/local/lib/browser-uploads.mjs >/dev/null <<'CAGE_BROWSER_UPLOADS'\n" + browserUploads + "\nCAGE_BROWSER_UPLOADS\n" + guestServices + "\nsudo tee /usr/local/lib/browser-downloads.mjs >/dev/null <<'CAGE_BROWSER_DOWNLOADS'\n" + browserDownloads + "\nCAGE_BROWSER_DOWNLOADS\n" + "\nsudo tee /usr/local/bin/cage-editor-migrate >/dev/null <<'CAGE_EDITOR_MIGRATE'\n" + editorMigrate + "\nCAGE_EDITOR_MIGRATE\nsudo chmod 0755 /usr/local/bin/cage-editor-migrate\n" + "\nsudo tee /usr/local/lib/browser-audit.mjs >/dev/null <<'CAGE_BROWSER_AUDIT'\n" + browserAudit + "\nCAGE_BROWSER_AUDIT\n" + "\nsudo tee /usr/local/lib/cage-browser-agent.mjs >/dev/null <<'CAGE_BROWSER_AGENT'\n" + browserAgent + "\nCAGE_BROWSER_AGENT\n" + "sudo tee /usr/local/bin/cage-save-download >/dev/null <<'CAGE_DOWNLOAD_HELPER'\n" + saveDownload + "\nCAGE_DOWNLOAD_HELPER\nsudo chmod 0755 /usr/local/bin/cage-save-download\nprintf 'cage-browser ALL=(root) NOPASSWD: /usr/local/bin/cage-save-download *\\n' | sudo tee /etc/sudoers.d/cage-download >/dev/null\nsudo chmod 0440 /etc/sudoers.d/cage-download\n" + "\nsudo python3 - <<'CAGE_NOVNC_PATCH'\n" + novncPatch + "\nCAGE_NOVNC_PATCH\n" + "\nsudo tee /usr/share/novnc/cage-clipboard.js >/dev/null <<'CAGE_CLIPBOARD_JS'\n" + clipboardJS + "\nCAGE_CLIPBOARD_JS\n" + `sudo python3 - <<'PYCODE'
 from pathlib import Path
 import re
 p = Path("/usr/share/novnc/vnc.html")
@@ -156,7 +196,7 @@ func (c Config) StartScript() string {
 }
 
 func componentStartScript() string {
-	return browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart
+	return claudeAccountScript() + browserServices() + "\nsudo tee /etc/claude-cage/editor-theme.json >/dev/null <<'CAGE_EDITOR_THEME'\n" + editorTheme + "\nCAGE_EDITOR_THEME\nif systemctl is-active --quiet cage-editor.service; then sudo systemctl stop cage-editor.service; fi\n" + guestStart
 }
 
 func markGuestStart(body string) string {

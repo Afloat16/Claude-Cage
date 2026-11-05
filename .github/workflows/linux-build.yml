@@ -70,6 +70,7 @@ jobs:
           bash scripts/package-linux.sh --skip-build
           npm test --prefix ui
           npm run --prefix ui lint
+          node --test internal/cage/browser-clipboard.test.mjs
       - name: Linux executable tests as an ordinary user
         run: |
           chown -R cage:cage "$GITHUB_WORKSPACE"

@@ -108,10 +108,9 @@ button.primary:hover:not(:disabled) {
   font-size: 0.714rem;
   color: var(--muted);
 }
-.theme-card-heading select {
+.theme-card-heading .inline-select {
   width: 100%;
   margin-top: 4px;
-  height: 34px;
   font-size: 0.929rem;
 }
 .theme-miniature {
@@ -268,9 +267,8 @@ button.primary:hover:not(:disabled) {
   height: 34px;
   text-align: center;
 }
-.appearance-control select {
+.appearance-control .inline-select {
   min-width: 120px;
-  height: 34px;
   font-size: 0.929rem;
 }
 .appearance-sample {
@@ -378,7 +376,7 @@ button.primary:hover:not(:disabled) {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 8px;
 }
-.theme-library-fields select,
+.theme-library-fields .inline-select,
 .theme-library-fields input {
   min-width: 0;
 }

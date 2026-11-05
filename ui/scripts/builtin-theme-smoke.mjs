@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { createWorkbench } from "./workbench-fixture.mjs";
+import { chooseInline, createWorkbench } from "./workbench-fixture.mjs";
 import {
   presets,
   themeCatalog,
@@ -34,11 +34,10 @@ const saved = () =>
     .filter({ hasText: "更改自动保存，即时生效" })
     .waitFor();
 const select = async (variant, id) => {
-  await page
+  await chooseInline(page
     .getByLabel((variant === "light" ? "浅色" : "深色") + "主题预设", {
       exact: true,
-    })
-    .selectOption(id);
+    }), id);
   await saved();
 };
 const shot = async (name) => {
@@ -56,11 +55,14 @@ try {
       (variant === "light" ? "浅色" : "深色") + "主题预设",
       { exact: true },
     );
-    assert.equal(await picker.locator("optgroup").count(), 4);
+    await picker.click();
+    const list = page.getByRole("listbox");
+    assert.equal(await list.locator(".inline-select-group").count(), 4);
     assert.equal(
-      await picker.locator("option").count(),
+      await list.getByRole("option").count(),
       Object.keys(presets[variant]).length,
     );
+    await picker.press("Escape");
     // Every palette goes through the real picker, not just the model helper.
     for (const id of Object.keys(presets[variant])) {
       await select(variant, id);
@@ -146,11 +148,11 @@ try {
   await page.reload();
   await open();
   assert.equal(
-    await page.getByLabel("浅色主题预设", { exact: true }).inputValue(),
+    await page.getByLabel("浅色主题预设", { exact: true }).getAttribute("value"),
     "color-vision",
   );
   assert.equal(
-    await page.getByLabel("已保存的主题", { exact: true }).inputValue(),
+    await page.getByLabel("已保存的主题", { exact: true }).getAttribute("value"),
     state.appearance.customThemes[0].id,
   );
   assert.ok(sameTheme(state.appearance, snapshot));
@@ -173,7 +175,7 @@ try {
     .getByRole("button", { name: "新建终端", exact: true })
     .first()
     .click();
-  await page.getByRole("button", { name: "新建普通终端", exact: true }).click();
+  await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
   await page.waitForFunction(
     () =>

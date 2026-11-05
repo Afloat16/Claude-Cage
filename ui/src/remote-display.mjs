@@ -1,11 +1,11 @@
 // Guest applications render at 2x. Zoom changes their logical workspace size,
 // while noVNC fits the resulting framebuffer into the available CSS area.
 export function displayGeometry({ width, height }, { desktop = false, zoom = 1 } = {}) {
-  if (width < 320 || height < 240) return null;
+  if (width < (desktop ? 320 : 160) || height < 240) return null;
   const ratio = 2 / zoom;
   const limit = Math.min(1, 8192 / (width * ratio), 8192 / (height * ratio));
   return {
-    width: Math.max(desktop ? 320 : 640, Math.floor(width * ratio * limit)),
+    width: Math.max(320, Math.floor(width * ratio * limit)),
     height: Math.max(desktop ? 240 : 480, Math.floor(height * ratio * limit)),
   };
 }

@@ -1,3 +1,6 @@
+import { PasswordVaultSettings } from "./password-vault";
+import { KeyRound } from "lucide-react";
+import { InlineSelect } from "./inline-select";
 import { shortcut, usesControl } from "./platform.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -12,6 +15,7 @@ import {
   SlidersHorizontal,
   Palette,
   UserRound,
+  UsersRound,
 } from "lucide-react";
 import { api } from "./api";
 import { AppearanceSettings } from "./appearance-settings";
@@ -22,8 +26,11 @@ import { EnvironmentVersions } from "./environment-versions";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { AccountSettings } from "./account";
+import { ClaudeAccountsPanel } from "./claude-accounts";
 const sections = [
   ["account", "账户", UserRound],
+  ["vault", "密码保险箱", KeyRound],
+  ["claude-accounts", "Claude 账号", UsersRound],
   ["keyboard", "通用", SlidersHorizontal],
   ["appearance", "外观", Palette],
   ["network", "网络与代理", Globe2],
@@ -37,6 +44,9 @@ export function SettingsPanel({
   onClose,
   onSaved,
   onConfirm,
+  claudeProfiles,
+  terminalTabs,
+  onClaudeLogin,
   initialSection = "keyboard",
 }) {
   const [accountDirty, setAccountDirty] = useState(false);
@@ -203,7 +213,7 @@ export function SettingsPanel({
               className={section === id ? "selected" : ""}
               aria-current={section === id ? "page" : undefined}
               onClick={async () => {
-                if (id !== section && accountDirty && !(await onConfirm({ title: "放弃尚未保存的账户修改？", body: "已保存的账户资料和密码保持不变。", confirm: "放弃修改" }))) return;
+                if (id !== section && accountDirty && !(await onConfirm({ title: "放弃尚未保存的修改？", body: "已保存的资料和密码保持不变。", confirm: "放弃修改" }))) return;
                 setSection(id);
               }}
             >
@@ -214,9 +224,17 @@ export function SettingsPanel({
         </nav>
       </aside>
       <div className="settings-main">
-        <div className="settings-content" ref={contentRef}>
+        <div className={section === "claude-accounts" ? "settings-content settings-content--accounts" : "settings-content"} ref={contentRef}>
           {section === "appearance" && <AppearanceSettings />}
+          {section === "vault" && <PasswordVaultSettings onConfirm={onConfirm} onDirty={setAccountDirty} />}
           {section === "account" && <AccountSettings busy={busy} onDirty={setAccountDirty} />}
+          {section === "claude-accounts" && <ClaudeAccountsPanel store={claudeProfiles} tabs={terminalTabs} onConfirm={onConfirm}
+            running={status.vm_running} environmentBusy={busy} login={async (id) => {
+              if (changed && !(await onConfirm({ title: "放弃尚未保存的设置并登录？",
+                body: "打开登录终端会离开设置页。", confirm: "打开登录终端" }))) return;
+              await onClaudeLogin(id);
+              onClose();
+            }} />}
           <fieldset className="settings-fields" disabled={busy}>
             {section === "network" && (
               <>
@@ -311,17 +329,16 @@ export function SettingsPanel({
                 </label>
                 <label>
                   {draft.auto_timezone ? "将应用的时区" : "系统时区"}
-                  <input
-                    list="cage-timezones"
+                  <InlineSelect editable
+                    aria-label={draft.auto_timezone ? "将应用的时区" : "系统时区"}
                     value={draft.timezone}
                     disabled={draft.auto_timezone}
-                    onChange={(e) => update("timezone", e.target.value)}
-                  />
-                  <datalist id="cage-timezones">
+                    onValueChange={(next) => update("timezone", next)}
+                  >
                     {zones.map((zone) => (
                       <option key={zone} value={zone} />
                     ))}
-                  </datalist>
+                  </InlineSelect>
                 </label>
                 {draft.auto_timezone && (
                   <div className="inline-info">
@@ -373,10 +390,11 @@ export function SettingsPanel({
                 )}
                 <label>
                   系统语言
-                  <select
+                  <InlineSelect
+                    aria-label="系统语言"
                     value={draft.locale}
                     disabled={draft.auto_language}
-                    onChange={(e) => update("locale", e.target.value)}
+                    onValueChange={(next) => update("locale", next)}
                   >
                     {[
                       ["en_US.UTF-8", "English (United States)"],
@@ -400,14 +418,15 @@ export function SettingsPanel({
                     ].includes(draft.locale) && (
                       <option value={draft.locale}>{draft.locale}</option>
                     )}
-                  </select>
+                  </InlineSelect>
                 </label>
                 <label>
                   网页首选语言
-                  <select
+                  <InlineSelect
+                    aria-label="网页首选语言"
                     value={draft.browser_language}
                     disabled={draft.auto_language}
-                    onChange={(e) => update("browser_language", e.target.value)}
+                    onValueChange={(next) => update("browser_language", next)}
                   >
                     {[
                       ["en-US", "English (United States)"],
@@ -433,7 +452,7 @@ export function SettingsPanel({
                         {draft.browser_language}
                       </option>
                     )}
-                  </select>
+                  </InlineSelect>
                 </label>
                 <p className="footnote">
                   网页仍可按自己的规则选择语言。工作台界面使用中文。
@@ -545,7 +564,7 @@ export function SettingsPanel({
                   </strong>
                 </div>
                 <p className="field-help">
-                  返回工作台，使用“打开项目”选择其他本地文件夹。
+                  点击侧栏“项目”标题旁的加号，可选择其他本地文件夹。
                 </p>
                 <div className="project-explanation">
                   <FolderOpen size={22} />
@@ -616,7 +635,7 @@ export function SettingsPanel({
             </div>
           )}
         </div>
-        {((section !== "appearance" && section !== "account") || changed) && (
+        {(!["appearance", "account", "claude-accounts", "vault"].includes(section) || changed) && (
           <footer className="settings-footer">
             {" "}
             <>

@@ -5,6 +5,19 @@ import Darwin
 
 let cageUpdateBundleID = "io.github.lee-xeo.claude-cage"
 
+enum CageProfile {
+    static func configURL() -> URL {
+        if let path = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"], !path.isEmpty {
+            return URL(fileURLWithPath: path).standardizedFileURL
+        }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/config.json")
+    }
+
+    // Every helper and relaunched app inherits the same absolute profile, even
+    // when its working directory differs from the original launch directory.
+    static func pinEnvironment() { setenv("CLAUDE_CAGE_CONFIG", configURL().path, 1) }
+}
+
 final class CageUpdateValidation {
     private let lock = NSLock()
     private let completion = DispatchGroup()
@@ -245,8 +258,7 @@ final class CageAppUpdater {
     init(bundleURL: URL, onChange: @escaping ([String: Any]) -> Void, quit: @escaping () -> Void, reconnect: @escaping () -> Void) {
         self.bundleURL = bundleURL.resolvingSymlinksInPath()
         self.onChange = onChange; self.quit = quit; self.reconnect = reconnect
-        let path = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"] ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/config.json").path
-        root = URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("updates", isDirectory: true)
+        root = CageProfile.configURL().deletingLastPathComponent().appendingPathComponent("updates", isDirectory: true)
         let version = Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "CageVersion") as? String ?? "开发版本"
         state = ["phase": "idle", "currentVersion": version, "message": ""]
         if let data = try? Data(contentsOf: root.appendingPathComponent("last-result.json")), data.count < 16384,

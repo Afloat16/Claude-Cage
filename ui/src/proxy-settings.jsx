@@ -1,3 +1,4 @@
+import { InlineSelect } from "./inline-select";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Download,
@@ -315,10 +316,10 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                 placeholder="搜索节点、来源或协议"
               />
             </label>
-            <select
+            <InlineSelect
               aria-label="节点来源"
               value={source}
-              onChange={(e) => setSource(e.target.value)}
+              onValueChange={(next) => setSource(next)}
             >
               <option value="">全部来源</option>
               {proxy.sources.map((s) => (
@@ -326,7 +327,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                   {s.name}
                 </option>
               ))}
-            </select>
+            </InlineSelect>
             <button
               disabled={busy || !proxy.running || !nodes.length}
               onClick={() => measure(nodes.map((n) => n.id))}
@@ -542,12 +543,13 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                   </label>
                   <label>
                     自动更新间隔
-                    <select
+                    <InlineSelect
+                      aria-label="自动更新间隔"
                       value={form.interval_hours}
-                      onChange={(e) =>
+                      onValueChange={(next) =>
                         setForm({
                           ...form,
-                          interval_hours: Number(e.target.value),
+                          interval_hours: Number(next),
                         })
                       }
                     >
@@ -562,7 +564,7 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                           {label}
                         </option>
                       ))}
-                    </select>
+                    </InlineSelect>
                   </label>
                   {!form.id && (
                     <label className="check-line">
@@ -645,15 +647,16 @@ export function ProxySettings({ status, onApplied, onConfirm }) {
                     </label>
                     <label>
                       协议
-                      <select
+                      <InlineSelect
+                        aria-label="协议"
                         value={manual.type}
-                        onChange={(e) =>
-                          setManual({ ...manual, type: e.target.value })
+                        onValueChange={(next) =>
+                          setManual({ ...manual, type: next })
                         }
                       >
                         <option value="socks5">SOCKS5</option>
                         <option value="http">HTTP CONNECT</option>
-                      </select>
+                      </InlineSelect>
                     </label>
                   </div>
                   <div className="field-row">

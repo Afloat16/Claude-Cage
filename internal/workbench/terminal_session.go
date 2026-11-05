@@ -19,18 +19,20 @@ type terminalPTY interface {
 }
 
 type terminalSession struct {
-	mu        sync.Mutex
-	id, title string
-	workspace string
-	cmd       *exec.Cmd
-	file      terminalPTY
-	history   []byte
-	closed    bool
-	clients   map[chan []byte]bool
-	done      chan struct{}
-	inputs    chan string
-	stopping  chan struct{}
-	closeOnce sync.Once
+	mu                    sync.Mutex
+	id, title             string
+	workspace             string
+	kind, claudeAccountID string
+	claudeAccountSource   string
+	cmd                   *exec.Cmd
+	file                  terminalPTY
+	history               []byte
+	closed                bool
+	clients               map[chan []byte]bool
+	done                  chan struct{}
+	inputs                chan string
+	stopping              chan struct{}
+	closeOnce             sync.Once
 }
 
 func newTerminalSession(file terminalPTY) *terminalSession {
@@ -40,7 +42,17 @@ func newTerminalSession(file terminalPTY) *terminalSession {
 func (t *terminalSession) summary() map[string]any {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	return map[string]any{"id": t.id, "title": t.title, "closed": t.closed, "workspace": t.workspace}
+	closed := t.closed
+	if t.done != nil {
+		select {
+		case <-t.done:
+			closed = true
+		default:
+			closed = false
+		}
+	}
+	return map[string]any{"id": t.id, "title": t.title, "closed": closed, "workspace": t.workspace, "kind": t.kind,
+		"claude_account_id": t.claudeAccountID, "claude_account_source": t.claudeAccountSource}
 }
 
 func (t *terminalSession) stopPTY() {
@@ -120,7 +132,11 @@ func (t *terminalSession) subscribe() *terminalSubscription {
 	} else {
 		t.clients[channel] = true
 	}
-	return &terminalSubscription{History: append([]byte(nil), t.history...), Output: channel, session: t, channel: channel}
+	history := append([]byte(nil), t.history...)
+	if t.kind == "claude-login" {
+		history = []byte("请在 Cage 浏览器的临时登录页完成授权。若页面提供验证码，可返回此终端输入。\r\n")
+	}
+	return &terminalSubscription{History: history, Output: channel, session: t, channel: channel}
 }
 
 // Close detaches the viewer; the PTY and its process continue running.
@@ -163,9 +179,11 @@ func (t *terminalSession) read() {
 		if n > 0 {
 			chunk := append([]byte(nil), buffer[:n]...)
 			t.mu.Lock()
-			t.history = append(t.history, chunk...)
-			if len(t.history) > 512<<10 {
-				t.history = t.history[len(t.history)-(512<<10):]
+			if t.kind != "claude-login" {
+				t.history = append(t.history, chunk...)
+				if len(t.history) > 512<<10 {
+					t.history = t.history[len(t.history)-(512<<10):]
+				}
 			}
 			for channel := range t.clients {
 				select {

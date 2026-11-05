@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Claude Cage · 宣传片</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;600;700&family=Noto+Serif+SC:wght@500;600;700&display=block" />
+<style>
+:root {
+  --paper: #faf8f4;
+  --ink: #2b2724;
+  --muted: #7a726a;
+  --line: #e7e2db;
+  --accent: #b95032;
+  --orange: #ef6f45;
+  --night: #0f0d0c;
+  --cream: #f3ebe1;
+  --ok: #2f8a4c;
+  --sans: "Inter", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --serif: "Noto Serif SC", "Songti SC", "Source Han Serif SC", serif;
+  --mono: "JetBrains Mono", "SF Mono", "Menlo", "Noto Sans Mono CJK SC", monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: #050404; overflow: hidden; }
+body { font-family: var(--sans); -webkit-font-smoothing: antialiased; font-synthesis: none; }
+
+/* ---------- stage ---------- */
+#viewport { position: fixed; inset: 0; display: grid; place-items: center; }
+#stage {
+  position: relative; width: 1920px; height: 1080px; overflow: hidden;
+  background: var(--night); transform-origin: 0 0; flex: none;
+}
+.layer { position: absolute; inset: 0; will-change: opacity, transform; }
+.center { position: absolute; left: 0; right: 0; text-align: center; }
+.c { display: inline-block; white-space: pre; will-change: opacity, transform, filter; }
+
+#grain {
+  position: absolute; inset: -200px; pointer-events: none; z-index: 50; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='260' height='260'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5  0 0 0 0 .5  0 0 0 0 .5  0 0 0 .9 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: .35;
+}
+#vignette { position: absolute; inset: 0; pointer-events: none; z-index: 49;
+  background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(20,12,6,.22) 100%); }
+
+/* ---------- act 1 · the problem ---------- */
+#night { background: radial-gradient(ellipse 70% 60% at 50% 55%, #1a1210 0%, #0c0908 70%); }
+#nightGlow { position: absolute; inset: 0; background: radial-gradient(ellipse 55% 45% at 50% 58%, rgba(255,80,50,.22), transparent 70%); opacity: 0; }
+#flash { position: absolute; inset: 0; background: #ffe6dc; opacity: 0; z-index: 3; pointer-events: none; }
+.beat { position: absolute; inset: 0; will-change: opacity, transform; }
+.kick { position: absolute; left: 0; right: 0; top: 92px; text-align: center; font: 600 19px/1 var(--mono); letter-spacing: .3em; color: #ff7a55; }
+.kick i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff5a36; margin-right: 14px; vertical-align: 2px; box-shadow: 0 0 0 5px rgba(255,90,54,.18); }
+.head { position: absolute; left: 0; right: 0; top: 140px; text-align: center; font: 700 70px/1.25 var(--sans); color: #f7f0e9; letter-spacing: -.005em; }
+.head em, .q em { font-style: normal; color: #ff6a45; }
+.dark-card { background: linear-gradient(180deg, rgba(56,46,42,.92), rgba(32,27,25,.92)); border: 1px solid rgba(255,240,225,.10);
+  box-shadow: 0 40px 90px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.06); border-radius: 22px; color: #f4ece4; }
+
+/* beat 1 */
+#alarm { position: absolute; left: 50%; top: 404px; width: 900px; margin-left: -450px; padding: 30px 32px; display: grid; grid-template-columns: 76px 1fr auto; gap: 24px; align-items: center;
+  background: linear-gradient(180deg, #6b2a1d, #3d1912); border-color: rgba(255,140,100,.35); }
+#alarm .ico { width: 76px; height: 76px; border-radius: 18px; background: rgba(255,120,80,.22); color: #ffb391; display: grid; place-items: center; }
+#alarm .ico svg { width: 40px; height: 40px; }
+#alarm h4 { margin: 0 0 8px; font: 700 36px/1.2 var(--sans); }
+#alarm p { margin: 0; font: 400 21px/1.4 var(--sans); color: rgba(255,230,220,.66); }
+#alarm time { align-self: start; font: 400 17px/1 var(--sans); color: rgba(255,230,220,.5); padding-top: 8px; }
+#losses { position: absolute; left: 0; right: 0; top: 652px; display: flex; justify-content: center; gap: 24px; }
+.loss { width: 284px; padding: 26px 28px; border-radius: 18px; text-align: left; }
+.loss span { display: block; font: 500 19px/1 var(--sans); color: rgba(244,236,228,.5); text-decoration: line-through; text-decoration-color: rgba(255,106,69,.7); }
+.loss b { display: block; margin-top: 14px; font: 700 34px/1.1 var(--sans); color: #ff6a45; }
+
+/* beat 2 */
+#receipt { position: absolute; left: 50%; top: 318px; width: 780px; margin-left: -390px; padding: 34px 44px 30px; background: #f3ece2; color: #2b2522;
+  border-radius: 6px 6px 0 0; box-shadow: 0 50px 100px rgba(0,0,0,.55); font-family: var(--mono); }
+#receipt::after { content: ""; position: absolute; left: 0; right: 0; bottom: -18px; height: 18px;
+  background: linear-gradient(-45deg, transparent 12px, #f3ece2 0) 0 0/24px 18px repeat-x, linear-gradient(45deg, transparent 12px, #f3ece2 0) 0 0/24px 18px repeat-x; }
+#receipt .rh { display: flex; justify-content: space-between; font: 600 18px/1 var(--mono); letter-spacing: .12em; color: #8a7f75; padding-bottom: 18px; border-bottom: 2px dashed #cfc4b7; }
+#receipt .rr { display: flex; justify-content: space-between; align-items: baseline; padding: 15px 0; font-size: 28px; border-bottom: 1px dashed #ddd3c7; }
+#receipt .rr span { font-family: var(--sans); font-weight: 500; }
+#receipt .rt { display: flex; justify-content: space-between; align-items: baseline; padding: 20px 0 6px; font: 700 34px/1 var(--mono); color: #c2401f; }
+#receipt .rt span { font-family: var(--sans); }
+#receipt .rn { margin-top: 12px; text-align: right; font: 600 22px/1.3 var(--serif); color: #c2401f; }
+
+/* beat 3 */
+#wires { position: absolute; inset: 0; width: 1920px; height: 1080px; overflow: visible; }
+#wires path { fill: none; stroke: #ff6a45; stroke-width: 2.5; stroke-linecap: round; opacity: .75; }
+#pcLabel { position: absolute; left: 700px; top: 318px; width: 270px; font: 600 18px/1 var(--mono); letter-spacing: .2em; color: rgba(244,236,228,.45); text-align: center; }
+.app-chip { position: absolute; left: 700px; width: 270px; height: 78px; padding: 0 22px; display: flex; align-items: center; gap: 16px; font: 600 25px/1 var(--sans); border-radius: 16px; }
+.app-chip i { width: 36px; height: 36px; border-radius: 10px; display: block; flex: none; }
+.warn { position: absolute; right: 1260px; height: 50px; padding: 0 18px; display: flex; align-items: center; gap: 10px; border-radius: 12px; white-space: nowrap;
+  background: rgba(255,90,54,.16); border: 1px solid rgba(255,106,69,.5); color: #ffb69c; font: 600 20px/1 var(--sans); }
+.warn svg { width: 20px; height: 20px; }
+#proxyNode { position: absolute; left: 1330px; top: 470px; width: 240px; height: 240px; margin: 0; border-radius: 50%; display: grid; place-content: center; text-align: center;
+  background: radial-gradient(circle at 50% 40%, #4a2318, #2a1510); border: 2px solid rgba(255,106,69,.6); box-shadow: 0 0 80px rgba(255,90,54,.25); color: #fff; }
+#proxyNode b { font: 700 32px/1.2 var(--sans); }
+#proxyNode span { margin-top: 10px; font: 500 17px/1.3 var(--sans); color: rgba(255,220,205,.7); }
+
+/* beat 4 */
+#vmWin { position: absolute; left: 50%; top: 332px; width: 1080px; margin-left: -540px; overflow: hidden; border-radius: 16px; }
+#vmWin .tb { height: 56px; display: flex; align-items: center; gap: 9px; padding: 0 20px; background: rgba(255,255,255,.05); border-bottom: 1px solid rgba(255,255,255,.07); font: 500 17px var(--sans); color: rgba(244,236,228,.6); }
+#vmWin .tb i { width: 12px; height: 12px; border-radius: 50%; background: #5b524d; display: block; }
+#vmWin .tb span { margin-left: 14px; }
+#vmWin .bd { padding: 34px 40px 38px; display: grid; gap: 28px; }
+.vm-row { display: grid; grid-template-columns: 1fr auto; gap: 14px 20px; align-items: baseline; font: 500 27px/1.2 var(--sans); }
+.vm-row small { font: 500 22px/1 var(--mono); color: rgba(244,236,228,.55); }
+.vm-bar { grid-column: 1 / -1; height: 14px; border-radius: 10px; background: rgba(255,255,255,.08); overflow: hidden; }
+.vm-bar i { display: block; height: 100%; border-radius: 10px; background: #d9cfc5; transform-origin: 0 50%; }
+#vmMemRow small { color: #ff8a66; }
+#vmTodo { display: flex; gap: 12px; flex-wrap: wrap; padding-top: 6px; border-top: 1px solid rgba(255,255,255,.07); }
+#vmTodo .lbl { width: 100%; font: 500 21px/1 var(--sans); color: rgba(244,236,228,.5); padding-top: 18px; }
+#vmTodo span { padding: 14px 22px; border-radius: 12px; border: 1px dashed rgba(244,236,228,.35); font: 500 24px/1 var(--sans); color: rgba(244,236,228,.85); }
+
+/* beat 5 */
+.q { position: absolute; left: 0; right: 0; top: 476px; text-align: center; font: 700 104px/1.2 var(--sans); color: #f7f0e9; letter-spacing: .01em; }
+
+/* ---------- act 2 · room ---------- */
+#room { background: var(--paper); }
+#roomLight { position: absolute; inset: 0;
+  background: radial-gradient(ellipse 55% 50% at 50% 42%, #fffdf9 0%, rgba(255,253,249,0) 70%),
+              radial-gradient(ellipse 80% 60% at 50% 110%, rgba(239,111,69,.10), transparent 70%); }
+#logoWrap { position: absolute; left: 50%; top: 178px; width: 270px; height: 270px; margin-left: -135px; }
+#logoWrap svg, .logo-svg { width: 100%; height: 100%; overflow: visible; }
+.logo-svg rect { transform-box: fill-box; transform-origin: center; shape-rendering: crispEdges; }
+#wordmark { top: 486px; font: 700 64px/1 var(--sans); letter-spacing: -.035em; color: var(--ink); }
+#roomPos { top: 600px; font: 700 62px/1.2 var(--sans); color: var(--ink); letter-spacing: -.005em; }
+#roomPos em { font-style: normal; color: var(--accent); }
+#roomSub { top: 708px; font: 500 30px/1.4 var(--sans); color: var(--muted); letter-spacing: .04em; }
+#roomSub em { font-style: normal; color: var(--ink); font-weight: 600; }
+
+/* ---------- act 3 · app ---------- */
+#app { background: radial-gradient(ellipse 70% 60% at 50% 40%, #fffdfa, var(--paper) 70%), var(--paper); }
+#appFloor { position: absolute; left: 50%; top: 980px; width: 1600px; height: 160px; margin-left: -800px;
+  background: radial-gradient(closest-side, rgba(90,60,30,.16), transparent); filter: blur(10px); }
+#capShade { position: absolute; left: 0; right: 0; top: 0; height: 250px; z-index: 4; pointer-events: none;
+  background: linear-gradient(180deg, var(--paper) 0%, rgba(250,248,244,.96) 52%, rgba(250,248,244,0) 100%); }
+#caption { position: absolute; left: 112px; top: 54px; z-index: 5; display: flex; align-items: baseline; gap: 26px;
+  padding: 0; }
+#caption .num { font: 600 22px/1 var(--mono); color: var(--accent); letter-spacing: .08em; position: relative; top: -6px; }
+#caption .txt { display: grid; gap: 10px; }
+#caption .title { font: 650 40px/1.1 var(--sans); color: var(--ink); letter-spacing: -.01em; }
+#caption .sub { font: 400 22px/1.3 var(--sans); color: var(--muted); letter-spacing: .01em; }
+#caption .slot { position: relative; height: 100px; width: 1500px; }
+#caption .cap { position: absolute; left: 0; top: 0; display: flex; gap: 26px; align-items: baseline; }
+#progressDots { position: absolute; right: 112px; top: 68px; z-index: 5; display: flex; gap: 10px; }
+#progressDots i { display: block; width: 34px; height: 4px; border-radius: 4px; background: #e4ddd4; overflow: hidden; position: relative; }
+#progressDots i b { position: absolute; inset: 0; background: var(--accent); transform-origin: 0 50%; transform: scaleX(0); }
+
+#cam { position: absolute; left: 0; top: 0; transform-origin: 0 0; will-change: transform; }
+#win {
+  position: relative; width: 1280px; height: 760px; border-radius: 14px; overflow: hidden; background: #fff;
+  box-shadow: 0 0 0 1px rgba(40,25,10,.09), 0 50px 120px -20px rgba(70,40,15,.28), 0 18px 40px -12px rgba(70,40,15,.18);
+  font-size: 14px; color: #1f1d1b;
+}
+#win svg.i { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 248px; background: #f7f6f4; border-right: 1px solid #ebe8e4; }
+.lights { position: absolute; left: 18px; top: 17px; display: flex; gap: 8px; }
+.lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; box-shadow: inset 0 0 0 .5px rgba(0,0,0,.15); }
+.lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+.brand { position: absolute; left: 18px; top: 46px; right: 16px; display: flex; align-items: center; gap: 10px; font: 650 18px/1 var(--sans); }
+.brand .mark { width: 22px; height: 22px; }
+.brand .collapse { margin-left: auto; color: #6c6763; }
+.nav { position: absolute; left: 12px; right: 12px; top: 88px; display: grid; gap: 2px; }
+.nav div, .proj div { display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 12px; border-radius: 9px; color: #2a2724; }
+.nav .dim { color: #b4aea8; }
+.nav .on { background: #ebe9e6; }
+.nav kbd { margin-left: auto; font: 400 12px var(--sans); color: #9a948e; }
+.sec { position: absolute; left: 24px; right: 24px; top: 262px; display: flex; justify-content: space-between; color: #6c6763; font-size: 13px; }
+.proj { position: absolute; left: 12px; right: 12px; top: 292px; display: grid; gap: 2px; }
+.proj .child { padding-left: 34px; font-size: 13px; color: #8b8580; position: relative; }
+.proj .child .alt { position: absolute; left: 0; top: 0; height: 38px; width: 100%; padding-left: 12px; display: flex; align-items: center; gap: 9px;
+  border-radius: 9px; color: #2a2724; background: #ebe9e6; font-size: 14px; }
+.side-foot { position: absolute; left: 12px; right: 12px; bottom: 12px; border-top: 1px solid #e6e2dd; padding-top: 10px; display: grid; gap: 2px; }
+.side-foot div { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 12px; font-size: 13.5px; color: #2a2724; }
+.side-foot .dot { width: 7px; height: 7px; border-radius: 50%; background: #b7b1ab; margin: 0 4px 0 2px; }
+.side-foot kbd { margin-left: auto; font: 400 12px var(--sans); color: #9a948e; }
+.side-foot .shield { margin-left: auto; color: #6c6763; }
+.main { position: absolute; left: 248px; right: 0; top: 0; bottom: 0; }
+.topbar { position: absolute; left: 0; right: 0; top: 0; height: 58px; display: flex; align-items: center; padding: 0 22px; gap: 10px; }
+.crumb { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.crumb .sep, .crumb .leaf { color: #2a2724; }
+.top-actions { margin-left: auto; display: flex; gap: 12px; align-items: center; color: #3c3936; }
+.pill { display: flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border: 1px solid #e3dfda; border-radius: 9px; font-size: 13px; background: #fff; }
+.status { position: absolute; left: 0; right: 0; bottom: 0; height: 32px; border-top: 1px solid #ece9e5; display: flex; align-items: center;
+  padding: 0 18px; gap: 0; font-size: 12px; color: #4a4642; background: #fff; }
+.status .it { display: flex; align-items: center; gap: 6px; padding: 0 12px; height: 16px; border-left: 1px solid #e3dfda; position: relative; }
+.status .it:first-child { border-left: 0; padding-left: 2px; }
+.status svg.i { width: 13px !important; height: 13px !important; }
+.status .right { margin-left: auto; display: flex; }
+.flip { position: relative; display: inline-block; overflow: hidden; height: 16px; line-height: 16px; vertical-align: top; }
+.flip span { display: block; white-space: nowrap; }
+.flip span + span { position: absolute; left: 0; top: 0; }
+.hl { position: absolute; inset: -6px -4px; border-radius: 7px; background: rgba(185,80,50,.10); box-shadow: 0 0 0 1.5px rgba(185,80,50,.45); opacity: 0; }
+
+/* hero (first run) */
+.view { position: absolute; left: 0; right: 0; top: 58px; bottom: 32px; }
+.hero { text-align: center; }
+.hero .shield-big { width: 44px; height: 44px; margin: 74px auto 0; color: #232120; }
+#win .hero .shield-big svg.i { width: 44px; height: 44px; stroke-width: 1.5; }
+.hero h2 { margin: 18px 0 0; font: 700 34px/1.2 var(--sans); letter-spacing: -.01em; }
+.hero .lead { margin-top: 18px; color: #3c3936; font-size: 14.5px; }
+.steps { margin: 24px auto 0; display: flex; justify-content: center; gap: 26px; font-size: 13.5px; color: #3c3936; }
+.steps span { display: flex; align-items: center; gap: 8px; }
+.steps b { width: 22px; height: 22px; border-radius: 50%; border: 1px solid #cfcac4; display: grid; place-items: center; font: 500 12px var(--sans); position: relative; background: #fff; }
+.steps b.on { background: #1d1b1a; color: #fff; border-color: #1d1b1a; }
+.steps b.done { background: var(--ok); border-color: var(--ok); color: #fff; }
+.steps b svg.i { width: 13px !important; height: 13px !important; stroke-width: 2.4 !important; }
+.steps .strong { font-weight: 600; color: #1d1b1a; }
+.card { position: relative; width: 500px; margin: 26px auto 0; border: 1px solid #e3dfda; border-radius: 16px; padding: 22px 22px 18px; text-align: left; background: #fff; }
+.card .head { display: flex; gap: 14px; align-items: flex-start; }
+#win .card .head svg.i { width: 24px; height: 24px; margin-top: 4px; }
+.card .t { font: 600 15px/1.4 var(--sans); }
+.card .d { font-size: 12.5px; color: #6c6763; margin-top: 4px; }
+.card .row { margin-top: 22px; display: flex; align-items: center; justify-content: space-between; height: 38px; }
+.card .state { position: relative; font-size: 12.5px; color: #6c6763; height: 20px; width: 260px; }
+.card .state > div { position: absolute; left: 0; top: 0; display: flex; align-items: center; gap: 8px; white-space: nowrap; }
+.card .state i { width: 6px; height: 6px; border-radius: 50%; background: #b7b1ab; display: block; }
+.card .state .ready i { background: var(--ok); box-shadow: 0 0 0 3px rgba(47,138,76,.15); }
+.card .state .ready b { color: #1d1b1a; font-weight: 600; }
+.btn { position: relative; height: 38px; padding: 0 16px; border-radius: 9px; background: #1d1b1a; color: #fff; display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 500; }
+.btn-swap { position: relative; width: 150px; height: 38px; }
+.btn-swap .btn { position: absolute; right: 0; top: 0; white-space: nowrap; }
+.hero .foot { margin-top: 26px; font-size: 12.5px; color: #3c3936; }
+
+/* proxy modal */
+#modalShade { position: absolute; inset: 0; background: rgba(30,24,20,.18); }
+#modal { position: absolute; left: 50%; top: 92px; width: 560px; margin-left: -280px; background: #fff; border-radius: 16px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.06), 0 40px 80px -10px rgba(40,25,10,.32); overflow: hidden; }
+#modal .mh { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px 16px; border-bottom: 1px solid #efebe6; font: 650 18px var(--sans); }
+#modal .src { margin: 16px 22px 10px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 11px; background: #f7f5f2; font-size: 13px; }
+#modal .src .tag { margin-left: auto; color: var(--ok); font-size: 12.5px; display: flex; align-items: center; gap: 5px; }
+#modal .lbl { margin: 14px 22px 6px; font-size: 12px; color: #8b8580; letter-spacing: .04em; }
+#modal .nodes { margin: 0 14px; display: grid; gap: 2px; }
+#modal .node { position: relative; display: flex; align-items: center; gap: 12px; height: 46px; padding: 0 12px; border-radius: 10px; font-size: 14px; }
+#modal .node .sel { position: absolute; inset: 0; border-radius: 10px; background: #f3f0ec; box-shadow: inset 0 0 0 1.5px #1d1b1a; opacity: 0; }
+#modal .node .radio { position: relative; width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid #c9c3bc; display: grid; place-items: center; }
+#modal .node .radio i { width: 8px; height: 8px; border-radius: 50%; background: #1d1b1a; transform: scale(0); }
+#modal .node .ms { margin-left: auto; position: relative; font: 500 12.5px var(--mono); color: #6c6763; display: flex; align-items: center; gap: 8px; }
+#modal .node .ms em { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); display: block; }
+#modal .node .ms em.warn { background: #d29a2e; }
+#modal .node > span { position: relative; }
+#modal .mf { margin-top: 14px; padding: 14px 22px; border-top: 1px solid #efebe6; display: flex; align-items: center; justify-content: space-between; font-size: 12.5px; color: #6c6763; }
+
+/* launch panel */
+.launch { padding-top: 34px; }
+.panel { width: 820px; margin: 0 auto; border: 1px solid #e3dfda; border-radius: 16px; overflow: hidden; background: #fff; }
+.ph { display: flex; gap: 14px; align-items: center; padding: 20px 24px; border-bottom: 1px solid #efebe6; position: relative; }
+.ph .badge { position: relative; width: 44px; height: 44px; border-radius: 12px; background: #f4f1ed; display: grid; place-items: center; }
+#win .ph .badge svg.i { width: 24px; height: 24px; }
+.ph .badge .okb { position: absolute; inset: 0; border-radius: 12px; background: #e9f4ec; color: var(--ok); display: grid; place-items: center; opacity: 0; }
+.ph .tt { position: relative; height: 46px; flex: 1; }
+.ph .tt > div { position: absolute; left: 0; top: 0; }
+.ph .tt .a { font: 650 17px/1.4 var(--sans); }
+.ph .tt .b { font-size: 13px; color: #6c6763; margin-top: 3px; }
+.ph .count { font: 500 13px var(--mono); color: #6c6763; }
+.prog { padding: 14px 24px 6px; display: grid; gap: 10px; }
+.prog .p { display: grid; grid-template-columns: 20px 150px 1fr 54px; align-items: center; gap: 12px; font-size: 13px; height: 22px; }
+.prog .bar { height: 5px; border-radius: 5px; background: #efebe6; overflow: hidden; }
+.prog .bar i { display: block; height: 100%; background: #1d1b1a; transform-origin: 0 50%; transform: scaleX(0); }
+.prog .pct { font: 500 12px var(--mono); color: #8b8580; text-align: right; }
+.st { position: relative; width: 18px; height: 18px; }
+.st > * { position: absolute; inset: 0; }
+.st .spin { border-radius: 50%; border: 2px solid #e2ddd7; border-top-color: #1d1b1a; }
+.st .ok { border-radius: 50%; background: var(--ok); color: #fff; display: grid; place-items: center; transform: scale(0); }
+.st .ok svg.i { width: 11px !important; height: 11px !important; stroke-width: 3 !important; }
+.st .wait { border-radius: 50%; border: 2px solid #e8e4df; }
+.checks-h { padding: 14px 24px 8px; display: flex; justify-content: space-between; font-size: 12.5px; color: #8b8580; border-top: 1px solid #f2efeb; margin-top: 10px; }
+.checks { padding: 0 16px 16px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 2px; }
+.ck { display: flex; align-items: center; gap: 12px; height: 38px; padding: 0 10px; border-radius: 9px; font-size: 13.5px; position: relative; }
+.ck .res { margin-left: auto; position: relative; width: 60px; height: 16px; font-size: 12.5px; text-align: right; }
+.ck .res span { position: absolute; right: 0; top: 0; white-space: nowrap; }
+.ck .res .y { color: var(--ok); font-weight: 500; }
+.ck .res .n { color: #a39d97; }
+.ck .flash { position: absolute; inset: 0; border-radius: 9px; background: rgba(47,138,76,.08); opacity: 0; }
+
+/* terminal */
+.term-bar { position: absolute; left: 0; right: 0; top: 0; height: 46px; border-top: 1px solid #efebe6; border-bottom: 1px solid #efebe6; display: flex; align-items: center; padding: 0 18px; gap: 10px; font: 400 13px var(--mono); color: #3c3936; }
+.term-bar .r { margin-left: auto; display: flex; align-items: center; gap: 14px; font: 400 12.5px var(--sans); }
+.term { position: absolute; left: 36px; right: 36px; top: 76px; bottom: 0; font: 400 14.5px/1.72 var(--mono); color: #23201e; }
+.term .ln, .cc { white-space: pre; }
+.term .acc { color: #9a4a2c; font-weight: 600; }
+.term .g { color: #6f8f3a; }
+.term .m { color: #8b8580; }
+.term .ln { height: 25px; }
+.caret { display: inline-block; width: 9px; height: 19px; background: #23201e; vertical-align: -4px; margin-left: 1px; }
+.cc { margin: 6px 0 8px; width: 560px; border: 1.5px solid #d97757; border-radius: 10px; padding: 10px 18px; line-height: 1.7; }
+.cc .w { color: #c25f3c; font-weight: 600; }
+.reply .dot { color: #23201e; }
+.reply .tool { font-weight: 600; }
+
+/* cursor */
+#cursor { position: absolute; left: 0; top: 0; width: 26px; height: 26px; z-index: 30; pointer-events: none; will-change: transform; }
+#cursor svg { width: 26px; height: 26px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.3)); }
+#ripple { position: absolute; left: 0; top: 0; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; border: 2px solid rgba(185,80,50,.55); z-index: 29; opacity: 0; }
+
+/* ---------- act 4 · perks ---------- */
+#perks { background: radial-gradient(ellipse 70% 60% at 50% 40%, #fffdfa, var(--paper) 70%), var(--paper); }
+#perksHead { top: 196px; font: 700 66px/1.2 var(--sans); color: var(--ink); }
+#perksHead em { font-style: normal; color: var(--accent); }
+#perkRow { position: absolute; left: 0; right: 0; top: 400px; display: flex; justify-content: center; gap: 26px; }
+.perk { width: 380px; height: 350px; padding: 38px 34px; background: #fff; border-radius: 24px; box-shadow: 0 0 0 1px rgba(40,25,10,.07), 0 30px 70px -24px rgba(70,40,15,.22); }
+.perk .pi { width: 72px; height: 72px; border-radius: 18px; background: #f8ece6; color: var(--accent); display: grid; place-items: center; }
+.perk .pi svg { width: 40px !important; height: 40px !important; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.perk h3 { margin: 30px 0 14px; font: 700 34px/1.25 var(--sans); color: var(--ink); letter-spacing: -.01em; }
+.perk p { margin: 0; font: 400 22px/1.6 var(--sans); color: var(--muted); }
+
+/* ---------- act 5 · letter ---------- */
+#letter { background: radial-gradient(ellipse 70% 80% at 30% 50%, #2b1d15 0%, #17110d 60%, #0e0a08 100%); }
+#art { position: absolute; left: 150px; top: 120px; width: 840px; height: 840px; overflow: hidden; border-radius: 6px;
+  -webkit-mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 58%, transparent 100%);
+          mask-image: radial-gradient(ellipse 70% 70% at 50% 50%, #000 58%, transparent 100%); }
+#art img { width: 100%; height: 100%; display: block; will-change: transform; }
+#artLight { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,210,160,.35) 48%, transparent 66%); mix-blend-mode: screen; }
+#letterText { position: absolute; left: 1090px; top: 360px; font-family: var(--serif); color: var(--cream); }
+#letterText .l { display: block; font-size: 58px; font-weight: 600; line-height: 1.75; letter-spacing: .05em; }
+#letterText .l em { font-style: normal; color: #f5a37c; }
+#letterKicker { position: absolute; left: 1094px; top: 300px; font: 500 18px/1 var(--mono); letter-spacing: .3em; color: rgba(243,235,225,.42); }
+
+/* ---------- act 6 · end ---------- */
+#end { background: var(--paper); }
+#endLogo { position: absolute; left: 50%; top: 286px; width: 180px; height: 180px; margin-left: -90px; }
+#endWord { top: 500px; font: 700 84px/1 var(--sans); letter-spacing: -.035em; color: var(--ink); }
+#endSub { top: 612px; font: 500 30px/1.4 var(--serif); color: #4d4640; letter-spacing: .08em; }
+#endPlat { top: 702px; display: flex; justify-content: center; gap: 18px; font: 500 20px/1 var(--sans); color: var(--muted); }
+#endPlat span { padding: 10px 18px; border: 1px solid #e2dbd2; border-radius: 999px; background: #fff; }
+#endGit { top: 836px; font: 500 20px/1 var(--mono); color: #8d847b; letter-spacing: .02em; }
+#endUrl { top: 786px; font: 500 24px/1 var(--mono); color: var(--accent); letter-spacing: .02em; }
+#endNote { top: 978px; font: 400 15px/1.5 var(--sans); color: #a39b92; letter-spacing: .04em; }
+
+/* ---------- preview controls ---------- */
+#controls { position: fixed; left: 0; right: 0; bottom: 0; padding: 14px 20px; display: flex; align-items: center; gap: 14px;
+  background: linear-gradient(transparent, rgba(0,0,0,.75)); color: #eee; font: 500 13px var(--mono); z-index: 100; opacity: 0; transition: opacity .25s; }
+body:hover #controls { opacity: 1; }
+#controls button { all: unset; cursor: pointer; padding: 6px 12px; border-radius: 6px; background: rgba(255,255,255,.12); }
+#controls input { flex: 1; accent-color: #ef6f45; }
+body.render #controls { display: none; }
+</style>
+</head>
+<body>
+<div id="viewport">
+<div id="stage">
+
+  <!-- ============ ACT 1 · THE PROBLEM ============ -->
+  <section class="layer" id="night">
+    <div id="nightGlow"></div>
+
+    <div class="beat" id="b1">
+      <div class="kick"><i></i>痛点 01 · 封号</div>
+      <div class="head"><span data-split>一次封号，</span><em data-split>钱和进度一起清零。</em></div>
+      <div id="alarm" class="dark-card"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><path d="M6 6l12 12"/></svg></div><div><h4>你的 Claude 账户已被停用</h4><p>检测到异常活动，账户已暂停使用。</p></div><time>刚刚</time></div>
+      <div id="losses">
+        <div class="loss dark-card"><span>Max 订阅</span><b>$200 打水漂</b></div>
+        <div class="loss dark-card"><span>API 余额</span><b>无法再用</b></div>
+        <div class="loss dark-card"><span>手上的项目</span><b>被迫停摆</b></div>
+      </div>
+    </div>
+
+    <div class="beat" id="b2">
+      <div class="kick"><i></i>痛点 02 · 折腾</div>
+      <div class="head"><span data-split>VPS、指纹浏览器，</span><em data-split>甚至远程租 Mac mini。</em></div>
+      <div id="receipt">
+        <div class="rh"><span>每月账单</span><span>只为用上 CLAUDE</span></div>
+        <div class="rr"><span>海外 VPS</span><b>¥68 / 月</b></div>
+        <div class="rr"><span>指纹浏览器</span><b>¥99 / 月</b></div>
+        <div class="rr"><span>住宅 IP</span><b>¥120 / 月</b></div>
+        <div class="rr"><span>远程租用 Mac mini</span><b>¥399 / 月</b></div>
+        <div class="rt"><span>合计</span><b>¥686 / 月</b></div>
+        <div class="rn">＋ 无数个折腾到深夜的晚上</div>
+      </div>
+    </div>
+
+    <div class="beat" id="b3">
+      <div class="kick"><i></i>痛点 03 · 网络</div>
+      <div class="head"><span data-split>开着全局代理，</span><em data-split>整台电脑都跟着绕路。</em></div>
+      <svg id="wires" viewBox="0 0 1920 1080"></svg>
+      <div id="pcLabel">你的电脑</div>
+      <div id="appChips"></div>
+      <div id="proxyNode"><b>全局代理</b><span>所有流量<br />都走海外出口</span></div>
+    </div>
+
+    <div class="beat" id="b4">
+      <div class="kick"><i></i>痛点 04 · 虚拟机</div>
+      <div class="head"><span data-split>换成传统虚拟机？</span><em data-split>又重又慢，还得自己配。</em></div>
+      <div id="vmWin" class="dark-card">
+        <div class="tb"><i></i><i></i><i></i><span>虚拟机安装向导</span></div>
+        <div class="bd">
+          <div class="vm-row"><span>ubuntu-24.04-desktop.iso</span><small id="vmEta">剩余 1 小时 52 分</small><div class="vm-bar"><i id="vmDl"></i></div></div>
+          <div class="vm-row" id="vmMemRow"><span>分配内存</span><small id="vmMemTxt">4 GB / 16 GB</small><div class="vm-bar"><i id="vmMem"></i></div></div>
+          <div id="vmTodo"><div class="lbl">装好之后，你还得自己配：</div><span>代理</span><span>时区与语言</span><span>浏览器指纹</span><span>Claude Code</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="beat" id="b5">
+      <div class="q"><span data-split>就不能，</span><em data-split>简单一点吗？</em></div>
+    </div>
+
+    <div id="flash"></div>
+  </section>
+
+  <!-- ============ ACT 2 · ROOM ============ -->
+  <section class="layer" id="room">
+    <div id="roomLight"></div>
+    <div id="logoWrap"></div>
+    <div class="center" id="wordmark" data-split>Claude Cage</div>
+    <div class="center" id="roomPos"><span data-split>为 Claude 量身定制的</span><em data-split>轻量虚拟机</em></div>
+    <div class="center" id="roomSub"><span data-split>开箱即用，一切都已备好。你只需要，</span><em data-split>配置自己的代理。</em></div>
+  </section>
+
+  <!-- ============ ACT 3 · APP ============ -->
+  <section class="layer" id="app">
+    <div id="appFloor"></div>
+    <div id="capShade"></div>
+    <div id="caption">
+      <div class="slot">
+        <div class="cap" data-cap="0"><span class="num">01</span><div class="txt"><div class="title">你只需要：配置自己的代理</div><div class="sub">导入订阅，选个节点。时区和语言自动跟随出口 IP。</div></div></div>
+        <div class="cap" data-cap="1"><span class="num">02</span><div class="txt"><div class="title">自带泄漏审查</div><div class="sub">11 项关键检查，有一项没过，环境就不连外网。</div></div></div>
+        <div class="cap" data-cap="2"><span class="num">03</span><div class="txt"><div class="title">与主机隔离，日常照常用</div><div class="sub">终端、浏览器、编辑器都在 Cage 里。你的电脑不用开全局代理。</div></div></div>
+      </div>
+    </div>
+    <div id="progressDots"><i><b></b></i><i><b></b></i><i><b></b></i></div>
+
+    <div id="cam">
+      <div id="win">
+        <aside class="side">
+          <div class="lights"><i></i><i></i><i></i></div>
+          <div class="brand"><svg class="mark logo-svg" viewBox="0 0 926 926" id="miniLogo"></svg>Cage<svg class="i collapse" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M9 4.5v15M15 10l-2 2 2 2"/></svg></div>
+          <div class="nav">
+            <div class="on" id="navHome"><svg class="i" viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.5l8.5 7V20a1 1 0 0 1-1 1H15v-6H9v6H4.5a1 1 0 0 1-1-1z"/></svg>工作台</div>
+            <div class="dim" data-enable><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.6 5.3 3.6 8.5s-1 5.9-3.6 8.5c-2.6-2.6-3.6-5.3-3.6-8.5s1-5.9 3.6-8.5z"/></svg>浏览器</div>
+            <div class="dim" data-enable><svg class="i" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg>打开项目<kbd>⌘O</kbd></div>
+            <div class="dim" data-enable><svg class="i" viewBox="0 0 24 24"><path d="M14 3.5H6.5a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V8z"/><path d="M14 3.5V8h4.5M10.5 12l-2 2 2 2M13.5 12l2 2-2 2"/></svg>项目文件<span style="color:#6c6763">↗</span></div>
+          </div>
+          <div class="sec"><span>项目</span><span>＋</span></div>
+          <div class="proj">
+            <div><svg class="i" viewBox="0 0 24 24" style="width:13px;height:13px"><path d="M6 9l6 6 6-6"/></svg><svg class="i" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg><b style="font-weight:600">hello-cage</b><span style="margin-left:auto;color:#6c6763" id="projPlus">＋</span></div>
+            <div class="child"><span id="childHint">启动后可新建终端</span><div class="alt" id="childTerm"><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4"/></svg>开发终端<span style="margin-left:auto;color:#6c6763;letter-spacing:1px">···</span></div></div>
+          </div>
+          <div class="side-foot">
+            <div><i class="dot" id="envDot"></i><span class="flip" id="envFlip" style="width:120px"><span>已停止</span><span>启动中…</span><span>环境运行正常</span></span><svg class="i shield" viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/></svg></div>
+            <div><svg class="i" viewBox="0 0 24 24"><path d="M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/></svg>设置<kbd>⌘,</kbd></div>
+          </div>
+        </aside>
+
+        <div class="main">
+          <div class="topbar">
+            <div class="crumb"><svg class="i" viewBox="0 0 24 24"><path d="M3.5 7A1.5 1.5 0 0 1 5 5.5h4l2 2.5h8a1.5 1.5 0 0 1 1.5 1.5v9A1.5 1.5 0 0 1 19 20H5a1.5 1.5 0 0 1-1.5-1.5z"/></svg>hello-cage<span id="crumbLeaf" style="display:flex;gap:10px;align-items:center"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M9 6l6 6-6 6"/></svg>开发终端</span></div>
+            <div class="top-actions"><div class="pill"><svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><path d="M14 3.5H6.5a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V8z"/><path d="M14 3.5V8h4.5M10.5 12l-2 2 2 2M13.5 12l2 2-2 2"/></svg>打开文件</div><svg class="i" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4"/></svg><svg class="i" viewBox="0 0 24 24" id="topX"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></div>
+          </div>
+
+          <!-- first run -->
+          <div class="view hero" id="viewHero">
+            <div class="shield-big"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/></svg></div>
+            <h2>为 Claude 准备独立工作区</h2>
+            <div class="lead">先连接你的代理，再启动浏览器、终端和编辑器。无需安装额外的代理软件。</div>
+            <div class="steps">
+              <span id="st1"><b class="on"><span class="n">1</span></b><span class="strong">配置代理</span></span>
+              <span id="st2"><b><span class="n">2</span></b><span>启动环境</span></span>
+              <span><b>3</b><span>开始工作</span></span>
+            </div>
+            <div class="card">
+              <div class="head"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/></svg><div><div class="t">Cage 隔离环境</div><div class="d">自备代理订阅、YAML 配置或节点</div></div></div>
+              <div class="row">
+                <div class="state"><div class="wait" id="stateWait"><i></i>等待配置代理</div><div class="ready" id="stateReady"><i></i>代理已就绪 · <b>美国 · 洛杉矶 01</b></div></div>
+                <div class="btn-swap">
+                  <div class="btn" id="btnProxy"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.6 5.3 3.6 8.5s-1 5.9-3.6 8.5c-2.6-2.6-3.6-5.3-3.6-8.5s1-5.9 3.6-8.5z"/></svg>配置网络与代理</div>
+                  <div class="btn" id="btnLaunch"><svg class="i" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z"/></svg>启动 Cage 环境</div>
+                </div>
+              </div>
+            </div>
+            <div class="foot">Cage 不提供代理或 Claude 账户。连接后，在 Cage 内完成 Claude 登录。</div>
+          </div>
+
+          <!-- launch -->
+          <div class="view launch" id="viewLaunch">
+            <div class="panel">
+              <div class="ph">
+                <div class="badge"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/></svg><div class="okb"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6"/></svg></div></div>
+                <div class="tt">
+                  <div id="phBusy"><div class="a">正在启动 Cage 环境</div><div class="b">准备镜像与工具，然后核对网络和隔离。</div></div>
+                  <div id="phDone"><div class="a" style="color:#1f5f35">外网已放行</div><div class="b">关键检查已通过，后台继续核对出口规则与环境配置。</div></div>
+                </div>
+                <div class="count" id="ckCount">0 / 11</div>
+              </div>
+              <div class="prog">
+                <div class="p" data-p="0"><div class="st"><div class="wait"></div><div class="spin"></div><div class="ok"><svg class="i" viewBox="0 0 24 24"><path d="M5.5 12.5l4 4 9-9"/></svg></div></div><span>下载 Linux 镜像</span><div class="bar"><i></i></div><span class="pct">0%</span></div>
+                <div class="p" data-p="1"><div class="st"><div class="wait"></div><div class="spin"></div><div class="ok"><svg class="i" viewBox="0 0 24 24"><path d="M5.5 12.5l4 4 9-9"/></svg></div></div><span>安装开发工具</span><div class="bar"><i></i></div><span class="pct">0%</span></div>
+              </div>
+              <div class="checks-h"><span>网络与隔离检查 · 关键项</span><span>失败时保持离线</span></div>
+              <div class="checks" id="checks"></div>
+            </div>
+          </div>
+
+          <!-- terminal -->
+          <div class="view" id="viewTerm">
+            <div class="term-bar"><svg class="i" viewBox="0 0 24 24" style="width:15px;height:15px"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M7.5 9.5l3 2.5-3 2.5M12.5 15h4"/></svg>/workspace/hello-cage<div class="r"><span>Linux · bash</span><span>＋ 新建终端</span></div></div>
+            <div class="term" id="term">
+              <div class="ln"><span class="acc">Claude Cage</span>  ·  hello-cage</div>
+              <div class="ln"></div>
+              <div class="ln">A separate Linux workspace. Your project, your tools.</div>
+              <div class="ln"></div>
+              <div class="ln"><span class="g">✓</span> Project folder shared: /workspace/hello-cage</div>
+              <div class="ln"><span class="g">✓</span> Terminal ready</div>
+              <div class="ln"></div>
+              <div class="ln" id="cmdLine">$ <span id="cmdText"></span><i class="caret" id="caret1"></i></div>
+              <div id="ccBlock">
+                <div class="cc"><span class="w">✻</span> Welcome to <b>Claude Code</b>!<br><span class="m">  cwd: /workspace/hello-cage</span></div>
+                <div class="ln" id="promptLine"><span class="m">&gt;</span> <span id="promptText"></span><i class="caret" id="caret2"></i></div>
+                <div class="reply" id="reply">
+                  <div class="ln" data-r="0"><span class="dot">●</span> 我先看一下项目结构。</div>
+                  <div class="ln" data-r="1"><span class="g">●</span> <span class="tool">Read</span>(package.json)<span class="m">  ⎿  Read 18 lines</span></div>
+                  <div class="ln" data-r="2"><span class="g">●</span> <span class="tool">Write</span>(README.md)<span class="m">  ⎿  Wrote 42 lines</span></div>
+                  <div class="ln" data-r="3"><span class="dot">●</span> README 写好了：简介、安装方式和本地运行步骤都在里面。</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="status">
+            <div class="it" style="position:relative"><svg class="i" viewBox="0 0 24 24" id="netIco"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6" id="netTick"/></svg><span class="flip" id="netFlip" style="width:56px"><span>网络检查</span><span style="color:#1f5f35">外网已放行</span></span></div>
+            <div class="it"><div class="hl" id="hlProxy"></div><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.6 3.6 5.3 3.6 8.5s-1 5.9-3.6 8.5c-2.6-2.6-3.6-5.3-3.6-8.5s1-5.9 3.6-8.5z"/></svg><span class="flip" id="proxyFlip" style="width:150px"><span>未选择代理</span><span>指定代理出口 · 洛杉矶 01</span></span></div>
+            <div class="it"><div class="hl" id="hlTz"></div><span class="flip" id="tzFlip" style="width:172px"><span>Asia/Shanghai · 主机</span><span>America/Los_Angeles · 自动</span></span></div>
+            <div class="it"><svg class="i" viewBox="0 0 24 24"><path d="M3 12h4l3-7 4 14 3-7h4"/></svg><span class="flip" id="latFlip" style="width:50px"><span>延迟 —</span><span>128 ms</span></span></div>
+            <div class="right"><div class="it" id="syncIt">文件与本机同步</div><div class="it" id="stopIt"><svg class="i" viewBox="0 0 24 24"><path d="M12 3.5v8"/><path d="M6.6 6.8a7.5 7.5 0 1 0 10.8 0"/></svg>停止环境</div></div>
+          </div>
+
+          <div id="modalShade"></div>
+          <div id="modal">
+            <div class="mh">网络与代理<svg class="i" viewBox="0 0 24 24"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg></div>
+            <div class="src"><svg class="i" viewBox="0 0 24 24"><path d="M14 3.5H6.5a1 1 0 0 0-1 1v15a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V8z"/><path d="M14 3.5V8h4.5"/></svg><span><b style="font-weight:600">my-nodes.yaml</b>  · Clash / Mihomo 订阅</span><span class="tag"><svg class="i" viewBox="0 0 24 24" style="width:14px;height:14px"><path d="M5.5 12.5l4 4 9-9"/></svg>已导入 24 个节点</span></div>
+            <div class="lbl">节点</div>
+            <div class="nodes" id="nodes">
+              <div class="node" id="nodeLA"><div class="sel"></div><div class="radio"><i></i></div><span>美国 · 洛杉矶 01</span><span class="ms"><em></em>128 ms</span></div>
+              <div class="node"><div class="sel"></div><div class="radio"><i></i></div><span>美国 · 圣何塞 02</span><span class="ms"><em></em>141 ms</span></div>
+              <div class="node"><div class="sel"></div><div class="radio"><i></i></div><span>日本 · 东京 03</span><span class="ms"><em></em>96 ms</span></div>
+              <div class="node"><div class="sel"></div><div class="radio"><i></i></div><span>新加坡 04</span><span class="ms"><em></em>112 ms</span></div>
+              <div class="node"><div class="sel"></div><div class="radio"><i></i></div><span>英国 · 伦敦 05</span><span class="ms"><em class="warn"></em>214 ms</span></div>
+            </div>
+            <div class="mf"><span>代理不可用时没有直连回退。</span><div class="btn" id="btnUse">使用此节点</div></div>
+          </div>
+
+          <div id="ripple"></div>
+          <div id="cursor"><svg viewBox="0 0 26 26"><path d="M5 2.8v18.6l4.6-4.4 3 6.6 3.1-1.4-3-6.4h6.5z" fill="#111" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ACT 4 · PERKS ============ -->
+  <section class="layer" id="perks">
+    <div class="center" id="perksHead"><span data-split>一切，</span><em data-split>都已经帮你做好了。</em></div>
+    <div id="perkRow">
+      <div class="perk"><div class="pi"><svg viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/></svg></div><h3>轻量，开箱即用</h3><p>一个桌面应用，装好终端、浏览器和编辑器。不用另装 Docker 或 Clash。</p></div>
+      <div class="perk"><div class="pi"><svg viewBox="0 0 24 24"><path d="M12 3.5l7.5 2.8v5.6c0 4.3-3.2 7.6-7.5 8.6-4.3-1-7.5-4.3-7.5-8.6V6.3z"/><path d="M8.8 12.2l2.2 2.2 4.3-4.6"/></svg></div><h3>自带泄漏审查</h3><p>出口、DNS、时区、UDP、IPv6 等 11 项关键检查。有一项不过，就不联网。</p></div>
+      <div class="perk"><div class="pi"><svg viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="11.5" rx="1.5"/><path d="M2 19.5h20M9.5 10.2l1.8 1.8 3.3-3.4"/></svg></div><h3>与主机隔离</h3><p>Claude 的网络、指纹与登录都留在 Cage 里。你的电脑照常上网、照常工作。</p></div>
+      <div class="perk"><div class="pi"><svg viewBox="0 0 24 24"><path d="M8.5 8 4.5 12l4 4M15.5 8l4 4-4 4M13.5 5.5l-3 13"/></svg></div><h3>开源，接受审查</h3><p>MIT 许可，代码全部公开。每一行都欢迎社区来看、来挑错。</p></div>
+    </div>
+  </section>
+
+  <!-- ============ ACT 5 · LETTER ============ -->
+  <section class="layer" id="letter">
+    <div id="art"><img src="../assets/claude-cage-character.png" alt="" /><div id="artLight"></div></div>
+    <div id="letterKicker">CLAUDE CAGE</div>
+    <div id="letterText">
+      <span class="l" data-split>把 Claude 关起来，</span>
+      <span class="l" data-split>是为了更好地保护</span>
+      <span class="l"><em data-split>我们的相遇。</em></span>
+    </div>
+  </section>
+
+  <!-- ============ ACT 6 · END ============ -->
+  <section class="layer" id="end">
+    <div id="endLogo"></div>
+    <div class="center" id="endWord">Claude Cage</div>
+    <div class="center" id="endSub">为 Claude 量身定制的轻量虚拟机</div>
+    <div class="center" id="endPlat"><span>macOS</span><span>Windows</span><span>Linux</span></div>
+    <div class="center" id="endUrl">lee-xeo.github.io/Claude-Cage</div>
+    <div class="center" id="endGit">github.com/Lee-xeo/Claude-Cage</div>
+    <div class="center" id="endNote">开源 · MIT 许可 · 欢迎社区审查 · 独立社区项目，与 Anthropic 无隶属关系</div>
+  </section>
+
+  <div id="vignette"></div>
+  <div id="grain"></div>
+</div>
+</div>
+
+<div id="controls"><button id="play">播放</button><span id="tc">00.00</span><input id="scrub" type="range" min="0" step="0.01" /><button id="restart">重来</button></div>
+
+<script src="timeline.js"></script>
+<script src="promo.js"></script>
+</body>
+</html>
