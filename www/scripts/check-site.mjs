@@ -16,8 +16,13 @@ const dist = path.join(root,'www/dist');
 const published = JSON.parse(fs.readFileSync(path.join(root, 'www/src/data/release.json'), 'utf8'));
 for (const code of codes) {
   const html = fs.readFileSync(path.join(dist,code === 'zh' ? '' : code,'index.html'),'utf8');
-  const options = [...html.matchAll(/<option\b[^>]*value="([^"]+)"/g)].map(m=>m[1]);
+  const picker = html.match(/<details\b[^>]*id="site-language"[^>]*>([\s\S]*?)<\/details>/)?.[1];
+  assert.ok(picker, `${code}: missing inline language picker`);
+  const options = [...picker.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(m=>m[1]);
   assert.equal(options.length,codes.length, `${code}: language dropdown missing options`);
+  assert.deepEqual(options, codes.map(locale => `/Claude-Cage/${locale === 'zh' ? '' : locale + '/'}`), `${code}: incorrect language destinations`);
+  assert.equal([...picker.matchAll(/aria-current="page"/g)].length, 1, `${code}: current language must be marked once`);
+  assert.ok(!html.includes('<select'), `${code}: system popup selector remains`);
   assert.ok(!options.some(url=>url.endsWith('/en/')), `${code}: unexpected English route`);
   assert.ok(html.includes('id="site-language"'), `${code}: missing language selector`);
   assert.ok(html.includes(`dir="${['ar','fa','ps','prs'].includes(code)?'rtl':'ltr'}"`), `${code}: incorrect reading direction`);
