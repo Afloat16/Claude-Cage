@@ -10,7 +10,7 @@ test_home=$(getent passwd "$test_user" | cut -d: -f6)
 report_dir="$test_home/reports"
 profile="$test_home/upgrade-guard/config.json"
 cleanup() {
-  if [[ -x /usr/bin/claude-cage && -f "${profile%/*}/control.json" ]]; then
+  if [[ -x /usr/bin/claude-cage && ( -f "${profile%/*}/control.json" || -f "${profile%/*}/desktop-entry/control.json" ) ]]; then
     runuser -u "$test_user" -- env CLAUDE_CAGE_CONFIG="$profile" /usr/bin/claude-cage prepare-update --json >/dev/null || true
   fi
 }

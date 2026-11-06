@@ -111,7 +111,7 @@ func TestClaudeDesktopInstallerRejectsUntrustedKey(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("bash", "-c", claudeDesktopInstall)
+	cmd := exec.Command("bash", "-c", ClaudeDesktopInstallScript())
 	cmd.Env = append(os.Environ(), "HOME="+dir, "PATH="+dir+":"+os.Getenv("PATH"))
 	out, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(out), "signing key did not match") {

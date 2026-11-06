@@ -14,6 +14,9 @@
 #ifndef CAGE_VERSION
 #define CAGE_VERSION "development"
 #endif
+#ifndef CAGE_CLIENT_ONLY
+#define CAGE_CLIENT_ONLY 0
+#endif
 #define MAX_THEME (256 * 1024)
 #define MAX_MESSAGE (2 * 1024 * 1024)
 
@@ -157,6 +160,11 @@ static void backend_arguments(const char *const *args, guint seconds, BackendCal
     GError *error = NULL;
     GSubprocessLauncher *launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
     g_subprocess_launcher_setenv(launcher, "CLAUDE_CAGE_CONFIG", app.profile, TRUE);
+    if (g_strcmp0(args[1], "desktop") == 0) {
+        char owner[32];
+        g_snprintf(owner, sizeof(owner), "%ld", (long)getpid());
+        g_subprocess_launcher_setenv(launcher, "CAGE_DESKTOP_OWNER_PID", owner, TRUE);
+    }
     GSubprocess *process = g_subprocess_launcher_spawnv(launcher, args, &error);
     g_object_unref(launcher);
     if (!process) {
@@ -487,9 +495,12 @@ static gboolean start_smoke(gpointer data) {
         "let unauthenticatedBridgeDenied=false;try{await window.webkit.messageHandlers.cageTransport.postMessage({token:'invalid',request:{action:'clipboardRead'}});}catch{unauthenticatedBridgeDenied=true;}"
         "stage='account-device';const native=await bridge.postMessage({action:'accountDevice',operation:'status'});"
         "stage='app-update';const update=await bridge.postMessage({action:'appUpdate',operation:'status'});"
-        "stage='account';const accountResponse=await fetch('/api/account');const account=await accountResponse.json();"
-        "stage='status';const stateResponse=await fetch('/api/status');const state=await stateResponse.json();"
-        "stage='settings';const settingsResponse=await fetch('/api/settings');await settingsResponse.json();"
+        "stage='context';const context=await (await fetch('/api/client/context')).json();"
+        "if(context.desktop_gateway&&context.mode!=='local')throw new Error('local workbench not selected');"
+        "const scoped={headers:{'X-Cage-Connection':context.connection_id}};"
+        "stage='account';const accountResponse=await fetch('/api/account',scoped);const account=await accountResponse.json();"
+        "stage='status';const stateResponse=await fetch('/api/status',scoped);const state=await stateResponse.json();"
+        "stage='settings';const settingsResponse=await fetch('/api/settings',scoped);await settingsResponse.json();"
         "const root=document.getElementById('root');"
         "const rendered=!!root&&root.innerText.trim().length>40&&root.querySelectorAll('button').length>3;"
         "const success=rendered&&accountResponse.ok&&account.unlocked===true&&stateResponse.ok&&settingsResponse.ok&&native.supported===false&&update.phase==='manual'&&unauthenticatedBridgeDenied&&storageMarkerMatched;"
@@ -532,7 +543,8 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SAVE, "导出诊断包", "cage-diagnostics.zip");
             if (!path) reply_json(reply, context, "{\"canceled\":true}");
             else {
-                const char *args[] = {app.backend, "diagnostics", "--json", path, NULL};
+                const char *connection = text_member(request, "connection_id");
+                const char *args[] = {app.backend, "diagnostics", "--json", "--connection", *connection ? connection : "local", path, NULL};
                 backend_arguments(args, 60, browser_file_finished, pending_reply(reply, context));
                 g_free(path);
             }
@@ -556,9 +568,13 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             reply_error(reply, "更新操作无效。");
         else {
             char *version = quote(CAGE_VERSION);
-            char *state = g_strdup_printf("{\"phase\":\"manual\",\"currentVersion\":%s,\"message\":\"Linux 版本使用系统安装包更新。请保存工作、停止环境并退出 Cage，再安装新版 .deb；用户数据会保留。\"}", version);
+            const char *update_message = CAGE_CLIENT_ONLY
+                ? "轻量客户端使用独立安装包更新。退出客户端后更换程序；连接配置会保留，云端任务继续运行。"
+                : "Linux 版本使用系统安装包更新。请保存工作、停止环境并退出 Cage，再安装新版 .deb；用户数据会保留。";
+            char *message = quote(update_message);
+            char *state = g_strdup_printf("{\"phase\":\"manual\",\"currentVersion\":%s,\"message\":%s}", version, message);
             reply_json(reply, context, state);
-            g_free(state); g_free(version);
+            g_free(state); g_free(version); g_free(message);
         }
     } else if (!strcmp(name, "saveBrowserDownload") || !strcmp(name, "browserDownloadAction")) {
         const char *id = text_member(request, "id");
@@ -581,7 +597,8 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             }
             if (!strcmp(operation,"save") && !path) reply_json(reply,context,"{\"canceled\":true}");
             else {
-                const char *args[] = {app.backend,"browser-file","--json",operation,id,path,NULL};
+                const char *connection = text_member(request, "connection_id");
+                const char *args[] = {app.backend,"browser-file","--json","--connection",*connection ? connection : "local",operation,id,path,NULL};
                 backend_arguments(args,1800,browser_file_finished,pending_reply(reply,context));
             }
             g_free(path);
@@ -589,7 +606,9 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
     } else if (!strcmp(name, "chooseFolder")) {
         if (app.picker_open) reply_error(reply, "请先完成当前文件选择。");
         else {
-            char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, "仅此文件夹会与 Cage 共享。请选择具体项目。", NULL);
+            const char *prompt = !strcmp(text_member(request, "purpose"), "environmentStorage")
+                ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。";
+            char *path = choose_file(GTK_FILE_CHOOSER_ACTION_SELECT_FOLDER, prompt, NULL);
             reply_string(reply, context, path ? path : "");
             g_free(path);
         }
@@ -627,9 +646,10 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
         } else {
             GPtrArray *paths = g_ptr_array_ref(selected->paths);
             g_hash_table_remove(file_selections, token);
-            const char **args = g_new0(const char *, paths->len + 6);
-            args[0] = app.backend; args[1] = "upload-files"; args[2] = "--json"; args[3] = target; args[4] = id;
-            for (guint i = 0; i < paths->len; i++) args[i + 5] = g_ptr_array_index(paths, i);
+            const char *connection = text_member(request, "connection_id");
+            const char **args = g_new0(const char *, paths->len + 8);
+            args[0] = app.backend; args[1] = "upload-files"; args[2] = "--json"; args[3] = "--connection"; args[4] = *connection ? connection : "local"; args[5] = target; args[6] = id;
+            for (guint i = 0; i < paths->len; i++) args[i + 7] = g_ptr_array_index(paths, i);
             backend_arguments(args, 1800, browser_file_finished, pending_reply(reply, context));
             g_free(args); g_ptr_array_unref(paths);
         }
@@ -1000,6 +1020,7 @@ int main(int argc, char **argv) {
     if (!g_file_test(app.backend, G_FILE_TEST_IS_EXECUTABLE)) { g_printerr("安装目录缺少 Cage 后台，请重新安装。\n"); return 1; }
     const char *configured = g_getenv("CLAUDE_CAGE_CONFIG");
     app.profile = configured && *configured ? g_canonicalize_filename(configured, NULL)
+        : CAGE_CLIENT_ONLY ? g_build_filename(g_get_home_dir(), ".claude-cage", "client", "config.json", NULL)
         : g_build_filename(g_get_home_dir(), ".claude-cage", "config.json", NULL);
     g_setenv("CLAUDE_CAGE_CONFIG", app.profile, TRUE);
     g_log_set_default_handler(diagnostic_glib, NULL);

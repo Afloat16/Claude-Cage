@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 var terminalFileID = regexp.MustCompile(`^[a-f0-9]{16}$`)
@@ -38,7 +37,7 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		}
 		script += " " + shellescape.Quote("http://localhost"+path)
 	}
-	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", script)
 	cmd.Stdin = body
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {

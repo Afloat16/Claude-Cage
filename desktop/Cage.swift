@@ -209,6 +209,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
         }
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(); process.executableURL = executable; process.arguments = ["desktop", "--json"] + options
+            var environment = ProcessInfo.processInfo.environment
+            environment["CAGE_DESKTOP_OWNER_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+            process.environment = environment
             let output = Pipe(); process.standardOutput = output; process.standardError = FileHandle.nullDevice
             do {
                 try process.run()
@@ -242,9 +245,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             }
         }
     }
-    private func browserFile(_ operation: String, id: String, path: String? = nil, reply: @escaping (Any?, String?) -> Void) {
+    private func browserFile(_ operation: String, id: String, connection: String = "local", path: String? = nil, reply: @escaping (Any?, String?) -> Void) {
         guard UUID(uuidString: id) != nil else { reply(nil,"下载标识无效"); return }
-        fileCommand(["browser-file", "--json", operation, id] + (path.map { [$0] } ?? []), reply: reply)
+        fileCommand(["browser-file", "--json", "--connection", connection, operation, id] + (path.map { [$0] } ?? []), reply: reply)
     }
     private func fileCommand(_ arguments: [String], reply: @escaping (Any?, String?) -> Void) {
         guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else { reply(nil,"无法找到文件传递组件"); return }
@@ -308,13 +311,14 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                   let operation = body["operation"] as? String, ["status", "enable", "disable", "unlock"].contains(operation) else { replyHandler(nil,"账户操作正在进行或后台需要更新，请稍后重试"); return }
             accountDeviceBusy = true
             let kind = body["kind"] as? String
+            let connection = body["connection_id"] as? String ?? "local"
             requestEntry { result in
                 guard case .success(let entry) = result, let url = entry.url else {
                     self.accountDeviceBusy = false; replyHandler(nil,"无法连接本地账户，请重新打开 Cage"); return
                 }
                 Task.detached {
                     do {
-                        let client = try CageAccountDevice(entry: url)
+                        let client = try CageAccountDevice(entry: url, connection: connection)
                         let value = try await client.handle(operation: operation, kind: kind)
                         await MainActor.run { self.accountDeviceBusy = false; replyHandler(value,nil) }
                     } catch {
@@ -329,7 +333,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
                 guard response == .OK, let url = panel.url else { replyHandler(["canceled":true],nil); return }
-                self.fileCommand(["diagnostics", "--json", url.path], reply: replyHandler)
+                self.fileCommand(["diagnostics", "--json", "--connection", body["connection_id"] as? String ?? "local", url.path], reply: replyHandler)
             }
         case "workbenchReady":
             guard !controllerNeedsUpdate else { replyHandler(nil,"后台版本尚未同步，更新未完成"); return }
@@ -379,7 +383,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                   let files = fileSelections.removeValue(forKey: selection), files.expires > Date() else {
                 replyHandler(nil,"文件选择已过期，请重新复制或选择文件"); return
             }
-            fileCommand(["upload-files", "--json", target, id] + files.paths, reply: replyHandler)
+            fileCommand(["upload-files", "--json", "--connection", body["connection_id"] as? String ?? "local", target, id] + files.paths, reply: replyHandler)
         case "clipboardWrite":
             guard let text = body["text"] as? String else { replyHandler(nil,"缺少文本"); return }
             NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text, forType:.string); replyHandler(true,nil)
@@ -392,11 +396,11 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             panel.beginSheetModal(for: window) { response in
                 self.nativeFilePanelOpen = false
                 guard response == .OK, let url = panel.url else { replyHandler(["canceled":true],nil); return }
-                self.browserFile("save",id:id,path:url.path,reply:replyHandler)
+                self.browserFile("save",id:id,connection:body["connection_id"] as? String ?? "local",path:url.path,reply:replyHandler)
             }
         case "browserDownloadAction":
             guard let id = body["id"] as? String, let operation = body["operation"] as? String, ["open","reveal"].contains(operation) else { replyHandler(nil,"下载操作无效"); return }
-            browserFile(operation,id:id,reply:replyHandler)
+            browserFile(operation,id:id,connection:body["connection_id"] as? String ?? "local",reply:replyHandler)
         case "importTheme":
             let panel = NSOpenPanel()
             panel.allowedContentTypes = [.json]; panel.allowsMultipleSelection = false
@@ -426,7 +430,10 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 catch { replyHandler(nil, "主题未能导出，请检查保存位置的权限") }
             }
         case "chooseFolder":
-            let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.allowsMultipleSelection = false; panel.prompt = "共享此项目"; panel.message = "仅此文件夹会与 Cage 共享。请选择具体项目。"
+            let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.canCreateDirectories = true; panel.allowsMultipleSelection = false
+            let storage = (body["purpose"] as? String) == "environmentStorage"
+            panel.prompt = storage ? "选择文件夹" : "共享此项目"
+            panel.message = storage ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。"
             nativeFilePanelOpen = true
             panel.beginSheetModal(for:window) { response in self.nativeFilePanelOpen = false; replyHandler(response == .OK ? panel.url?.path : "",nil) }
         case "refreshSession":

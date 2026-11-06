@@ -18,6 +18,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
+import { isRemoteClient } from "./client-context.mjs";
 import logo from "./logo.png";
 import "./account.css";
 
@@ -241,7 +242,7 @@ export function AccountGate({ children }) {
       </div>
       <section
         className="account-entry"
-        aria-label={creating ? "创建本地账户" : "解锁 Cage"}
+        aria-label={creating ? isRemoteClient() ? "创建云端账户" : "创建本地账户" : "解锁 Cage"}
       >
         {creating ? (
           <img className="account-welcome-logo" src={logo} alt="" />
@@ -257,10 +258,10 @@ export function AccountGate({ children }) {
         </h1>
         <p className="account-entry-intro">
           {creating
-            ? "创建一个本地账户，收好你的工作与登录状态。"
+            ? isRemoteClient() ? "在云端创建账户，保护这台主机上的工作与登录状态。" : "创建一个本地账户，收好你的工作与登录状态。"
             : account
               ? "输入密码，继续你的工作。"
-              : "正在读取本机账户…"}
+              : isRemoteClient() ? "正在读取云端账户…" : "正在读取本机账户…"}
         </p>
         {account?.background_running && (
           <div className="account-background">
@@ -334,7 +335,7 @@ export function AccountGate({ children }) {
                 className="primary account-submit"
                 disabled={busy || !password || (creating && (!username.trim() || (nativeAvailable() && deviceSupport === null)))}
               >
-                {busy ? "正在解锁…" : creating ? "创建本地账户" : "解锁 Cage"}
+                {busy ? "正在解锁…" : creating ? isRemoteClient() ? "创建云端账户" : "创建本地账户" : "解锁 Cage"}
               </button>
             </fieldset>
           </form>
@@ -349,12 +350,12 @@ export function AccountGate({ children }) {
         )}
         <p className="account-local-note">
           <LockKeyhole size={14} />
-          账户资料仅保存在这台设备上
+          {isRemoteClient() ? "账户资料保存在当前云端主机" : "账户资料仅保存在这台设备上"}
         </p>
         <p className="account-recovery-note">
           {creating
             ? "密码至少 8 个字符，用于保护应用登录凭据。请妥善保存，当前不支持在线找回。"
-            : "请输入本地账户密码；当前不支持在线找回。"}
+            : isRemoteClient() ? "请输入云端 Cage 账户密码；当前不支持在线找回。" : "请输入本地账户密码；当前不支持在线找回。"}
         </p>
       </section>
       {nativeAvailable() && (
@@ -400,7 +401,7 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
     if (
       action === "logout" &&
       !(await onConfirm({
-        title: "退出本地账户？",
+        title: isRemoteClient() ? "退出云端账户？" : "退出本地账户？",
         body: "这会停止 Cage 环境与后台任务，并锁定登录凭据。请先保存文件。",
         confirm: "停止环境并退出账户",
       }))
@@ -424,12 +425,12 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
         <AccountAvatar account={account} />
         <span className="account-trigger-name">
           <strong>{account.username}</strong>
-          <small>本地账户</small>
+          <small>{isRemoteClient() ? "云端账户" : "本地账户"}</small>
         </span>
         <ChevronDown size={15} />
       </button>
       {open && (
-        <div className="account-menu" role="menu" aria-label="本地账户菜单"
+        <div className="account-menu" role="menu" aria-label={isRemoteClient() ? "云端账户菜单" : "本地账户菜单"}
           onKeyDown={(event) => {
             if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
             event.preventDefault();
@@ -625,8 +626,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
         <fieldset disabled={busy || environmentBusy}>
           <h4>账户密码</h4>
           <p className="field-help">
-            修改密码不会清除 Claude
-            的登录状态。密码仅用于本机解锁，没有在线找回。
+            修改密码不会清除 Claude 的登录状态。{isRemoteClient() ? "密码用于解锁当前云端 Cage，没有在线找回。" : "密码仅用于本机解锁，没有在线找回。"}
           </p>
           <PasswordField
             label="当前密码"
@@ -658,7 +658,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
       <AccountDeviceSettings />
       <p className="account-settings-note">
         <LockKeyhole size={15} />
-        一个本地账户，一个持久工作环境。资料与凭据不上传到 Cage 服务器。
+        {isRemoteClient() ? "账户、应用资料与登录凭据保存在当前云端主机。" : "一个本地账户，一个持久工作环境。资料与凭据不上传到 Cage 服务器。"}
       </p>
     </div>
   );

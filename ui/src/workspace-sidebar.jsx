@@ -11,6 +11,7 @@ import {
   PanelLeftClose,
   Plus,
   Settings2,
+  Server,
   SquareTerminal,
 } from "lucide-react";
 import { EnvironmentShield } from "./environment-shield";
@@ -18,6 +19,7 @@ import logo from "./logo.png";
 import { projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { AccountMenu } from "./account";
+import { useSSHNavigation } from "./remote-hosts";
 
 export function WorkspaceSidebar({
   workspace,
@@ -56,12 +58,14 @@ export function WorkspaceSidebar({
   onCollapse,
   updateAction,
 }) {
+  const ssh = useSSHNavigation();
   const [collapsed, setCollapsed] = useState({});
   const activeWorkspace = tabs.find((tab) => tab.id === active)?.workspace;
   useEffect(() => {
     if (activeWorkspace)
       setCollapsed((previous) => ({ ...previous, [activeWorkspace]: false }));
   }, [active, activeWorkspace]);
+  if (ssh?.expanded) return null;
   const healthy = ready && network.mode === "open";
   return (
     <aside className="workspace-sidebar" aria-label="项目与终端">
@@ -97,6 +101,7 @@ export function WorkspaceSidebar({
           <Globe2 size={17} />
           浏览器
         </button>
+        {ssh && <button className="sidebar-link ssh-navigation" onClick={ssh.open} aria-label="SSH 主机"><Server size={17} />SSH</button>}
         <div className="claude-shortcuts">
           <button className="sidebar-link" onClick={onClaudeWeb} disabled={!ready || busy} title="在 Cage 浏览器打开 claude.ai"><MessageCircle size={17} />claude.ai</button>
           <button className={`sidebar-link ${desktopOpen ? "selected" : ""}`} onClick={onClaudeDesktop} disabled={!running || busy} title="安装或打开 Claude Desktop"><Monitor size={17} />Claude Desktop</button>

@@ -23,6 +23,7 @@ require (
 	github.com/containerd/continuity v0.5.0
 	github.com/coreos/go-semver v0.3.1
 	github.com/docker/go-units v0.5.0
+	github.com/google/uuid v1.6.0
 	github.com/lima-vm/lima/v2 v2.0.0
 	github.com/lima-vm/sshocker v0.3.11
 	github.com/mattn/go-isatty v0.0.24
@@ -73,6 +74,7 @@ require (
 	github.com/go-ini/ini v1.67.0 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect

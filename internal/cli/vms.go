@@ -28,7 +28,7 @@ func (e *app) target(ctx context.Context, verb string, args []string) (name stri
 			fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
 			return "", 1
 		}
-		name = vmname.Name(wd)
+		name = e.instanceName(wd)
 	case 1:
 		name = args[0]
 	default:
@@ -209,7 +209,7 @@ func (e *app) listCmd(ctx context.Context, args []string) int {
 	}
 	current := ""
 	if wd, err := vmname.AbsDir(""); err == nil {
-		current = vmname.Name(wd)
+		current = e.instanceName(wd)
 	}
 	vms, err := e.lookVMs(ctx)
 	if err != nil {

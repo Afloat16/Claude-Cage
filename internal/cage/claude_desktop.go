@@ -26,7 +26,7 @@ func guestOpenScript() string {
 }
 
 func ClaudeDesktopInstallScript() string {
-	return claudeDesktopInstall + "\n" + ClaudeDesktopProvisionScript()
+	return ToolInstallPrelude() + claudeDesktopInstall + "\n" + ClaudeDesktopProvisionScript()
 }
 
 // Provisioning is independent of the browser and never restarts it. Desktop

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 type claudeDesktopState struct {
@@ -114,7 +113,7 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 			}
 			ctx, cancel := context.WithTimeout(s.operationContext(), 55*time.Second)
 			defer cancel()
-			cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", "/usr/local/bin/cage-claude-start")
+			cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/usr/local/bin/cage-claude-start")
 			cmd.Stdin = bytes.NewReader(key)
 			cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
 			if err = cmd.Run(); err != nil {
@@ -134,7 +133,7 @@ func (s *Server) runDesktopScript(script string, timeout time.Duration) error {
 	// A guest cgroup owns apt and all descendants, including across SSH loss.
 	// The application's persistent service is separate from this operation.
 	command := fmt.Sprintf("sudo systemd-run --quiet --pipe --wait --collect --unit=cage-desktop-operation --property=User=cage --property=RuntimeMaxSec=%d --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=/home/cage /bin/bash -se", int(timeout.Seconds()))
-	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", command)
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	cmd.Stdin = strings.NewReader(script)
 	cmd.Stdout, cmd.Stderr = s.jobs.execution(), s.jobs.execution()
 	if err := cmd.Run(); err != nil {
@@ -206,7 +205,7 @@ func (s *Server) claudeDesktopVNC(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	// No extra localhost port or public VNC listener on the host. SSH is bound
 	// to this profile's single guest and carries the authenticated RFB session.
-	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", "exec socat STDIO UNIX-CONNECT:/run/cage-desktop/vnc.sock")
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "exec socat STDIO UNIX-CONNECT:/run/cage-desktop/vnc.sock")
 	reader, err := cmd.StdoutPipe()
 	if err != nil {
 		http.Error(w, "无法连接应用画面", 502)

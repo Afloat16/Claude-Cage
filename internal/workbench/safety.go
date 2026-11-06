@@ -17,8 +17,8 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/paths"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -27,6 +27,7 @@ var guestSafetyProbe string
 
 type safetyState struct {
 	pauseVersion uint64
+	monitorError string
 	Gate         *cage.GateStatus   `json:"gate,omitempty"`
 	Report       *cage.SafetyReport `json:"report,omitempty"`
 	Error        string             `json:"error,omitempty"`
@@ -64,19 +65,34 @@ type browserObservation struct {
 }
 
 func (s *Server) gateClient() (*cage.GateClient, error) {
-	return cage.OpenGateClient(filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir())))
+	return cage.OpenGateClient(s.instanceDir())
 }
 
 func (s *Server) publishGate(state cage.GateStatus) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if old := s.safety.Gate; old != nil && old.RunID == state.RunID && old.Epoch > state.Epoch {
+	old := s.safety.Gate
+	if old != nil && old.RunID == state.RunID && old.Epoch > state.Epoch {
 		return
 	}
 	s.safety.Gate = &state
 	if state.Mode == cage.GateOpen && state.Report != nil {
 		s.safety.Report = state.Report
+		// A repeated status poll of the old grant is not a new authorization.
+		if old == nil || old.RunID != state.RunID || old.Epoch != state.Epoch {
+			s.safety.Error = ""
+			s.safety.monitorError = ""
+		}
 	}
+}
+
+// A gate grant resolves a monitoring failure. Independent diagnostics, such
+// as a location lookup failure, are cleared by the operation that owns them.
+func (s *Server) currentNetworkErrorLocked() string {
+	if s.safety.monitorError != "" {
+		return s.safety.monitorError
+	}
+	return s.networkError
 }
 
 func (s *Server) publishReport(report cage.SafetyReport) {
@@ -142,14 +158,15 @@ func (s *Server) safetyExport(w http.ResponseWriter, r *http.Request) {
 	}
 	// Exports cannot authorize networking and contain no proxy hash, address,
 	// credentials, launch ticket or host filesystem paths.
-	jsonReply(w, map[string]any{"policy": report.Policy, "created_at": report.CreatedAt, "checks": report.Checks, "scope": "采样与运行时策略检查；不代表平台账号资格或完整虚拟化审计"})
+	jsonReply(w, map[string]any{"policy": report.Policy, "created_at": report.CreatedAt, "checks": report.Checks, "scope": "采样与运行时策略检查；不代表平台账号资格或完整隔离审计"})
 }
 
 // The probe runs in Linux, while its files are created on the host. Use the
 // same guest path mapping as the VM's mounts for both sides of the boundary.
 func boundaryProbeInput(port int, nonce, privateFile, sharedFile, challenge string) map[string]any {
 	return map[string]any{"stage": "boundary", "control_port": port, "nonce": nonce,
-		"private_file": guestPath(privateFile), "shared_file": guestPath(sharedFile), "challenge": challenge}
+		"management_host": "192.168.5.2",
+		"private_file":    guestPath(privateFile), "shared_file": guestPath(sharedFile), "challenge": challenge}
 }
 
 func (s *Server) guestObservation(ctx context.Context, input map[string]any) (guestObservation, error) {
@@ -187,11 +204,24 @@ func browserSettingsMatch(v browserObservation, cfg cage.Config) bool {
 }
 
 func (s *Server) inspectVMLayout() (bool, bool) {
+	if containerenv.Configured(s.profile) {
+		environment, err := containerenv.Load(s.profile)
+		if err != nil {
+			return false, false
+		}
+		ctx, cancel := s.controlContext()
+		defer cancel()
+		inspection, err := environment.Inspect(ctx)
+		if err != nil {
+			return false, false
+		}
+		return inspection.FilesystemConfined, inspection.NetworkConfined
+	}
 	workspace, err := validateWorkspace(s.environmentDir(), s.profile)
 	if err != nil {
 		return false, false
 	}
-	data, err := os.ReadFile(filepath.Join(s.profile, "state", "lima", vmname.Name(workspace), "lima.yaml"))
+	data, err := os.ReadFile(filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, workspace), "lima.yaml"))
 	if err != nil {
 		return false, false
 	}
@@ -365,7 +395,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 		s.mu.Unlock()
 	}()
 	report := cage.SafetyReport{Policy: cage.SafetyPolicyVersion, ID: randomToken()[:32], RunID: state.RunID, CheckID: state.CheckID, Configuration: cfg.Fingerprint(), CreatedAt: time.Now()}
-	for _, item := range [][2]string{{"egress_policy", "VM 外出站约束"}, {"proxy_transport", "终端检测通道"}, {"dns_transport", "DNS 与解析约束"}, {"guest_settings", "系统时区与语言"}, {"browser_settings", "浏览器时区与语言"}, {"filesystem_boundary", "共享文件与宿主私有目录"}, {"management_boundary", "宿主管理接口"}, {"fail_closed", "代理故障关闭"}, {"udp_policy", "UDP 出站约束"}, {"ipv6_policy", "IPv6 出站约束"}, {"exit_consistency", "出口符合已保存规则"}} {
+	for _, item := range [][2]string{{"egress_policy", "环境外出站约束"}, {"proxy_transport", "终端检测通道"}, {"dns_transport", "DNS 与解析约束"}, {"guest_settings", "系统时区与语言"}, {"browser_settings", "浏览器时区与语言"}, {"filesystem_boundary", "共享文件与宿主私有目录"}, {"management_boundary", "宿主管理接口"}, {"fail_closed", "代理故障关闭"}, {"udp_policy", "UDP 出站约束"}, {"ipv6_policy", "IPv6 出站约束"}, {"exit_consistency", "出口符合已保存规则"}} {
 		report.Checks = append(report.Checks, cage.SafetyCheck{ID: item[0], Title: item[1], Critical: true, State: cage.CheckUnknown, Evidence: "尚未取得证据", Remedy: "完成检测后查看结果；未知项目不会自动通过", CheckedAt: report.CreatedAt})
 	}
 	set := func(id string, result cage.CheckState, evidence, remedy string) {
@@ -403,7 +433,11 @@ func (s *Server) runSafetyCheck() (returned error) {
 	control, _ := url.Parse(s.origin)
 	port, _ := strconv.Atoi(control.Port())
 	s.setMessage("正在验证离线约束、共享文件与系统配置…")
-	boundary, boundaryErr := s.guestObservation(ctx, boundaryProbeInput(port, report.ID, private.Name(), shared.Name(), challenge))
+	boundaryInput := boundaryProbeInput(port, report.ID, private.Name(), shared.Name(), challenge)
+	if containerenv.Configured(s.profile) {
+		boundaryInput["management_host"] = containerenv.GatewayIP
+	}
+	boundary, boundaryErr := s.guestObservation(ctx, boundaryInput)
 	after, err := client.Status(ctx)
 	if err != nil {
 		return err
@@ -422,7 +456,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 			set("filesystem_boundary", cage.CheckFailed, "共享读写、私有目录探针或挂载范围未符合预期", "检查共享目录；不要共享主目录或 Cage 配置目录")
 		}
 		if after.PolicyVerified && networkLayout && after.Configuration == cfg.Fingerprint() && !boundary.PublicConnected && after.Counters.TCPDenied > state.Counters.TCPDenied {
-			set("egress_policy", cage.CheckPassed, "运行中策略检查符合预期；未配置额外网卡；检查期间的公网 TCP 请求被 VM 外网络层拒绝", "")
+			set("egress_policy", cage.CheckPassed, "运行中策略检查符合预期；未配置额外网卡；检查期间的公网 TCP 请求被 环境外网络层拒绝", "")
 		}
 		if !boundary.ManagementConnected && after.Counters.PrivateDenied > state.Counters.PrivateDenied && s.managementRequiresSession(ctx) {
 			set("management_boundary", cage.CheckPassed, "guest 到宿主管理端口的连接被拒绝；本机接口无会话访问被拒绝", "")
@@ -434,7 +468,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 			set("management_boundary", result, "管理接口拒绝访问的证据不完整", "停止环境并重新启动；不要开放宿主控制端口")
 		}
 		if boundary.UDPAttempted && after.Counters.UDPDenied > state.Counters.UDPDenied && after.PolicyVerified {
-			set("udp_policy", cage.CheckPassed, "客机 UDP 探针已发起，VM 外网络层记录了拒绝；无响应本身不作为通过依据", "")
+			set("udp_policy", cage.CheckPassed, "客机 UDP 探针已发起，环境外网络层记录了拒绝；无响应本身不作为通过依据", "")
 		}
 		if !boundary.IPv6Connected && after.PolicyVerified && (boundary.IPv6DefaultRoutes == 0 || after.Counters.IPv6Denied > state.Counters.IPv6Denied) {
 			set("ipv6_policy", cage.CheckPassed, "客机公网 IPv6 策略为拒绝；连接采样未建立，路由或拒绝记录与策略一致。当前版本验证 IPv4 出口", "")
@@ -447,9 +481,9 @@ func (s *Server) runSafetyCheck() (returned error) {
 		return err
 	}
 	if networkErr == nil && network.Egress.Status == 200 && network.Egress.IP != "" && normalState.Counters.ProbeTCP > after.Counters.ProbeTCP {
-		set("proxy_transport", cage.CheckPassed, "终端请求经过 VM 网络层的固定检测通道，并由指定代理完成 HTTPS 出口查询；未放开任意网站", "")
+		set("proxy_transport", cage.CheckPassed, "终端请求经过 环境网络层的固定检测通道，并由指定代理完成 HTTPS 出口查询；未放开任意网站", "")
 	} else {
-		set("proxy_transport", cage.CheckUnknown, "终端未能完成固定检测请求，或缺少 VM 外通道记录", "检查指定代理和环境组件，然后重新检测")
+		set("proxy_transport", cage.CheckUnknown, "终端未能完成固定检测请求，或缺少 环境外通道记录", "检查指定代理和环境组件，然后重新检测")
 	}
 	if networkErr == nil && boundaryErr == nil && !boundary.PublicDNSAnswered && after.Counters.DNSDenied > state.Counters.DNSDenied && network.DNS.Status == 200 && normalState.Counters.ProbeDNS > after.Counters.ProbeDNS {
 		set("dns_transport", cage.CheckPassed, "检查期间公共解析被拒绝；固定 DNS 查询经指定 DoH 与代理完成", "")
@@ -657,7 +691,7 @@ func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateC
 		s.mu.Lock()
 		s.safety.Error = issue
 		s.safety.ExitIP = ip
-		s.networkError = issue
+		s.safety.monitorError = issue
 		s.mu.Unlock()
 		return
 	}
@@ -677,7 +711,7 @@ func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateC
 	s.mu.Lock()
 	s.safety.VerifiedAt = time.Now()
 	s.safety.Error = ""
+	s.safety.monitorError = ""
 	s.safety.ExitIP = ip
-	s.networkError = ""
 	s.mu.Unlock()
 }

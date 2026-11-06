@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 const audioCaptureCommand = "exec /usr/bin/parec --server=unix:/run/cage-audio/native --record --raw --format=s16le --rate=48000 --channels=2 --device=cage_output.monitor --latency-msec=20"
@@ -43,7 +42,7 @@ func (s *Server) audio(w http.ResponseWriter, r *http.Request) {
 	defer func() { s.mu.Lock(); s.audioClients--; s.mu.Unlock() }()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", audioCaptureCommand)
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", audioCaptureCommand)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		http.Error(w, "声音连接未能建立", http.StatusBadGateway)

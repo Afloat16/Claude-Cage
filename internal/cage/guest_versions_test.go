@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestGuestManifestIsPublishedOnlyAfterSuccessfulServiceStart(t *testing.T) {
@@ -97,6 +98,114 @@ cage_download_tool "$DOWNLOAD_URL" "$DOWNLOAD_HASH" "$HOME/package"`)
 	}
 }
 
+func TestToolDownloadIdleTimeoutAndManualResume(t *testing.T) {
+	for _, tool := range []string{"curl", "python3", "bash", "shasum"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skip(tool + " unavailable")
+		}
+	}
+	for _, mode := range []string{"slow", "stalled", "no-body"} {
+		t.Run(mode, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, body := range map[string]string{
+				"sha256sum": "#!/bin/sh\nexec shasum -a 256 \"$@\"\n",
+				"sleep":     "#!/bin/sh\nexit 0\n",
+			} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			const data = "abcdefghijklmnop"
+			var calls atomic.Int32
+			var recovered atomic.Bool
+			s := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				call := calls.Add(1)
+				offset := 0
+				if mode == "stalled" {
+					offset = int(call - 1)
+				}
+				wantRange := ""
+				if offset > 0 {
+					wantRange = fmt.Sprintf("bytes=%d-", offset)
+				}
+				if r.Header.Get("Range") != wantRange {
+					t.Errorf("range = %q, want %q", r.Header.Get("Range"), wantRange)
+				}
+				w.Header().Set("Content-Length", fmt.Sprint(len(data)-offset))
+				if offset > 0 {
+					w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", offset, len(data)-1, len(data)))
+					w.WriteHeader(http.StatusPartialContent)
+				}
+				if recovered.Load() {
+					fmt.Fprint(w, data[offset:])
+					return
+				}
+				if mode == "slow" {
+					for i := range len(data) {
+						fmt.Fprint(w, data[i:i+1])
+						w.(http.Flusher).Flush()
+						select {
+						case <-r.Context().Done():
+							return
+						case <-time.After(100 * time.Millisecond):
+						}
+					}
+					return
+				}
+				if mode == "stalled" {
+					fmt.Fprint(w, data[offset:offset+1])
+				}
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+			}))
+			defer s.Close()
+			ca := filepath.Join(dir, "ca.pem")
+			if err := os.WriteFile(ca, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: s.Certificate().Raw}), 0600); err != nil {
+				t.Fatal(err)
+			}
+			hash := sha256.Sum256([]byte(data))
+			run := func() ([]byte, error) {
+				// Shorten only the test's idle interval; use the real curl, TLS,
+				// filesystem, checksum, automatic retries and manual continuation.
+				prelude := strings.Replace(ToolInstallPrelude(), "idle_timeout = 60", "idle_timeout = 0.5", 1)
+				cmd := exec.CommandContext(t.Context(), "bash", "-c", prelude+`cage_download_tool "$DOWNLOAD_URL" "$DOWNLOAD_HASH" "$HOME/package"`)
+				cmd.Env = append(os.Environ(), "CAGE_SETUP_PROGRESS=1", "HOME="+dir, "PATH="+dir+":"+os.Getenv("PATH"), "CURL_CA_BUNDLE="+ca, "DOWNLOAD_URL="+s.URL, fmt.Sprintf("DOWNLOAD_HASH=%x", hash), "NO_PROXY=127.0.0.1", "no_proxy=127.0.0.1")
+				return cmd.CombinedOutput()
+			}
+			out, err := run()
+			if mode == "slow" {
+				if !strings.Contains(string(out), "CAGE_TOOL_BYTES package 0") || !strings.Contains(string(out), "CAGE_TOOL_BYTES package 16") {
+					t.Fatalf("real tool transfer did not publish its byte counts: %s", out)
+				}
+				if err != nil || calls.Load() != 1 {
+					t.Fatalf("progressing download interrupted: %v calls=%d %s", err, calls.Load(), out)
+				}
+			} else {
+				if err == nil || calls.Load() != 4 || !strings.Contains(string(out), "no data") {
+					t.Fatalf("stalled download did not exhaust idle retries: %v calls=%d %s", err, calls.Load(), out)
+				}
+				if _, err := os.Stat(filepath.Join(dir, "package")); !os.IsNotExist(err) {
+					t.Fatal("incomplete file published")
+				}
+				if mode == "stalled" {
+					got, err := os.ReadFile(filepath.Join(dir, "package.part"))
+					if err != nil || string(got) != data[:4] {
+						t.Fatalf("partial data lost: %q %v", got, err)
+					}
+				}
+				recovered.Store(true)
+				if out, err := run(); err != nil || calls.Load() != 5 {
+					t.Fatalf("manual continuation failed: %v calls=%d %s", err, calls.Load(), out)
+				}
+			}
+			got, err := os.ReadFile(filepath.Join(dir, "package"))
+			if err != nil || string(got) != data {
+				t.Fatalf("download not verified and published: %q %v", got, err)
+			}
+		})
+	}
+}
+
 func TestClaudeNativeCacheUsesGuestArchitectureAndIntegrity(t *testing.T) {
 	if _, err := exec.LookPath("jq"); err != nil {
 		t.Skip("jq unavailable")
@@ -113,7 +222,22 @@ func TestClaudeNativeCacheUsesGuestArchitectureAndIntegrity(t *testing.T) {
 				"dpkg":   "#!/bin/sh\nif [ \"$1\" = --print-architecture ]; then echo \"$TEST_ARCH\"; else exit 1; fi\n",
 				"claude": "#!/bin/sh\necho 1.0.0\n",
 				"flock":  "#!/bin/sh\nexit 0\n",
-				"curl":   "#!/bin/sh\nwhile [ \"$#\" -gt 0 ]; do if [ \"$1\" = -o ]; then shift; printf native-package > \"$1\"; printf 200; exit; fi; shift; done\nexit 1\n",
+				"curl": `#!/bin/sh
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    https://cdn.npmmirror.com/packages/%40anthropic-ai/"$TEST_PACKAGE"/2.1.314/"$TEST_PACKAGE"-2.1.314.tgz)
+      body=native-package
+      [ "$TEST_ARCH" != amd64 ] || body=corrupt-mirror
+      echo mirror >> "$HOME/sources";;
+    https://registry.npmjs.org/"$TEST_PACKAGE".tgz)
+      body=native-package
+      echo upstream >> "$HOME/sources";;
+    -o) shift; printf %s "${body:?unexpected source}" > "$1"; printf 200; exit;;
+  esac
+  shift
+done
+exit 1
+`,
 				"npm": `#!/bin/sh
 case "$1" in
 view)
@@ -141,13 +265,36 @@ esac
 					t.Fatal(err)
 				}
 			}
-			cmd := exec.Command("bash", "-c", ToolInstallPrelude()+"cage_install_tool claude")
+			// The simulated amd64 guest may be running on an arm64 test host.
+			cpuinfo := filepath.Join(dir, "cpuinfo")
+			if err := os.WriteFile(cpuinfo, []byte("flags\t: ssse3 sse4_1 sse4_2 popcnt\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			prelude := strings.ReplaceAll(ToolInstallPrelude(), "/proc/cpuinfo", `"$HOME/cpuinfo"`)
+			cmd := exec.Command("bash", "-c", prelude+"cage_install_tool claude")
 			cmd.Env = append(os.Environ(), "HOME="+dir, "PATH="+dir+":"+os.Getenv("PATH"), "TEST_ARCH="+arch, "TEST_PACKAGE="+packageName, "TEST_INTEGRITY="+base64.StdEncoding.EncodeToString(hash[:]))
 			if out, err := cmd.CombinedOutput(); err != nil {
 				t.Fatalf("%v %s", err, out)
 			}
 			if _, err := os.Stat(filepath.Join(dir, "installed")); err != nil {
 				t.Fatal(err)
+			}
+			want := "mirror\n"
+			if arch == "amd64" {
+				want += "upstream\n"
+			}
+			if got, err := os.ReadFile(filepath.Join(dir, "sources")); err != nil || string(got) != want {
+				t.Fatalf("sources: %q, want %q (%v)", got, want, err)
+			}
+			if arch == "amd64" {
+				if err := os.WriteFile(cpuinfo, []byte("flags\t: sse2 sse4a popcnt\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				retry := exec.Command("bash", "-c", prelude+"cage_install_tool claude")
+				retry.Env = cmd.Env
+				if out, err := retry.CombinedOutput(); err == nil || !strings.Contains(string(out), "需要 SSE4.2") {
+					t.Fatalf("missing guest CPU feature should stop Claude setup: %v %s", err, out)
+				}
 			}
 		})
 	}
@@ -162,6 +309,17 @@ func TestGeneratedGuestScriptsParseAsBash(t *testing.T) {
 				t.Fatalf("%v: %s", err, out)
 			}
 		})
+	}
+}
+
+func TestChromiumPrefetchFallsBackButPropagatesCancellation(t *testing.T) {
+	for _, status := range []int{1, 143} {
+		cmd := exec.Command("bash", "-c", fmt.Sprintf("set -e\nsudo() { cat >/dev/null; return %d; }\n", status)+ToolInstallPrelude()+"cage_cache_chromium --only-upgrade chromium\necho normal-apt")
+		out, err := cmd.CombinedOutput()
+		fellBack := err == nil && strings.Contains(string(out), "normal-apt")
+		if (status == 1 && !fellBack) || (status == 143 && (err == nil || cmd.ProcessState.ExitCode() != 143)) {
+			t.Fatalf("prefetch exit %d: %v %s", status, err, out)
+		}
 	}
 }
 

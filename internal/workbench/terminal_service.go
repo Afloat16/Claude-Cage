@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 var (
@@ -233,7 +232,6 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 			return nil, err
 		}
 	}
-	name := vmname.Name(s.environmentDir())
 	script := terminalScript(guestPath(workspace), input.Kind, command)
 	var selection claudeSelection
 	var finished func()
@@ -250,6 +248,7 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 			if !validClaudeID(selection.ID) || !validClaudeGuestID(selection.GuestID) || (login && selection.GuestID == "default") {
 				return nil, errors.New("Claude 账号 ID 无效")
 			}
+
 			if existing, conflict := s.terminals.existingClaudeLogin(selection.ID, login); existing != nil || conflict != nil {
 				return existing, conflict
 			}
@@ -266,7 +265,7 @@ func (s *Server) createTerminal(input terminalRequest) (*terminalSession, error)
 			}
 		}
 	}
-	cmd := s.sshCommand(s.lifetimeContext(), "-tt", "lima-"+name, "--", script)
+	cmd := s.sshCommand(s.lifetimeContext(), "-tt", s.sshTarget(), "--", script)
 	session, err := s.terminals.startSession(cmd, workspace, input.Kind, selection, finished)
 	if err == nil && input.Kind == "claude" && selection.ID != "" {
 		s.noteClaudeSelection(selection.ID, workspace)

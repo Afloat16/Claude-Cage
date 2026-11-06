@@ -33,7 +33,7 @@ internal static class Program
             return 1;
         }
         var sid = WindowsIdentity.GetCurrent().User?.Value ?? Environment.UserName;
-        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid)))[..24];
+        var key = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(sid + "\0" + Path.GetFullPath(Backend.Root).TrimEnd(Path.DirectorySeparatorChar).ToUpperInvariant())))[..24];
         using var mutex = new Mutex(true, @"Local\Cage-" + key, out var owner);
         if (!owner)
         {

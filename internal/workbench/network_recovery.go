@@ -41,9 +41,11 @@ func (s *Server) recoverNetwork() {
 	if blocked || r.RunID == "" {
 		return
 	}
-	// A healthy browser alone is insufficient when the guest remains under pressure.
+	// The resource manager refreshes UpdatedAt even when a sample fails.
+	// Only a recent pressure measurement should postpone the full gate check.
 	resources, err := cage.ReadResourceStatus(s.instanceDir())
-	if err == nil && (resources.Pressure || resources.HostPressure || resources.Error != "") {
+	guestPressure := resources.Pressure && time.Since(resources.ObservedAt) <= 10*time.Second
+	if err == nil && (guestPressure || resources.HostPressure) {
 		return
 	}
 	_, _ = s.submitJob("network-recovery", func() error { return s.runNetworkRecovery(r, s.runSafetyCheck) })
@@ -108,10 +110,6 @@ func (s *Server) finishNetworkRecovery(expected networkRecovery, err error) erro
 	}
 	if err == nil || s.closing || s.networkPaused || s.safety.pauseVersion != expected.PauseVersion || errors.Is(err, context.Canceled) {
 		s.recovery = networkRecovery{}
-		if err == nil {
-			s.networkError = ""
-			s.safety.Error = ""
-		}
 		return err
 	}
 	if current.RunID != "" {

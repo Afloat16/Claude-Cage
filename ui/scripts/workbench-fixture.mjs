@@ -9,7 +9,9 @@ export async function createWorkbench({
   mockWebSockets = true,
   url,
   nativeRequest,
+  clientRequest,
   startupFailure = false,
+  clientContext = { mode: "local", connection_id: "local", client_platform: "darwin", server_platform: "darwin", connection: { state: "disconnected" } },
 } = {}) {
   const engines = require(
     process.env.CAGE_PLAYWRIGHT_MODULE || "playwright",
@@ -111,6 +113,8 @@ export async function createWorkbench({
     const path = new URL(request.url()).pathname.replace("/api", "");
     const body = request.postDataJSON();
     state.requests.push({ path, method: request.method(), body: path.startsWith("/account") ? undefined : body });
+    if (clientRequest && path.startsWith("/client/")) return clientRequest(route, path, body);
+    if (path === "/client/context") return route.fulfill({ json: clientContext });
     const accountView = () => ({ ...state.account, background_running: state.status.vm_running });
     if (path === "/account") return route.fulfill({ json: accountView() });
     if (path.startsWith("/account/")) {
@@ -341,7 +345,7 @@ export async function createWorkbench({
     return route.fulfill({ json: result });
   });
   await page.goto(url || process.env.CAGE_UI_URL || "http://127.0.0.1:5198");
-  if (!startupFailure) await page.getByRole("heading", { name: "先启动 Cage 环境" }).waitFor();
+  if (!startupFailure && clientContext.mode !== "none") await page.getByRole("heading", { name: "先启动 Cage 环境" }).waitFor();
   return { browser, context, page, state, errors };
 }
 

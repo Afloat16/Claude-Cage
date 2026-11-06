@@ -422,7 +422,8 @@ func (l *LimaQemuDriver) Start(ctx context.Context) (chan error, error) {
 			socks.dgramConn.Close()
 		}
 	}()
-	qExe, qArgs, err := Cmdline(ctx, qCfg)
+	var workingDir string
+	qExe, qArgs, err := cmdline(ctx, qCfg, &workingDir)
 	if err != nil {
 		return nil, err
 	}
@@ -468,6 +469,7 @@ func (l *LimaQemuDriver) Start(ctx context.Context) (chan error, error) {
 		qArgsFinal = append(qArgsFinal, applied)
 	}
 	qCmd := exec.CommandContext(ctx, qExe, qArgsFinal...)
+	qCmd.Dir = workingDir
 	qCmd.ExtraFiles = append(qCmd.ExtraFiles, applier.files...)
 	qCmd.SysProcAttr = executil.BackgroundSysProcAttr
 	qStdout, err := qCmd.StdoutPipe()

@@ -1,5 +1,8 @@
 # A small compressed swap area absorbs short allocation bursts while the host
 # adjusts the balloon. It consumes RAM only as used and is bounded at 2 GiB.
+# Containers share the host kernel. Their memory and swap limits belong to
+# the container cgroup; never load host modules or create swap devices here.
+if ! systemd-detect-virt --container --quiet; then
 sudo tee /usr/local/bin/cage-memory-start >/dev/null <<'SCRIPT'
 #!/bin/sh
 set -eu
@@ -36,4 +39,5 @@ sudo systemctl daemon-reload
 sudo systemctl enable cage-memory.service >/dev/null
 if ! sudo systemctl start cage-memory.service; then
   printf 'Compressed memory reserve unavailable; automatic host memory management remains enabled.\n' >&2
+fi
 fi

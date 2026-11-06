@@ -16,7 +16,7 @@ sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null
 temporary=$(mktemp -d)
 trap 'rm -rf "$temporary"' EXIT
 printf '正在验证 Anthropic 安装源…\n'
-curl --proto '=https' --proto-redir '=https' -fSL --connect-timeout 15 --max-time 90 https://downloads.claude.ai/claude-desktop/key.asc -o "$temporary/key.asc"
+cage_curl_download "$temporary/key.asc" --proto '=https' --proto-redir '=https' -fSL --connect-timeout 15 https://downloads.claude.ai/claude-desktop/key.asc -o "$temporary/key.asc"
 fingerprint=$(gpg --batch --show-keys --with-colons "$temporary/key.asc" | awk -F: '$1 == "fpr" {print $10; exit}')
 test "$fingerprint" = 31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE || { echo 'Anthropic signing key did not match; installation stopped.' >&2; exit 1; }
 sudo install -m 0644 "$temporary/key.asc" /usr/share/keyrings/claude-desktop-archive-keyring.asc

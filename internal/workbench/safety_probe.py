@@ -53,7 +53,7 @@ if args["stage"] in ("boundary", "environment"):
 
 if args["stage"] == "boundary":
     result["public_connected"] = connected(("1.1.1.1", 443))
-    result["management_connected"] = connected(("192.168.5.2", args["control_port"]))
+    result["management_connected"] = connected((args["management_host"], args["control_port"]))
     result["ipv6_connected"] = connected(("2606:4700:4700::1111", 443), socket.AF_INET6)
     try:
         routes = subprocess.run(["ip", "-j", "-6", "route", "show", "default"], capture_output=True, text=True, timeout=3, check=True)

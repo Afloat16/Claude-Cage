@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strconv"
 
 	"github.com/pbnjay/memory"
+	"github.com/sylvinus/agent-vm/internal/paths"
 )
 
 // A VM handed more CPU or RAM than the host can spare makes the host
@@ -77,17 +79,34 @@ func Cap(kind string, val int, warn io.Writer) int {
 	return val
 }
 
+// FreeGiB reports available space on the physical volume where dir will
+// be created. A first-run Lima home can be a missing child of a junction.
+func FreeGiB(dir string) (int, bool) {
+	for {
+		real, err := paths.Resolve(dir)
+		if err == nil {
+			return freeGiB(real)
+		}
+		if !os.IsNotExist(err) {
+			return 0, false
+		}
+		if _, err = os.Lstat(dir); !os.IsNotExist(err) {
+			return 0, false
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return 0, false
+		}
+		dir = parent
+	}
+}
+
 // WarnDiskSpace warns when the file system of dir has less free space than
 // a disk of want GiB. Disks are sparse, allocated as they fill: a warning,
 // not an error.
 func WarnDiskSpace(dir string, want int, warn io.Writer) {
 	if want == 0 {
 		return
-	}
-	if _, err := os.Stat(dir); err != nil {
-		if h, err := os.UserHomeDir(); err == nil {
-			dir = h
-		}
 	}
 	free, ok := FreeGiB(dir)
 	if ok && free < want {

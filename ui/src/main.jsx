@@ -1,9 +1,6 @@
-import { installDiagnostics } from "./diagnostics.mjs";
-import { DiagnosticBoundary } from "./diagnostics.jsx";
 import { shortcut, primaryModifier } from "./platform.mjs";
 import logo from "./logo.png";
 import React, { useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
 import {
   Clock3,
   FileCode2,
@@ -19,9 +16,11 @@ import {
   X,
 } from "lucide-react";
 import { api, normalizeURL, native, nativeAvailable } from "./api";
+import { clientKeyboard, clientStorageKey, isRemoteClient, runtimeURL } from "./client-context.mjs";
 import { RemoteView, TerminalView, Modal } from "./views";
 import { usePasswordVault } from "./password-vault";
 import { SettingsPanel } from "./settings";
+import { SetupProgress } from "./setup-progress";
 import { AppearanceProvider } from "./appearance";
 import { EnvironmentShield } from "./environment-shield";
 import { WorkspaceSidebar } from "./workspace-sidebar";
@@ -49,11 +48,16 @@ import { HostGitPreparation } from "./host-git";
 import { NetworkLatency } from "./network-latency";
 import { useWindowVisibility } from "./window-visibility";
 import { AppUpdateButton, useAppUpdates } from "./app-updates";
-import "./style.css";
 import "./appearance.css";
 import { stopAndExit } from "./quit";
 
 function App() {
+  const [, refreshClientPreferences] = useState(0);
+  useEffect(() => {
+    const refresh = () => refreshClientPreferences((value) => value + 1);
+    window.addEventListener("cage-client-preferences", refresh);
+    return () => window.removeEventListener("cage-client-preferences", refresh);
+  }, []);
   const claudeProfiles = useClaudeAccounts();
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [terminalChoice, setTerminalChoice] = useState(null);
@@ -67,7 +71,7 @@ function App() {
     [settings, setSettings] = useState(null),
     [proxy, setProxy] = useState(null),
     [tabs, setTabs] = useState([]),
-    [layout, setLayout] = useState(() => ({ active: localStorage.getItem("cage-active") || "" })),
+    [layout, setLayout] = useState(() => ({ active: localStorage.getItem(clientStorageKey("cage-active")) || "" })),
     [browser, setBrowser] = useState({ tabs: [] }),
     [settingsOpen, setSettingsOpen] = useState(false),
     [hostGitOpen, setHostGitOpen] = useState(false),
@@ -75,10 +79,10 @@ function App() {
     [settingsSection, setSettingsSection] = useState("keyboard"),
     [home, setHome] = useState(true),
     [sidebarCollapsed, setSidebarCollapsed] = useState(
-      readLocal("cage-sidebar-collapsed", false),
+      readLocal(clientStorageKey("cage-sidebar-collapsed"), false),
     ),
     [selectedProject, setSelectedProject] = useState(""),
-    [savedTabs, setSavedTabs] = useState(readLocal("cage-tab-layout", {})),
+    [savedTabs, setSavedTabs] = useState(readLocal(clientStorageKey("cage-tab-layout"), {})),
     [projectDialog, setProjectDialog] = useState(null),
     [rename, setRename] = useState(null),
     [toast, setToast] = useState(""),
@@ -90,10 +94,11 @@ function App() {
     [safetyOpen, setSafetyOpen] = useState(false),
     [quitting, setQuitting] = useState(null);
   // Keep feedback continuous until polling observes the accepted start job.
-  const status = serverStatus && (hostGitOpen || startRequest)
-    ? { ...serverStatus, job: { running: true, kind: "start", message: hostGitOpen
-      ? "正在检查本机 Git 安全保护…" : "正在启动 Cage 环境…" } }
-    : serverStatus;
+  const clientStatus = serverStatus && { ...serverStatus, keyboard: clientKeyboard(serverStatus.keyboard) };
+  const status = clientStatus && (hostGitOpen || startRequest)
+    ? { ...clientStatus, job: { running: true, kind: "start", message: hostGitOpen
+      ? isRemoteClient() ? "正在检查云端主机 Git 安全保护…" : "正在检查本机 Git 安全保护…" : "正在启动 Cage 环境…" } }
+    : clientStatus;
   const { active } = layout;
   const setActive = id => setLayout(previous => focusTab(previous, id));
   const workspaceBox = useRef(null);
@@ -117,6 +122,7 @@ function App() {
     terminal = !desktopOpen && current?.kind === "terminal",
     busy = Boolean(status?.job?.running),
     showHome = !desktopOpen && (home || !status?.vm_running || !current);
+  const setupProgress = status?.job?.setup_progress && (busy || status.job.error);
   const other = tabs.find(tab => tab.id === layout.other);
   const split = Boolean(other && current && !showHome && !desktopOpen);
   const panes = !split ? [current].filter(Boolean)
@@ -231,7 +237,7 @@ function App() {
     setDesktopOpen(false);
     setHome(false);
     setActive(id);
-    localStorage.setItem("cage-active", id);
+    localStorage.setItem(clientStorageKey("cage-active"), id);
     const tab = tabs.find((t) => t.id === id);
     if (tab?.kind === "terminal") setSelectedProject(tab.workspace);
     if (tab && tab.kind !== "terminal") {
@@ -428,9 +434,9 @@ function App() {
   const stop = async () => {
     if (
       await confirm({
-        title: "停止当前环境？",
-        body: "请先保存文件。当前终端会话会结束，浏览器登录和项目文件会保留。",
-        confirm: "停止环境",
+        title: setupProgress ? "停止安装环境？" : "停止当前环境？",
+        body: setupProgress ? "当前安装任务会停止。下次启动环境时可以继续安装。" : "请先保存文件。当前终端会话会结束，浏览器登录和项目文件会保留。",
+        confirm: setupProgress ? "停止安装" : "停止环境",
       })
     )
       await action("/stop");
@@ -586,7 +592,7 @@ function App() {
   }, [settings, status, fatal, connectionError]);
   useEffect(() => {
     if (!status?.ready) return;
-    const stream = new EventSource("/api/browser/events");
+    const stream = new EventSource(runtimeURL("/browser/events"));
     stream.addEventListener("clipboard", (event) => {
       remote.current?.receiveCopy(JSON.parse(event.data));
     });
@@ -642,7 +648,7 @@ function App() {
       (current?.title && current.title !== "新标签页"
         ? current.title + " · "
         : "") + "Cage";
-    if (active) localStorage.setItem("cage-active", active);
+    if (active) localStorage.setItem(clientStorageKey("cage-active"), active);
   }, [current?.url, current?.title, active]);
   useEffect(() => {
     if (!toast) return;
@@ -651,7 +657,7 @@ function App() {
   }, [toast]);
   useEffect(() => {
     const key = (event) => {
-      if (!primaryModifier(event)) return;
+      if (document.querySelector("[data-environment-dialog]") || !primaryModifier(event)) return;
       const k = event.key.toLowerCase();
       if (document.querySelector("[data-browser-dialog]")) {
         if (k === "w") {
@@ -759,6 +765,10 @@ function App() {
       return remote.current?.edit(command) || false;
     };
     window.cageNativeAction = async (command) => {
+      if (document.querySelector("[data-environment-dialog]")) {
+        if (command === "closeTab") document.dispatchEvent(new Event("cage-close-modal"));
+        return;
+      }
       if (hostGitOpen && command !== "quit") {
         if (command === "closeTab")
           document.dispatchEvent(new Event("cage-close-modal"));
@@ -812,6 +822,10 @@ function App() {
       }
       if (command === "quit") {
         if (quitAfterStop.current) return;
+        if (isRemoteClient()) {
+          await native("quitNow");
+          return;
+        }
         if (status && !connectionError && !status.vm_running && !busy) {
           await native("quitNow");
           return;
@@ -882,7 +896,7 @@ function App() {
     });
   const persist = (key, value, setter) => {
     try {
-      localStorage.setItem(key, JSON.stringify(value));
+      localStorage.setItem(clientStorageKey(key), JSON.stringify(value));
       setter(value);
     } catch {
       notify("未能保存界面偏好，请检查本地存储空间。");
@@ -1215,10 +1229,17 @@ function App() {
               <div className="welcome">
                 <div className="welcome-content">
                   <img className="welcome-logo" src={logo} alt="Cage" />
+                  {setupProgress ? <>
+                    <h1>{status.job.error ? "环境安装未完成" : "正在安装 Cage 环境"}</h1>
+                    <SetupProgress job={status.job} onDetails={() => setDetails(true)}
+                      onStop={stop} onRetry={() => setHostGitOpen(true)} disconnected={Boolean(connectionError)} />
+                  </> : <>
                   <h1>
                     {busy
                       ? status.job.kind === "stop"
                         ? "正在停止 Cage 环境"
+                        : status.job.kind === "storage"
+                          ? "正在调整环境存储"
                         : status.job.kind === "project"
                           ? "正在打开项目"
                           : "正在准备 Cage 环境"
@@ -1279,6 +1300,7 @@ function App() {
                         </small>
                       </span>
                     </div>
+                    {!running && status.local_vm_storage && !isRemoteClient() && <button className="storage-entry text-button" disabled={busy} onClick={() => openSettings("project")}>选择环境存储位置</button>}
                     <div className="start-project-footer">
                       <span>
                         <i className={`status-dot ${network.mode}`} />
@@ -1359,9 +1381,10 @@ function App() {
                       打开项目后，在终端输入 <code>claude</code>
                       ，按提示登录你的账户。
                       <br />
-                      默认工作区和打开的项目与本机共享，编辑和删除文件会同步。
+                      {isRemoteClient() ? "默认工作区和打开的项目位于云端，编辑和删除会直接影响云端文件。" : "默认工作区和打开的项目与本机共享，编辑和删除文件会同步。"}
                     </p>
                   )}
+                  </>}
                   {status.project_error && (
                     <div className="start-error" role="alert">
                       <strong>部分项目文件夹尚未连接</strong>
@@ -1379,7 +1402,7 @@ function App() {
                       ) : <p>{status.project_error}</p>}
                     </div>
                   )}
-                  {status.job?.error && (
+                  {!setupProgress && status.job?.error && (
                     <div className="start-error" role="alert">
                       <strong>本次操作未完成</strong>
                       <p>{status.job.error}</p>
@@ -1393,7 +1416,7 @@ function App() {
                       )}
                     </div>
                   )}
-                  {status.job?.log && (
+                  {!setupProgress && status.job?.log && (
                     <button
                       className="text-button details-link"
                       onClick={() => setDetails(true)}
@@ -1450,7 +1473,7 @@ function App() {
                   ? status.job.message
                   : running
                     ? status.ready
-                      ? "文件与本机同步"
+                      ? isRemoteClient() ? "文件保存在云端" : "文件与本机同步"
                       : "环境运行中 · 浏览器待恢复"
                     : "")}
             </span>
@@ -1611,18 +1634,6 @@ function App() {
     </div>
   );
 }
-installDiagnostics();
-createRoot(document.getElementById("root")).render(
- <DiagnosticBoundary>
-  <AccountProvider>
-    <AppearanceProvider>
-      <AccountGate><App /></AccountGate>
-    </AppearanceProvider>
-  </AccountProvider>
- </DiagnosticBoundary>,
-);
-
-// A launcher can reopen an existing window with a fresh one-use ticket.
-window.addEventListener("hashchange", () => {
-  if (location.hash) location.reload();
-});
+export default function Workbench() {
+  return <AccountProvider><AppearanceProvider><AccountGate><App /></AccountGate></AppearanceProvider></AccountProvider>;
+}

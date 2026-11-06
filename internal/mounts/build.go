@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
+	vm "github.com/sylvinus/agent-vm/internal/mounts/spec"
 	"github.com/sylvinus/agent-vm/internal/paths"
-	"github.com/sylvinus/agent-vm/internal/vm"
 )
 
 // FileMount is a single file of ~/.agent-vm/volumes: hardlinked into a
@@ -124,9 +124,11 @@ func Stage(src, dst string, warn io.Writer) bool {
 	// The file itself: link(2) links a symlink as one (stow's dotfiles), which
 	// would leave dst pointing out of the folder the VM is given. The checks
 	// made on src were on that file too (UnsafeLocation).
-	if p, err := filepath.EvalSymlinks(src); err == nil {
-		src = p
+	physical, err := paths.Resolve(src)
+	if err != nil {
+		return false
 	}
+	src = physical
 	if os.Link(src, dst) == nil {
 		return true
 	}

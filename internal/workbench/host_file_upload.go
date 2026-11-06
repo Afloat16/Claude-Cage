@@ -94,6 +94,10 @@ func streamSelectedHostFiles(client *http.Client, origin, target, id string, fil
 // UploadHostFiles is a native-only entry point. Paths come from an OS picker or
 // a user-initiated clipboard snapshot, never an HTTP request or a guest page.
 func UploadHostFiles(configPath, target, id string, paths []string) (map[string]any, error) {
+	return UploadHostFilesForConnection(configPath, "", target, id, paths)
+}
+
+func UploadHostFilesForConnection(configPath, connectionID, target, id string, paths []string) (map[string]any, error) {
 	if (target != "browser" && target != "desktop" && target != "terminal") || !validFileTargetID(target, id) {
 		return nil, errors.New("文件上传目标无效")
 	}
@@ -115,6 +119,9 @@ func UploadHostFiles(configPath, target, id string, paths []string) (map[string]
 	status, err := client.call("POST", "/api/session", map[string]string{"token": entry.Fragment}, nil)
 	if err != nil || status != http.StatusOK {
 		return nil, errors.New("无法连接文件上传会话")
+	}
+	if _, err = client.bindConnection(connectionID); err != nil {
+		return nil, err
 	}
 	client.client.Timeout = 30 * time.Minute
 	pathsResult, err := streamSelectedHostFiles(client.client, client.origin, target, id, files)

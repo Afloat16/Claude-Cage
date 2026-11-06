@@ -40,6 +40,7 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework WebKit -framework Security -framework LocalAuthentication desktop/Cage.swift desktop/NativeInput.swift desktop/Updates.swift desktop/AccountDevice.swift -o "$bundle/Contents/MacOS/Cage"
 swiftc -O -target "$(uname -m)-apple-macosx14.0" -parse-as-library -framework Cocoa -framework Security desktop/Updates.swift desktop/UpdateInstaller.swift -o "$bundle/Contents/Resources/CageUpdateInstaller"
 cp _output/bin/cage "$bundle/Contents/Resources/cage"
+node scripts/bundle-cloud-kit.mjs "$bundle/Contents/Resources"
 cp _output/proxy-core/mihomo "$bundle/Contents/Resources/mihomo"
 for executable in "$bundle/Contents/MacOS/Cage" "$bundle/Contents/Resources/CageUpdateInstaller" "$bundle/Contents/Resources/cage" "$bundle/Contents/Resources/mihomo"; do
   minimum="$(otool -l "$executable" | awk '$1 == "minos" {print $2}')"

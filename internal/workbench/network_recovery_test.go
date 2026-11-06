@@ -3,11 +3,45 @@ package workbench
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 )
+
+func TestNetworkRecoveryAdmissionRequiresObservedPressureToDefer(t *testing.T) {
+	now := time.Now()
+	for _, tc := range []struct {
+		name    string
+		status  cage.ResourceStatus
+		wantJob bool
+	}{
+		{"memory target could not be applied", cage.ResourceStatus{ObservedAt: now, Error: "内存目标未能应用，保持当前配置"}, true},
+		{"failed sample retains stale guest pressure", cage.ResourceStatus{ObservedAt: now.Add(-time.Minute), Error: "资源采样暂时不可用，已暂停内存回收", Pressure: true}, true},
+		{"current guest pressure", cage.ResourceStatus{ObservedAt: now, Pressure: true}, false},
+		{"current host pressure", cage.ResourceStatus{HostPressure: true}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, gate := failedMonitoringServer(t)
+			s.recovery.Next = time.Now().Add(-time.Second)
+			tc.status.Version, tc.status.UpdatedAt = 1, time.Now()
+			if err := writePrivate(filepath.Join(s.instanceDir(), "cage-resources.json"), tc.status); err != nil {
+				t.Fatal(err)
+			}
+			// Inspect actual job admission before allowing the queued worker to run.
+			s.op.Lock()
+			s.recoverNetwork()
+			job := s.jobs.snapshot()
+			s.jobs.cancelRunning()
+			s.op.Unlock()
+			s.jobs.close()
+			if (job.Running && job.Kind == "network-recovery") != tc.wantJob || gate.Status().Mode != cage.GateClosed {
+				t.Fatalf("job = %+v, want admitted = %v while gate remains closed", job, tc.wantJob)
+			}
+		})
+	}
+}
 
 func failedMonitoringServer(t *testing.T) (*Server, *cage.EgressGate) {
 	s, gate := grantedToolUpdateServer(t)

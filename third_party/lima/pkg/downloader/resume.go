@@ -12,6 +12,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lima-vm/lima/v2/pkg/progressbar"
@@ -44,10 +45,8 @@ func downloadHTTPResumable(ctx context.Context, local, modified, contentType, re
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		attemptCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 		var retry bool
-		retry, err = resumeHTTPOnce(attemptCtx, local, modified, contentType, remote, description, expected)
-		cancel()
+		retry, err = resumeHTTPOnce(ctx, local, modified, contentType, remote, description, expected, time.Minute)
 		if err == nil {
 			return publishPartial(part, local, identity)
 		}
@@ -73,7 +72,7 @@ func publishPartial(part, local, identity string) error {
 	return os.Remove(identity)
 }
 
-func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, description string, expected digest.Digest) (bool, error) {
+func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, description string, expected digest.Digest, idleTimeout time.Duration) (bool, error) {
 	part := local + ".part"
 	var offset int64
 	if st, err := os.Stat(part); err == nil {
@@ -83,10 +82,10 @@ func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, d
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	// A slow but progressing transfer may run for 30 minutes. A stalled
-	// connection is interrupted after one minute so a fresh attempt can resume.
-	idle := time.AfterFunc(time.Minute, cancel)
-	defer idle.Stop()
+	// Only received body bytes renew the timeout. Headers and progress messages
+	// cannot keep a stalled transfer alive; a progressing transfer has no cap.
+	idle := newDownloadIdleWatchdog(idleTimeout, cancel)
+	defer idle.stop()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, remote, nil)
 	if err != nil {
 		return false, err
@@ -156,8 +155,20 @@ func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, d
 	logrus.Infof("Downloading %s; continuing at %d bytes", description, offset)
 	bar.Start()
 	defer bar.Finish()
-	reader := &downloadActivityReader{reader: resp.Body, timer: idle}
+	reader := &downloadActivityReader{reader: resp.Body, activity: idle.touch}
+	// The desktop workbench consumes complete lines when stderr is a pipe.
+	// Range responses count the bytes already present in the partial file.
+	if os.Getenv("CAGE_SETUP_PROGRESS") == "1" {
+		reader.received = offset
+		reader.total = total
+		reader.report = func(received, total int64) {
+			fmt.Fprintf(os.Stderr, "CAGE_IMAGE_BYTES %d %d\n", received, total)
+		}
+		reader.report(offset, total)
+		reader.lastReport = time.Now()
+	}
 	n, err := io.Copy(out, bar.NewProxyReader(reader))
+	idle.stop() // Local syncing and checksum validation are not network waits.
 	if err != nil {
 		return true, err
 	}
@@ -171,6 +182,10 @@ func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, d
 	}
 	if total >= 0 && n+offset != total {
 		return true, io.ErrUnexpectedEOF
+	}
+	if reader.report != nil {
+		reader.report(reader.received, total)
+		fmt.Fprintln(os.Stderr, "CAGE_IMAGE_VERIFY")
 	}
 	if err := out.Sync(); err != nil {
 		return false, err
@@ -186,16 +201,68 @@ func resumeHTTPOnce(ctx context.Context, local, modified, contentType, remote, d
 }
 
 type downloadActivityReader struct {
-	reader io.Reader
-	timer  *time.Timer
+	reader          io.Reader
+	activity        func()
+	received, total int64
+	report          func(int64, int64)
+	lastReport      time.Time
 }
 
 func (r *downloadActivityReader) Read(p []byte) (int, error) {
 	n, err := r.reader.Read(p)
 	if n > 0 {
-		r.timer.Reset(time.Minute)
+		r.activity()
+		if r.report != nil {
+			r.received += int64(n)
+			if time.Since(r.lastReport) >= time.Second {
+				r.report(r.received, r.total)
+				r.lastReport = time.Now()
+			}
+		}
 	}
 	return n, err
+}
+
+// Check the latest receive time under the same lock as touch. An expired
+// callback that was already scheduled must not cancel a renewed download.
+type downloadIdleWatchdog struct {
+	mu      sync.Mutex
+	timer   *time.Timer
+	last    time.Time
+	timeout time.Duration
+	cancel  context.CancelFunc
+	stopped bool
+}
+
+func newDownloadIdleWatchdog(timeout time.Duration, cancel context.CancelFunc) *downloadIdleWatchdog {
+	w := &downloadIdleWatchdog{last: time.Now(), timeout: timeout, cancel: cancel}
+	w.timer = time.AfterFunc(timeout, func() {
+		w.mu.Lock()
+		defer w.mu.Unlock()
+		if w.stopped {
+			return
+		}
+		if remaining := w.timeout - time.Since(w.last); remaining > 0 {
+			w.timer.Reset(remaining)
+		} else {
+			w.stopped = true
+			w.cancel()
+		}
+	})
+	return w
+}
+
+func (w *downloadIdleWatchdog) touch() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.last = time.Now()
+}
+
+func (w *downloadIdleWatchdog) stop() {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.stopped = true
+	w.timer.Stop()
 }
 
 func parseDownloadRange(value string) (start, end, total int64, ok bool) {

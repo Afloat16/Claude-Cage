@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,6 +28,7 @@ type DesktopResult struct {
 }
 type controllerClient struct {
 	profile, origin string
+	connectionID    string
 	record          controlFile
 	launch          launchResponse
 	client          *http.Client
@@ -34,7 +36,7 @@ type controllerClient struct {
 
 var errControllerUnavailable = errors.New("control service is unavailable")
 
-func connectController(profile string) (*controllerClient, error) {
+func openController(profile string) (*controllerClient, error) {
 	path := filepath.Join(profile, "control.json")
 	if err := host.CheckPrivateFile(path); err != nil {
 		if os.IsNotExist(err) {
@@ -55,6 +57,15 @@ func connectController(profile string) (*controllerClient, error) {
 	}
 	jar, _ := cookiejar.New(nil)
 	c := &controllerClient{profile: profile, record: record, origin: fmt.Sprintf("http://localhost:%d", record.Port), client: &http.Client{Timeout: 5 * time.Second, Jar: jar, Transport: &http.Transport{Proxy: nil}, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("redirect refused") }}}
+	return c, nil
+}
+
+func connectController(profile string) (*controllerClient, error) {
+	c, err := openController(profile)
+	if err != nil {
+		return nil, err
+	}
+	record := c.record
 	status, err := c.call("POST", "/api/launch", map[string]string{"token": record.Token}, &c.launch)
 	if err != nil {
 		c.close()
@@ -81,6 +92,10 @@ func connectController(profile string) (*controllerClient, error) {
 }
 func (c *controllerClient) close() { c.client.CloseIdleConnections() }
 func (c *controllerClient) call(method, path string, input, output any) (int, error) {
+	return c.callContext(context.Background(), method, path, input, output)
+}
+
+func (c *controllerClient) callContext(ctx context.Context, method, path string, input, output any) (int, error) {
 	var body []byte
 	var err error
 	if input != nil {
@@ -89,12 +104,15 @@ func (c *controllerClient) call(method, path string, input, output any) (int, er
 			return 0, err
 		}
 	}
-	req, err := http.NewRequest(method, c.origin+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, c.origin+path, bytes.NewReader(body))
 	if err != nil {
 		return 0, err
 	}
 	req.Header.Set("Origin", c.origin)
 	req.Header.Set("Content-Type", "application/json")
+	if c.connectionID != "" {
+		req.Header.Set(connectionHeader, c.connectionID)
+	}
 	res, err := c.client.Do(req)
 	if err != nil {
 		return 0, err
@@ -114,7 +132,10 @@ func pendingUpdate(c *controllerClient) DesktopResult {
 // Desktop never silently loads a different build's UI. Completing an update is
 // an explicit user action because it stops the existing environment's work.
 func Desktop(configPath string, options DesktopOptions) (DesktopResult, error) {
-	profile := filepath.Dir(configPath)
+	return desktopLaunch(filepath.Dir(configPath), false, options, func() error { return startController(configPath) })
+}
+
+func desktopLaunch(profile string, gateway bool, options DesktopOptions, start func() error) (DesktopResult, error) {
 	want, err := currentController()
 	if err != nil {
 		return DesktopResult{}, err
@@ -122,8 +143,16 @@ func Desktop(configPath string, options DesktopOptions) (DesktopResult, error) {
 	current, err := connectController(profile)
 	if err == nil {
 		defer current.close()
+		if current.launch.DesktopGateway != gateway {
+			return DesktopResult{}, errors.New("此目录已被另一种 Cage 服务使用，请核对配置路径")
+		}
 		if options.CompleteUpdate {
-			if err = current.stopAndHandoff(); err != nil {
+			if current.launch.DesktopGateway {
+				err = current.releaseDesktopEntry()
+			} else {
+				err = current.stopAndHandoff()
+			}
+			if err != nil {
 				return DesktopResult{}, err
 			}
 		} else if want.matches(current.launch.Controller) || options.UseExisting {
@@ -150,13 +179,16 @@ func Desktop(configPath string, options DesktopOptions) (DesktopResult, error) {
 	} else if !errors.Is(err, errControllerUnavailable) {
 		return DesktopResult{}, err
 	}
-	if err = startController(configPath); err != nil {
+	if err = start(); err != nil {
 		return DesktopResult{}, err
 	}
 	for i := 0; i < 60; i++ {
 		c, readErr := connectController(profile)
 		if readErr == nil {
 			c.close()
+			if c.launch.DesktopGateway != gateway {
+				return DesktopResult{}, errors.New("打开期间控制服务身份发生变化，请重新选择")
+			}
 			if want.matches(c.launch.Controller) {
 				return DesktopResult{Status: "ready", URL: c.launch.URL, Controller: c.launch.Controller}, nil
 			}
@@ -230,6 +262,25 @@ func (c *controllerClient) stopAndHandoff() error {
 	}
 	if status != http.StatusOK {
 		return errors.New("无法建立停止会话，请重试。")
+	}
+	var clientContext ClientContext
+	contextStatus, contextErr := c.call("GET", "/api/client/context", nil, &clientContext)
+	if contextErr == nil && contextStatus == http.StatusOK && (clientContext.Mode == "remote" || clientContext.ClientOnly) {
+		path := "/api/client/local"
+		if clientContext.ClientOnly {
+			path = "/api/client/disconnect"
+		}
+		status, err = c.call("POST", path, map[string]string{"connection_id": clientContext.ConnectionID}, nil)
+		if err != nil || status != http.StatusOK {
+			return errors.New("无法断开本地远程连接，未继续更新")
+		}
+		if clientContext.ClientOnly {
+			status, err = c.call("POST", "/api/handoff", map[string]string{"token": c.record.Token}, nil)
+			if err != nil || status != http.StatusOK {
+				return errors.New("本地连接服务尚未退出，请稍后重试")
+			}
+			return c.waitForExit()
+		}
 	}
 	var requested Job
 	status, err = c.call("POST", "/api/stop", map[string]any{}, &requested)
@@ -321,19 +372,24 @@ func (c *controllerClient) waitForExit() error {
 	return errors.New("后台尚未退出，未强制结束进程。请稍后重试更新。")
 }
 func startController(configPath string) error {
-	profile := filepath.Dir(configPath)
-	if err := host.EnsurePrivateDir(profile); err != nil {
-		return err
-	}
 	exe, err := os.Executable()
 	if err != nil {
+		return err
+	}
+	return startControllerExecutable(configPath, exe)
+}
+
+func startControllerExecutable(configPath, exe string, extraEnv ...string) error {
+	profile := filepath.Dir(configPath)
+	if err := host.EnsurePrivateDir(profile); err != nil {
 		return err
 	}
 	cmd := exec.Command(exe, "log-relay", "controller")
 	cmd.Dir = profile
 	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+configPath)
+	cmd.Env = append(cmd.Env, extraEnv...)
 	detachController(cmd)
-	if err = cmd.Start(); err != nil {
+	if err := cmd.Start(); err != nil {
 		return err
 	}
 	return cmd.Process.Release()

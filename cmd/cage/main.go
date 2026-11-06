@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	agentvm "github.com/sylvinus/agent-vm"
 	"github.com/sylvinus/agent-vm/internal/appupdate"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
@@ -31,6 +33,8 @@ const help = `Claude Cage — local isolated Claude development
 
 cage desktop       Open the unified Cage workbench (desktop launcher)
 cage serve         Run its private localhost control service
+cage server-entry --json  Issue a private SSH remote connection entry
+cage container-configure --json  Configure a Linux container from JSON stdin
 cage init          Create a private profile; add and select nodes in Cage settings
 cage check         Verify proxy transport (no VM required)
 cage proxy-start   Start Cage's bundled proxy core with the applied node
@@ -95,6 +99,99 @@ func run() int {
 	}
 	store := diagnostics.New(filepath.Dir(path))
 	diagnostics.SetDefault(store)
+	if args[0] == "container-runtime" {
+		if len(args) != 2 {
+			return fail(fmt.Errorf("container-runtime prepare|start|stop|inspect"))
+		}
+		environment, err := containerenv.Load(filepath.Dir(path))
+		if err != nil {
+			return fail(err)
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		switch args[1] {
+		case "prepare":
+			err = environment.Prepare(ctx, os.Stdout)
+		case "start":
+			err = environment.Start(ctx, path, os.Stdout)
+		case "stop":
+			err = environment.Stop(ctx)
+		case "inspect":
+			inspection, inspectErr := environment.Inspect(ctx)
+			err = inspectErr
+			if err == nil {
+				err = json.NewEncoder(os.Stdout).Encode(inspection)
+			}
+		default:
+			err = fmt.Errorf("container-runtime prepare|start|stop|inspect")
+		}
+		if err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if args[0] == "container-configure" {
+		if len(args) != 2 || args[1] != "--json" {
+			return fail(fmt.Errorf("container-configure --json < configuration.json"))
+		}
+		if err := configureContainer(path); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if args[0] == "container-install-script" {
+		if len(args) != 2 {
+			return fail(fmt.Errorf("container-install-script tools|services"))
+		}
+		script, err := containerInstallScript(args[1])
+		if err != nil {
+			return fail(err)
+		}
+		_, err = io.WriteString(os.Stdout, script)
+		if err != nil {
+			return 1
+		}
+		return 0
+	}
+	if args[0] == "container-network" {
+		if len(args) != 1 {
+			return 2
+		}
+		environment, err := containerenv.Load(filepath.Dir(path))
+		if err != nil {
+			return fail(err)
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := environment.ServeNetwork(ctx, path); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if args[0] == "container-tap" {
+		if len(args) != 1 {
+			return 2
+		}
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := containerenv.RunTAP(ctx, os.Stdin, os.Stdout); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if args[0] == "server-entry" {
+		if len(args) != 2 || args[1] != "--json" {
+			return fail(fmt.Errorf("server-entry --json"))
+		}
+		entry, err := workbench.ServerEntry(path)
+		if err != nil {
+			return fail(err)
+		}
+		if err := json.NewEncoder(os.Stdout).Encode(entry); err != nil {
+			return 1
+		}
+		return 0
+	}
 	if args[0] == "diagnostic-event" {
 		var event struct {
 			Source  string `json:"source"`
@@ -112,10 +209,15 @@ func run() int {
 		return 0
 	}
 	if args[0] == "diagnostics" {
+		connection := ""
+		if len(args) == 5 && args[1] == "--json" && args[2] == "--connection" {
+			connection = args[3]
+			args = []string{args[0], args[1], args[4]}
+		}
 		if len(args) != 3 || args[1] != "--json" {
 			return fail(fmt.Errorf("diagnostics --json /absolute/path.zip"))
 		}
-		if err := workbench.ExportDiagnostics(path, args[2]); err != nil {
+		if err := workbench.ExportDiagnosticsForConnection(workbench.DesktopHelperConfig(path, connection), connection, args[2]); err != nil {
 			diagnostics.Log("error", "command", err.Error())
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return 1
@@ -132,11 +234,19 @@ func run() int {
 	if args[0] == "app-update" {
 		return appupdate.Run(path, args[1:], os.Stdout)
 	}
+	connectionID := ""
+	if (args[0] == "upload-files" || args[0] == "browser-file") && len(args) >= 3 && args[2] == "--connection" {
+		if len(args) < 4 || args[3] == "" {
+			return fail(fmt.Errorf("missing file connection identity"))
+		}
+		connectionID = args[3]
+		args = append(append([]string{}, args[:2]...), args[4:]...)
+	}
 	if args[0] == "upload-files" {
 		if len(args) < 5 || args[1] != "--json" {
 			return fail(fmt.Errorf("upload-files --json browser|desktop|terminal ID PATH..."))
 		}
-		result, err := workbench.UploadHostFiles(path, args[2], args[3], args[4:])
+		result, err := workbench.UploadHostFilesForConnection(workbench.DesktopHelperConfig(path, connectionID), connectionID, args[2], args[3], args[4:])
 		if err != nil {
 			diagnostics.Log("error", "command", err.Error())
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
@@ -153,13 +263,19 @@ func run() int {
 		if len(args) == 5 {
 			destination = args[4]
 		}
-		result, err := workbench.BrowserFile(path, args[2], args[3], destination)
+		result, err := workbench.BrowserFileForConnection(workbench.DesktopHelperConfig(path, connectionID), connectionID, args[2], args[3], destination)
 		if err != nil {
 			diagnostics.Log("error", "command", err.Error())
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return 1
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(result)
+		return 0
+	}
+	if args[0] == "serve-desktop" {
+		if err := workbench.ServeDesktop(path); err != nil {
+			return fail(err)
+		}
 		return 0
 	}
 	if args[0] == "serve" {
@@ -183,7 +299,7 @@ func run() int {
 				return fail(fmt.Errorf("unknown desktop option: %s", argument))
 			}
 		}
-		entry, err := workbench.Desktop(path, options)
+		entry, err := workbench.DesktopEntry(path, options)
 		if err != nil {
 			if returnJSON {
 				diagnostics.Log("error", "command", err.Error())
@@ -218,7 +334,7 @@ func run() int {
 				return fail(fmt.Errorf("unknown prepare-update option: %s", argument))
 			}
 		}
-		result, err := workbench.PrepareUpdate(path, stop)
+		result, err := workbench.PrepareDesktopUpdate(path, stop)
 		if err != nil {
 			if returnJSON {
 				diagnostics.Log("error", "command", err.Error())
@@ -259,7 +375,28 @@ func run() int {
 	}
 
 	os.Setenv(cage.ConfigEnv, path)
-	state := filepath.Join(filepath.Dir(path), "state")
+	profile := filepath.Dir(path)
+	state := filepath.Join(profile, "state")
+	os.Unsetenv("CAGE_LIMA_CACHE_DIR")
+	os.Unsetenv("CAGE_LOGICAL_LIMA_HOME")
+	if !containerenv.Configured(profile) {
+		lease, location, err := cage.AcquireStorageUse(profile)
+		if err != nil {
+			return fail(err)
+		}
+		defer lease.Close()
+		if location.Custom {
+			// Resolve the profile prefix once, as Lima did before migration.
+			// Keep state itself logical so its original disk and socket paths survive.
+			realProfile, err := filepath.EvalSymlinks(profile)
+			if err != nil {
+				return fail(err)
+			}
+			state = filepath.Join(realProfile, "state")
+			os.Setenv("CAGE_LIMA_CACHE_DIR", filepath.Join(location.Directory, "cache", "lima"))
+			os.Setenv("CAGE_LOGICAL_LIMA_HOME", filepath.Join(state, "lima"))
+		}
+	}
 	os.Setenv("AGENT_VM_STATE_DIR", state)
 	os.Setenv("AGENT_VM_LIMA_HOME", filepath.Join(state, "lima"))
 	// Do not inherit host proxy settings or credentials into VM operations.
@@ -271,6 +408,12 @@ func run() int {
 	}
 	if args[0] == "proxy-start" || args[0] == "proxy-stop" {
 		if err := proxyCommand(args[0], filepath.Dir(path), cfg); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
+	if handled, err := containerOperation(path, args, cfg); handled {
+		if err != nil {
 			return fail(err)
 		}
 		return 0
@@ -368,6 +511,26 @@ func run() int {
 		return fail(fmt.Errorf("unknown cage command %q; see cage help", args[0]))
 	}
 	return cli.Main(args, cli.Stdio())
+}
+
+func containerInstallScript(kind string) (string, error) {
+	switch kind {
+	case "services":
+		return cage.GuestSetup, nil
+	case "tools":
+		script := "export CLAUDE_CAGE=1\n" + cage.ToolInstallPrelude()
+		enabled := map[string]bool{"NODE": true, "PYTHON": true, "CHROMIUM": true, "CLAUDE": true, "CODE_SERVER": true}
+		for _, name := range []string{"PYTHON", "NODE", "RUBY", "RUST", "GOLANG", "DOCKER", "CHROMIUM", "GH", "CLAUDE", "OPENCODE", "CODEX", "VIBE", "PI", "CODE_SERVER", "CODE_CLAUDE", "CODE_OPENCODE", "CODE_CODEX", "CODE_VIBE", "MCP_CHROME", "MCP_PLAYWRIGHT"} {
+			value := "0"
+			if enabled[name] {
+				value = "1"
+			}
+			script += "export AGENT_VM_INSTALL_" + name + "=" + value + "\n"
+		}
+		return script + agentvm.SetupScript, nil
+	default:
+		return "", fmt.Errorf("container-install-script tools|services")
+	}
 }
 
 // Service assets exceed Windows' command-line limit. Give only this internal

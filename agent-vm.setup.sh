@@ -50,11 +50,25 @@ apt_get() {
 # leave the previously trusted key usable on the next setup attempt.
 install_repository_key() (
   set -euo pipefail
-  local url="$1" target="$2" stage replacement=''
+  local url="$1" target="$2" stage replacement='' attempt status=1
   stage="$(mktemp)"
   trap 'rm -f "$stage"; if [ -n "$replacement" ]; then sudo rm -f "$replacement"; fi' EXIT
-  curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --silent \
-    --retry 3 --retry-all-errors --retry-max-time 120 --connect-timeout 15 --max-time 30 "$url" -o "$stage" </dev/null
+  if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+    for attempt in 1 2 3 4; do
+      if cage_curl_download "$stage" --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --silent \
+        --connect-timeout 15 "$url" -o "$stage" </dev/null; then
+        status=0
+        break
+      else
+        status=$?
+      fi
+      if [ "$attempt" != 4 ]; then sleep "$attempt"; fi
+    done
+    [ "$status" = 0 ] || return "$status"
+  else
+    curl --proto '=https' --proto-redir '=https' --tlsv1.2 --fail --location --show-error --silent \
+      --retry 3 --retry-all-errors --retry-max-time 120 --connect-timeout 15 --max-time 30 "$url" -o "$stage" </dev/null
+  fi
   test -s "$stage"
   if [[ "$target" == *.asc ]]; then
     grep -q '^-----BEGIN PGP PUBLIC KEY BLOCK-----' "$stage"
@@ -141,8 +155,10 @@ echo "Installing base packages..."
 if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
   # This runs in the guest, through its configured DNS and proxy-only route.
   echo "Checking guest DNS for Debian packages..."
-  if ! timeout 30 getent ahostsv4 deb.debian.org >/dev/null; then
-    echo 'Guest DNS could not resolve deb.debian.org. Check Cage Network & Proxy / DNS settings, apply and retry. Host internet access alone does not verify guest DNS.' >&2
+  if ! timeout 15 getent ahostsv4 mirrors.nju.edu.cn >/dev/null &&
+     ! timeout 15 getent ahostsv4 mirrors.ustc.edu.cn >/dev/null &&
+     ! timeout 15 getent ahostsv4 deb.debian.org >/dev/null; then
+    echo 'Guest DNS could not resolve the Debian download sources. Check Cage Network & Proxy / DNS settings, apply and retry.' >&2
     exit 1
   fi
 fi
@@ -154,6 +170,12 @@ apt_get install -y --no-install-recommends \
   unzip zip \
   ca-certificates sshfs \
   libssl-dev libreadline-dev zlib1g-dev libyaml-dev libffi-dev
+
+# Cage's download inactivity monitor needs Python even when an optional
+# language preinstall is disabled. Keep standalone agent-vm choices intact.
+if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+  apt_get install -y --no-install-recommends python3
+fi
 
 # sshfs 3.7.6 (and Debian's 3.7.3-1.2~deb13u1) refuses symlinks whose target
 # is absolute or contains "..", with EPERM: contain_symlinks, on by default
@@ -271,7 +293,11 @@ if [[ "$INSTALL_CHROMIUM" == "1" ]]; then
   # xauth: xvfb-run needs it, and it is only a Recommends of xvfb.
   # fonts-dejavu-core: with Liberation alone, fontconfig resolves the generic
   # sans-serif and serif to Liberation Mono.
-  apt_get install -y --no-install-recommends chromium fonts-liberation fonts-dejavu-core xvfb xauth
+  chromium_packages=(chromium fonts-liberation fonts-dejavu-core xvfb xauth)
+  if [[ "${CLAUDE_CAGE:-}" == 1 ]]; then
+    cage_cache_chromium --no-install-recommends "${chromium_packages[@]}"
+  fi
+  apt_get install -y --no-install-recommends "${chromium_packages[@]}"
   sudo ln -sf /usr/bin/chromium /usr/bin/google-chrome
   sudo ln -sf /usr/bin/chromium /usr/bin/google-chrome-stable
   sudo mkdir -p /opt/google/chrome

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"net"
 	"os"
 	"os/exec"
@@ -13,7 +14,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sylvinus/agent-vm/internal/vmname"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -109,7 +109,7 @@ command_not_found_handler() { return 127; }
 		}
 	}()
 	s := testServer(t)
-	dir := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()))
+	dir := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()))
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

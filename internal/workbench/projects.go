@@ -16,7 +16,6 @@ import (
 	"al.essio.dev/pkg/shellescape"
 	"github.com/lima-vm/sshocker/pkg/reversesshfs"
 	"github.com/sylvinus/agent-vm/internal/mounts"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 // connectProject is the shared project entry point. Callers hold the lifecycle
@@ -175,7 +174,7 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 		return err
 	}
 	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o slave,allow_other,cache=no,nodev,nosuid"
-	cmd := s.sshCommand(s.lifetimeContext(), "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
+	cmd := s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", script)
 	output, err := cmd.StdoutPipe()
 	if err != nil {
 		return err

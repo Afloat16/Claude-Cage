@@ -26,6 +26,7 @@ cc -std=c11 -O2 -Wall -Wextra -Werror -Wno-deprecated-declarations \
   $(pkg-config --cflags --libs gtk+-3.0 webkit2gtk-4.1 json-glib-1.0) \
   -o "$app/cage-desktop"
 install -m 755 _output/bin/cage "$app/cage"
+node scripts/bundle-cloud-kit.mjs "$app"
 install -m 755 _output/linux-deps/mihomo "$app/mihomo"
 cp _output/linux-deps/{LICENSE,NOTICE} "$app/licenses/mihomo/"
 if [[ "${1:-}" == --prebuilt-backend && -d _output/linux-amd64/prebuilt-licenses ]]; then

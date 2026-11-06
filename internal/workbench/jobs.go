@@ -6,16 +6,18 @@ import (
 	"fmt"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"runtime/debug"
+	"strings"
 	"sync"
 )
 
 type Job struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind"`
-	Running bool   `json:"running"`
-	Message string `json:"message"`
-	Error   string `json:"error,omitempty"`
-	Log     string `json:"log,omitempty"`
+	SetupProgress *SetupProgress `json:"setup_progress,omitempty"`
+	ID            string         `json:"id"`
+	Kind          string         `json:"kind"`
+	Running       bool           `json:"running"`
+	Message       string         `json:"message"`
+	Error         string         `json:"error,omitempty"`
+	Log           string         `json:"log,omitempty"`
 }
 
 var (
@@ -72,6 +74,14 @@ func (m *jobManager) submit(operation sync.Locker, kind string, pauseVersion uin
 	execution := &jobExecution{owner: m, id: m.state.ID, ctx: ctx, pauseVersion: pauseVersion}
 	execution.log = diagnostics.NewStream(diagnostics.Default(), "task/"+kind, "info", func(line string) {
 		if m.state.ID == execution.id {
+			if m.state.SetupProgress != nil {
+				if p := parseSetupProgress(line); p != nil {
+					m.state.SetupProgress = p
+					if strings.HasPrefix(line, "CAGE_") {
+						return
+					}
+				}
+			}
 			m.state.Log += line
 			if len(m.state.Log) > 24000 {
 				m.state.Log = m.state.Log[len(m.state.Log)-24000:]

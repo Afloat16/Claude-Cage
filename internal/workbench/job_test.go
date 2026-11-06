@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func TestStopPreemptsJobWithoutLosingStopResult(t *testing.T) {
@@ -59,7 +58,7 @@ func TestPauseBypassesBusyQueueAndRevokesCheck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()))
+	dir := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()))
 	if err = os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

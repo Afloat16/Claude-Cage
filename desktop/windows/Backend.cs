@@ -6,9 +6,10 @@ namespace Cage.Windows;
 
 internal static class Backend
 {
+    public static bool ClientOnly => File.Exists(Path.Combine(AppContext.BaseDirectory, "resources", "client-only"));
     private static string ConfigPath => Path.GetFullPath(
         Environment.GetEnvironmentVariable("CLAUDE_CAGE_CONFIG") is { Length: > 0 } configured
-            ? configured : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude-cage", "config.json"));
+            ? configured : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".claude-cage", ClientOnly ? "client" : "", "config.json"));
     public static string Root => Path.GetDirectoryName(ConfigPath)!;
     public static string Executable => Path.Combine(AppContext.BaseDirectory, "resources", "cage.exe");
 
@@ -22,6 +23,7 @@ internal static class Backend
         // Helpers execute outside the installed directory. Keep an explicitly
         // selected relative profile bound to the same absolute file.
         start.Environment["CLAUDE_CAGE_CONFIG"] = ConfigPath;
+        if (arguments.Length > 0 && arguments[0] == "desktop") start.Environment["CAGE_DESKTOP_OWNER_PID"] = Environment.ProcessId.ToString();
         foreach (var arg in arguments) start.ArgumentList.Add(arg);
         return start;
     }

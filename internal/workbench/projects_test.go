@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"io"
 	"net"
 	"net/http"
@@ -16,7 +17,6 @@ import (
 	"github.com/lima-vm/sshocker/pkg/reversesshfs"
 	"github.com/pkg/sftp"
 	"github.com/sylvinus/agent-vm/internal/mounts"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func TestProjectSelectionKeepsOneVMAndExistingSessionsOffline(t *testing.T) {
@@ -24,11 +24,11 @@ func TestProjectSelectionKeepsOneVMAndExistingSessionsOffline(t *testing.T) {
 	cfg, _ := loadConfig(s.configPath)
 	s.preferences.Workspace = s.environmentDir()
 	s.ready, s.networkPaused = true, true
-	marker := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()), "cage-running.json")
+	marker := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()), "cage-running.json")
 	if err := writePrivate(marker, map[string]int{"pid": os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}
-	originalVM := vmname.Name(s.environmentDir())
+	originalVM := cage.InstanceName(s.profile, s.environmentDir())
 	terminal := &terminalSession{id: "keep", title: "existing terminal"}
 	s.terminals.sessions = map[string]*terminalSession{terminal.id: terminal}
 	a, _ := filepath.EvalSymlinks(t.TempDir())
@@ -41,7 +41,7 @@ func TestProjectSelectionKeepsOneVMAndExistingSessionsOffline(t *testing.T) {
 		if err := s.apply(savedProfile{cfg, next}, true); err != nil {
 			t.Fatal(err)
 		}
-		if !s.ready || !s.vmRunning() || !s.networkPaused || vmname.Name(s.environmentDir()) != originalVM {
+		if !s.ready || !s.vmRunning() || !s.networkPaused || cage.InstanceName(s.profile, s.environmentDir()) != originalVM {
 			t.Fatal("project selection changed environment lifecycle or networking")
 		}
 		if s.terminals.get(terminal.id) != terminal || terminal.closed {
@@ -220,7 +220,7 @@ func TestProjectActionsUseExplicitDirectoryWithoutSwitchingProject(t *testing.T)
 		t.Fatal(err)
 	}
 	s.projectShares = map[string]*projectShare{a: {done: make(chan struct{})}}
-	marker := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()), "cage-running.json")
+	marker := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()), "cage-running.json")
 	if err := writePrivate(marker, map[string]int{"pid": os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}

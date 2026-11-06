@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"os"
@@ -22,6 +23,7 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/limayaml"
 	"github.com/lima-vm/lima/v2/pkg/portfwd"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/paths"
 )
@@ -41,6 +43,53 @@ func newTestLima(t *testing.T) *Lima {
 		t.Fatal(err)
 	}
 	return l
+}
+
+func TestCageDebianMirrors(t *testing.T) {
+	l := newTestLima(t)
+	config := filepath.Join(t.TempDir(), "config.json")
+	data, err := json.Marshal(cage.DefaultConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(config, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(cage.ConfigEnv, config)
+	none := []Mount{}
+	ctx := context.Background()
+	if err := l.Create(ctx, "base", "template:debian-13", Settings{Mounts: &none}, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	instance, err := l.inspect(ctx, "base")
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlyAPT := false
+	for _, step := range instance.Config.Provision {
+		if step.Mode == limatype.ProvisionModeDependency && step.Script != nil && *step.Script == cage.DebianMirrorsScript {
+			earlyAPT = true
+		}
+	}
+	if !earlyAPT {
+		t.Fatal("cloud-init could fetch packages before Debian mirrors are set")
+	}
+	for _, arch := range []limatype.Arch{"x86_64", "aarch64"} {
+		var images []limatype.Image
+		for _, image := range instance.Config.Images {
+			if image.Arch == arch {
+				images = append(images, image)
+			}
+		}
+		if len(images) != 3 {
+			t.Fatalf("%s: expected two mirrors and one upstream, got %+v", arch, images)
+		}
+		for i, base := range []string{"https://mirrors.nju.edu.cn/debian-cdimage/cloud/", "https://mirrors.ustc.edu.cn/debian-cdimage/cloud/", "https://cloud.debian.org/images/cloud/"} {
+			if !strings.HasPrefix(images[i].Location, base) || images[i].Digest != images[2].Digest || images[i].Digest.Validate() != nil {
+				t.Fatalf("unexpected image or missing pin: %+v", images[i])
+			}
+		}
+	}
 }
 
 // What agent-vm does to a VM without booting it: create, edit its shares,

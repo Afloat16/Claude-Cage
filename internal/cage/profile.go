@@ -28,6 +28,12 @@ func (c Config) RecordRunning(state, name string) error {
 		return errors.New("invalid cage instance name")
 	}
 	dir := filepath.Join(state, "lima", name)
+	return c.RecordRunningAt(dir)
+}
+
+// RecordRunningAt records the network owner's identity in the runtime's real
+// instance directory; container environments do not create Lima metadata.
+func (c Config) RecordRunningAt(dir string) error {
 	b, _ := json.Marshal(runningProfile{PID: os.Getpid(), Fingerprint: c.Fingerprint(), JobID: os.Getenv(JobEnv)})
 	f, err := os.CreateTemp(dir, ".running-*")
 	if err != nil {
@@ -51,6 +57,11 @@ func (c Config) CheckRunning(state string) error {
 	if err != nil {
 		return err
 	}
+	containerRecords, err := filepath.Glob(filepath.Join(state, "container", "*", "cage-running.json"))
+	if err != nil {
+		return err
+	}
+	files = append(files, containerRecords...)
 	for _, file := range files {
 		b, err := os.ReadFile(file)
 		if err != nil {

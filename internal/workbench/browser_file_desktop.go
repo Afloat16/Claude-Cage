@@ -17,10 +17,11 @@ import (
 )
 
 type SavedDownload struct {
-	ID      string    `json:"id"`
-	Name    string    `json:"name"`
-	Path    string    `json:"path"`
-	SavedAt time.Time `json:"saved_at"`
+	InstanceID string    `json:"instance_id,omitempty"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Path       string    `json:"path"`
+	SavedAt    time.Time `json:"saved_at"`
 }
 
 func savedDownloadPath(profile, id string) string {
@@ -80,7 +81,11 @@ func rememberDownload(profile string, saved SavedDownload, firstOnly bool) error
 	return writePrivate(savedDownloadPath(profile, saved.ID), saved)
 }
 func (s *Server) savedBrowserDownloads(w http.ResponseWriter, r *http.Request) {
-	entries, err := os.ReadDir(filepath.Join(s.profile, "browser-downloads"))
+	serveSavedDownloads(w, s.profile)
+}
+
+func serveSavedDownloads(w http.ResponseWriter, profile string) {
+	entries, err := os.ReadDir(filepath.Join(profile, "browser-downloads"))
 	if err != nil && !os.IsNotExist(err) {
 		http.Error(w, "无法读取已保存的位置", 500)
 		return
@@ -91,7 +96,7 @@ func (s *Server) savedBrowserDownloads(w http.ResponseWriter, r *http.Request) {
 		if len(name) != 41 {
 			continue
 		}
-		if saved, err := readSavedDownload(s.profile, name[:36]); err == nil {
+		if saved, err := readSavedDownload(profile, name[:36]); err == nil {
 			records = append(records, saved)
 		}
 	}
@@ -105,6 +110,10 @@ func (s *Server) savedBrowserDownloads(w http.ResponseWriter, r *http.Request) {
 // BrowserFile is called by native dialogs, which supply the chosen path. HTTP
 // clients can stream known downloads but cannot supply an arbitrary host path.
 func BrowserFile(configPath, action, id, destination string) (SavedDownload, error) {
+	return BrowserFileForConnection(configPath, "", action, id, destination)
+}
+
+func BrowserFileForConnection(configPath, connectionID, action, id, destination string) (SavedDownload, error) {
 	var result SavedDownload
 	if !browserFileID.MatchString(id) || (action != "save" && action != "open" && action != "reveal") {
 		return result, errors.New("下载操作无效")
@@ -119,12 +128,36 @@ func BrowserFile(configPath, action, id, destination string) (SavedDownload, err
 	if err != nil || status != 200 {
 		return result, errors.New("无法连接下载会话")
 	}
-	var item browserDownloadInfo
-	status, err = client.call("GET", "/api/browser/files/downloads/"+id, nil, &item)
-	if err != nil || status != 200 {
-		return result, errors.New("下载文件不可用，请确认 Cage 已解锁且下载已完成")
+	connection, err := client.bindConnection(connectionID)
+	if err != nil {
+		return result, err
 	}
-	result = SavedDownload{ID: id, Name: item.Name, Path: item.Path}
+	profile := filepath.Dir(configPath)
+	if connection.DesktopGateway && connection.Mode == "local" {
+		profile = filepath.Dir(profile)
+	}
+	saveProfile, err := clientDownloadProfile(profile, connection)
+	if err != nil {
+		return result, err
+	}
+	var item browserDownloadInfo
+	if connection.Mode == "remote" && action != "save" {
+		saved, readErr := readSavedDownload(saveProfile, id)
+		if readErr != nil || saved.InstanceID != connection.InstanceID {
+			return result, errors.New("请先将文件另存为到本机，再打开或显示所在位置")
+		}
+		result = saved
+	} else {
+		status, err = client.call("GET", "/api/browser/files/downloads/"+id, nil, &item)
+		if err != nil || status != 200 {
+			return result, errors.New("下载文件不可用，请确认 Cage 已解锁且下载已完成")
+		}
+		result = SavedDownload{ID: id, Name: item.Name, Path: item.Path}
+		if connection.Mode == "remote" {
+			result.Path = ""
+			result.InstanceID = connection.InstanceID
+		}
+	}
 	if action == "save" {
 		if !filepath.IsAbs(destination) || filepath.Base(destination) == "." {
 			return result, errors.New("保存位置无效")
@@ -150,7 +183,7 @@ func BrowserFile(configPath, action, id, destination string) (SavedDownload, err
 		}
 		result.Path = destination
 		result.Name = filepath.Base(destination)
-		if err = rememberDownload(client.profile, result, false); err != nil {
+		if err = rememberDownload(saveProfile, result, false); err != nil {
 			return result, err
 		}
 	} else {

@@ -17,7 +17,6 @@ import (
 	"al.essio.dev/pkg/shellescape"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 // Only distribution/tool origins are reachable through this temporary channel.
@@ -49,7 +48,12 @@ func maintenanceDestination(address string, connect bool) bool {
 	if !connect && port != "80" {
 		return false
 	}
-	return maintenanceOrigins[strings.ToLower(host)]
+	host = strings.ToLower(host)
+	switch host {
+	case "mirrors.nju.edu.cn", "mirrors.ustc.edu.cn", "cdn.npmmirror.com":
+		return connect
+	}
+	return maintenanceOrigins[host]
 }
 func (p *maintenanceProxy) track(conn net.Conn) bool {
 	p.mu.Lock()
@@ -164,7 +168,7 @@ cage_maintenance_dir=$(mktemp -d)
 trap 'rm -rf "$cage_maintenance_dir"' EXIT
 export CAGE_INSTALL_PROXY='http://cage-install:%s@127.0.0.1:%d'
 export CAGE_APT_CONFIG="$cage_maintenance_dir/apt.conf"
-printf 'Acquire::http::Proxy "%%s";\nAcquire::https::Proxy "%%s";\n' "$CAGE_INSTALL_PROXY" "$CAGE_INSTALL_PROXY" > "$CAGE_APT_CONFIG"
+printf 'Acquire::http::Proxy "%%s";\nAcquire::https::Proxy "%%s";\nAcquire::Retries "3";\nAcquire::http::Timeout "60";\nAcquire::https::Timeout "60";\n' "$CAGE_INSTALL_PROXY" "$CAGE_INSTALL_PROXY" > "$CAGE_APT_CONFIG"
 unset ALL_PROXY all_proxy NO_PROXY no_proxy FTP_PROXY ftp_proxy
 export http_proxy="$CAGE_INSTALL_PROXY" https_proxy="$CAGE_INSTALL_PROXY" HTTP_PROXY="$CAGE_INSTALL_PROXY" HTTPS_PROXY="$CAGE_INSTALL_PROXY"
 (
@@ -187,7 +191,9 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Minute)
+	// Each download detects inactivity; cancellation still closes forwarding
+	// and stops the guest operation without imposing a total install duration.
+	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -203,9 +209,9 @@ func RunMaintenanceScript(ctx context.Context, configPath, script string, stdout
 	defer stop()
 	s := &Server{profile: profile}
 	forward := fmt.Sprintf("127.0.0.1:%d:%s", maintenancePort, listener.Addr().String())
-	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=1800 --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
-	cmd := s.sshCommandWithForwarding(ctx, "-o", "ExitOnForwardFailure=yes", "-R", forward, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", command)
-	cmd.Stdin = strings.NewReader(maintenanceScript(script, proxy.token))
+	command := "sudo systemd-run --quiet --pipe --wait --collect --unit=cage-maintenance-operation --property=User=cage --property=RuntimeMaxSec=infinity --property=KillMode=control-group --setenv=HOME=/home/cage --working-directory=" + shellescape.Quote(guestPath(s.environmentDir())) + " /bin/bash -se"
+	cmd := s.sshCommandWithForwarding(ctx, "-o", "ExitOnForwardFailure=yes", "-R", forward, "-T", s.sshTarget(), "--", command)
+	cmd.Stdin = strings.NewReader(maintenanceScript(cage.DebianMirrorsScript+"\n"+script, proxy.token))
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	if err = cmd.Run(); err != nil {

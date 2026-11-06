@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/state"
 	"github.com/sylvinus/agent-vm/internal/ui"
@@ -16,9 +17,12 @@ import (
 
 // app is what the commands work with.
 type app struct {
-	io    IO
-	ui    *ui.UI
-	state state.Dir
+	io             IO
+	ui             *ui.UI
+	state          state.Dir
+	privateStorage []string
+	names          vmname.Limit
+	cageProfile    string
 
 	migrateOnce sync.Once
 	migrate     func() // moves 0.2's VMs, when set
@@ -105,7 +109,7 @@ func (e *app) migrateOld(ctx context.Context, old, now string) {
 		if v.Running {
 			state, running = " (running)", true
 		}
-		fmt.Fprintf(w, "  %s, as %s%s\n", v.Name, vmname.FromOld(v.Name), state)
+		fmt.Fprintf(w, "  %s, as %s%s\n", v.Name, e.names.FromOld(v.Name), state)
 	}
 	canAsk := e.ui.CanAsk()
 	if running && canAsk {
@@ -122,7 +126,7 @@ func (e *app) migrateOld(ctx context.Context, old, now string) {
 			failed = true
 			continue
 		}
-		to := vmname.FromOld(v.Name)
+		to := e.names.FromOld(v.Name)
 		fmt.Fprintf(w, "Moving %s...\n", v.Name)
 		if err := vm.MoveOld(ctx, old, now, v.Name, to); err != nil {
 			fmt.Fprintf(w, "Error: could not move %s: %v. It stays in %s.\n", v.Name, err, old)
@@ -174,11 +178,17 @@ func newApp(io IO) (*app, error) {
 	e := &app{io: io, ui: u, state: st}
 	// Names that fit this machine's socket paths (a long home, a long user
 	// name): cut in their folder part, not refused.
-	vmname.MaxLen = vm.MaxName(LimaHome(st))
+	e.names = vmname.Limit(vm.MaxName(LimaHome(st)))
 	e.migrate = func() { e.migrateOld(context.Background(), oldLimaHome(), LimaHome(st)) }
 	// Cage owns a separate profile; it never imports another tool's VMs.
-	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
+	if config := os.Getenv(cage.ConfigEnv); config != "" {
 		e.migrate = nil
+		e.cageProfile = filepath.Dir(config)
+		e.privateStorage, err = cage.StoragePrivatePaths(filepath.Dir(config))
+		if err != nil {
+			return nil, err
+		}
+		e.privateStorage = append(e.privateStorage, filepath.Dir(config))
 	}
 	e.newBack = func() (vm.Backend, error) {
 		// Every VM there is agent-vm's: list, rm and destroy-all take them
@@ -189,4 +199,11 @@ func newApp(io IO) (*app, error) {
 		return vm.NewLima(LimaHome(st), string(st))
 	}
 	return e, nil
+}
+
+func (e *app) instanceName(dir string) string {
+	if e.cageProfile != "" {
+		return cage.InstanceName(e.cageProfile, dir)
+	}
+	return e.names.Name(dir)
 }

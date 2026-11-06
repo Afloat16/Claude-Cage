@@ -87,9 +87,6 @@ func (e *app) doctorCmd(ctx context.Context, args []string) int {
 		d.line("warn", "could not read the host's CPU or RAM: --cpus and --memory are not clamped")
 	}
 	dir := LimaHome(e.state)
-	if _, err := os.Stat(dir); err != nil {
-		dir, _ = os.UserHomeDir()
-	}
 	switch free, ok := host.FreeGiB(dir); {
 	case !ok:
 		d.line("warn", "could not read the free disk space")
@@ -281,7 +278,7 @@ func (d *doctor) directory(ctx context.Context, dir string, protects bool, getVM
 	}
 	scan := e.scan(ctx, dir)
 	names := scan.Names()
-	name := vmname.Name(dir)
+	name := e.instanceName(dir)
 	inst, err := getVM(name)
 	switch {
 	case err != nil:

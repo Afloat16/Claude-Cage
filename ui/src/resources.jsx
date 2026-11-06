@@ -34,6 +34,18 @@ export function ResourceSettings({ status, onConfirm }) {
   const observation = data?.observation;
   const guest = observation?.guest;
   const fresh = observation && Date.now() - Date.parse(observation.observed_at) < 10000;
+  const resourceError = error || data?.resource_error;
+  const resourcesVerified = data?.resources_verified === true && !resourceError;
+  if (data?.runtime === "container") return <section className="environment-versions" aria-label="计算资源">
+    <h4>服务器容器资源上限</h4>
+    <p className="field-help">CPU、内存与进程数量由服务器上的容器资源组限制。</p>
+    <div className="setting-summary-row"><span>资源限制核验</span><strong>{data.running ? resourcesVerified ? "已核验" : "未通过核验" : "环境未运行"}</strong></div>
+    <div className="setting-summary-row"><span>容器内存上限</span><strong>{data.running ? resourcesVerified ? gib(data.configured_memory_bytes) : "未核验" : gib(data.recommended_memory_bytes)}</strong></div>
+    <div className="setting-summary-row"><span>容器 CPU 上限</span><strong>{data.running ? resourcesVerified ? `${data.configured_cpus} 个逻辑核心` : "未核验" : `${data.recommended_cpus} 个逻辑核心`}</strong></div>
+    <div className="setting-summary-row"><span>进程与线程总数上限</span><strong>{data.running ? resourcesVerified ? data.pids_limit : "未核验" : "运行后核验"}</strong></div>
+    <p className="field-help">{data.running ? resourcesVerified ? "已从服务器核验容器所属资源组的实际限制。实时内存与 CPU 用量尚未提供。" : "无法确认运行中容器的实际资源限制，请查看下方错误或等待重新核验。" : "环境尚未运行，当前显示部署配置中的资源上限。"}</p>
+    {resourceError && <p role="alert" className="error-message">{resourceError}</p>}
+  </section>;
   return <section className="environment-versions" aria-label="计算资源">
     <h4>计算资源 · 自动管理</h4>
     <p className="field-help">内存随程序需求增长，持续空闲后逐步归还主机。默认上限为主机资源的一半；CPU 按实际任务使用，上限表示可同时使用的逻辑核心数。</p>

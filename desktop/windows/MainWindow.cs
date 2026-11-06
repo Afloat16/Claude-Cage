@@ -226,7 +226,8 @@ internal sealed class MainWindow : Form
                     using (var picker = new SaveFileDialog { Title = "导出诊断包", Filter = "诊断包 (*.zip)|*.zip", FileName = "cage-diagnostics.zip", DefaultExt = "zip", AddExtension = true })
                     {
                         if (picker.ShowDialog(this) != DialogResult.OK) { result = new { canceled = true }; break; }
-                        var exported = await Backend.Json(["diagnostics", "--json", picker.FileName], lifetime.Token, TimeSpan.FromSeconds(60));
+                        var connection = request.Text("connection_id");
+                        var exported = await Backend.Json(["diagnostics", "--json", "--connection", string.IsNullOrEmpty(connection) ? "local" : connection, picker.FileName], lifetime.Token, TimeSpan.FromSeconds(60));
                         if (exported.Exit != 0) throw new IOException(exported.Data.Text("message"));
                         result = exported.Data;
                     }
@@ -257,7 +258,7 @@ internal sealed class MainWindow : Form
                     }
                     break;
                 case "chooseFolder":
-                    using (var picker = new FolderBrowserDialog { Description = "仅此文件夹会与 Cage 共享。请选择具体项目。", UseDescriptionForTitle = true, ShowNewFolderButton = true })
+                    using (var picker = new FolderBrowserDialog { Description = request.Text("purpose") == "environmentStorage" ? "请选择用于保存镜像和虚拟磁盘的空文件夹。" : "仅此文件夹会与 Cage 共享。请选择具体项目。", UseDescriptionForTitle = true, ShowNewFolderButton = true })
                         result = picker.ShowDialog(this) == DialogResult.OK ? picker.SelectedPath : "";
                     break;
                 case "clipboardRead": result = Clipboard.ContainsText() ? Clipboard.GetText() : ""; break;
@@ -268,7 +269,8 @@ internal sealed class MainWindow : Form
                     if (!Guid.TryParse(downloadID, out _)) throw new InvalidDataException("下载标识无效");
                     var operation = request.Text("action") == "saveBrowserDownload" ? "save" : request.Text("operation");
                     if (operation is not ("save" or "open" or "reveal")) throw new InvalidDataException("下载操作无效");
-                    var arguments = new List<string> { "browser-file", "--json", operation, downloadID };
+                    var connection = request.Text("connection_id");
+                    var arguments = new List<string> { "browser-file", "--json", "--connection", string.IsNullOrEmpty(connection) ? "local" : connection, operation, downloadID };
                     if (operation == "save")
                     {
                         var fileName = Path.GetFileName(request.Text("name"));
@@ -305,7 +307,8 @@ internal sealed class MainWindow : Form
                     if (target is not ("browser" or "desktop" or "terminal") || !(target == "terminal" ? System.Text.RegularExpressions.Regex.IsMatch(uploadID, "^[a-f0-9]{16}$") : Guid.TryParse(uploadID, out _))) throw new InvalidDataException("文件上传目标无效");
                     if (!fileSelections.Remove(request.Text("selection"), out var selected) || selected.Expires <= DateTime.UtcNow)
                         throw new InvalidDataException("文件选择已过期，请重新复制或选择文件");
-                    var arguments = new List<string> { "upload-files", "--json", target, uploadID };
+                    var connection = request.Text("connection_id");
+                    var arguments = new List<string> { "upload-files", "--json", "--connection", string.IsNullOrEmpty(connection) ? "local" : connection, target, uploadID };
                     arguments.AddRange(selected.Paths);
                     var response = await Backend.Json(arguments.ToArray(), lifetime.Token, TimeSpan.FromMinutes(30));
                     if (response.Exit != 0) throw new IOException(response.Data.Text("message"));
