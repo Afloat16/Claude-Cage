@@ -11,7 +11,6 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 // Keep the real request, job, source persistence and gate-control paths. Only
@@ -144,7 +143,7 @@ func TestManualProxySelectionMayResumeExistingPause(t *testing.T) {
 	pauseProxyNetwork(t, s)
 	// No VM is running in this case, so selecting a node may prepare networking
 	// without trying to start a real guest as part of this unit test.
-	path := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()), "cage-running.json")
+	path := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()), "cage-running.json")
 	if err := os.Remove(path); err != nil {
 		t.Fatal(err)
 	}

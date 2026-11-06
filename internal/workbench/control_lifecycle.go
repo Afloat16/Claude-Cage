@@ -1,11 +1,16 @@
 package workbench
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"time"
 
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/version"
 )
@@ -29,8 +34,9 @@ func (identity ControllerIdentity) matches(other ControllerIdentity) bool {
 }
 
 type launchResponse struct {
-	URL        string             `json:"url"`
-	Controller ControllerIdentity `json:"controller"`
+	DesktopGateway bool               `json:"desktop_gateway,omitempty"`
+	URL            string             `json:"url"`
+	Controller     ControllerIdentity `json:"controller"`
 }
 
 func (s *Server) launcherAuthenticated(w http.ResponseWriter, r *http.Request) bool {
@@ -55,6 +61,11 @@ func (s *Server) handoff(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "请先保存工作并停止环境，再完成更新。", http.StatusConflict)
 		return
 	}
+	s.handoffLocked(w)
+}
+
+// handoffLocked takes ownership of the operation lock and releases it on all paths.
+func (s *Server) handoffLocked(w http.ResponseWriter) {
 	s.mu.Lock()
 	if s.closing {
 		s.mu.Unlock()
@@ -93,24 +104,49 @@ func (s *Server) handoff(w http.ResponseWriter, r *http.Request) {
 }
 
 func controllerHasVM(profile string) bool {
+	running, err := controllerVMState(profile)
+	return err != nil || running
+}
+
+// Callers that display a state must distinguish a missing VM from a failed probe.
+func controllerVMState(profile string) (bool, error) {
+	owners, err := controllerVMOwners(profile)
+	return len(owners) != 0, err
+}
+
+func controllerVMOwners(profile string) ([]string, error) {
+	if containerenv.Configured(profile) {
+		environment, err := containerenv.Load(profile)
+		if err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		state, err := environment.State(ctx)
+		if err != nil || !state.Running {
+			return nil, err
+		}
+		return []string{fmt.Sprintf("%s/%d", state.ContainerID, state.PID)}, nil
+	}
 	records, err := filepath.Glob(filepath.Join(profile, "state", "lima", "*", "cage-running.json"))
 	if err != nil {
-		return true
+		return nil, err
 	}
+	var owners []string
 	for _, path := range records {
 		b, err := os.ReadFile(path)
 		if err != nil {
-			return true
+			return nil, err
 		}
 		var record struct {
 			PID int `json:"pid"`
 		}
 		if json.Unmarshal(b, &record) != nil || record.PID <= 0 {
-			return true
+			return nil, errors.New("环境进程记录无效")
 		}
 		if processExists(record.PID) {
-			return true
+			owners = append(owners, fmt.Sprintf("%s/%d", filepath.Base(filepath.Dir(path)), record.PID))
 		}
 	}
-	return false
+	return owners, nil
 }

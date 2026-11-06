@@ -45,6 +45,11 @@ const splitURL = `chrome-extension://${extensionId}/control.html`;
 let splitView = null, splitSession, splitOpening, resizeTimer;
 const favicons = new Map(), faviconRequests = new Map(), documents = new Map();
 
+function isBrowserTab(target) {
+  return target.type === "page" && target.url !== splitURL &&
+    !target.url.startsWith("devtools://") && !auditContexts.has(target.browserContextId);
+}
+
 const flags = [
   `--load-extension=${splitDirectory}`,
   "--user-data-dir=/home/cage-browser/profile",
@@ -52,7 +57,9 @@ const flags = [
   // The pipe manages tabs for a human-operated browser. Keep it private while
   // preventing its presence alone from enabling Blink's automation marker.
   "--disable-blink-features=AutomationControlled",
-  "--kiosk",
+  // Kiosk mode blocks Chromium's DevTools UI, including F12. Ordinary
+  // fullscreen keeps the guest browser chrome hidden while allowing inspection.
+  "--start-fullscreen",
   "--no-first-run",
   "--restore-last-session",
   "--no-default-browser-check",
@@ -167,7 +174,7 @@ chrome.stdio[4].on("data", (chunk) => {
       event.method === "Target.targetInfoChanged"
     ) {
       const t = p.targetInfo;
-      if (t.type === "page" && t.url !== splitURL && !auditContexts.has(t.browserContextId)) {
+      if (isBrowserTab(t)) {
         const fresh = !targets.has(t.targetId);
         targets.set(t.targetId, loginBrowser.tab(t, targets.get(t.targetId)));
         if (fresh) void session(t.targetId).catch(() => {});
@@ -432,7 +439,7 @@ async function restartEditor(workspace) {
 async function tabState() {
   const { targetInfos } = await cdp("Target.getTargets");
   for (const tab of targetInfos)
-    if (tab.type === "page" && tab.url !== splitURL && !auditContexts.has(tab.browserContextId))
+    if (isBrowserTab(tab))
       targets.set(tab.targetId, loginBrowser.tab(tab, targets.get(tab.targetId)));
   await refreshNavigation();
   return publicState();
@@ -763,7 +770,7 @@ server.listen(18500, "127.0.0.1");
   await cdp("Target.setDiscoverTargets", { discover: true });
   const { targetInfos } = await cdp("Target.getTargets");
   for (const t of targetInfos)
-    if (t.type === "page" && t.url !== splitURL) targets.set(t.targetId, t);
+    if (isBrowserTab(t)) targets.set(t.targetId, t);
   await cdp("Browser.setDownloadBehavior", {
     behavior: "allowAndName",
     downloadPath,

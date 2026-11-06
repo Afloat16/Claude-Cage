@@ -6,11 +6,12 @@ import Darwin
 let cageUpdateBundleID = "io.github.lee-xeo.claude-cage"
 
 enum CageProfile {
+    static var clientOnly: Bool { Bundle.main.object(forInfoDictionaryKey: "CageClientOnly") as? Bool == true }
     static func configURL() -> URL {
         if let path = ProcessInfo.processInfo.environment["CLAUDE_CAGE_CONFIG"], !path.isEmpty {
             return URL(fileURLWithPath: path).standardizedFileURL
         }
-        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".claude-cage/config.json")
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(clientOnly ? ".claude-cage/client/config.json" : ".claude-cage/config.json")
     }
 
     // Every helper and relaunched app inherits the same absolute profile, even
@@ -268,6 +269,12 @@ final class CageAppUpdater {
         }
     }
     func handle(_ operation: String) -> [String: Any] {
+        if Bundle(url: bundleURL)?.object(forInfoDictionaryKey: "CageClientOnly") as? Bool == true {
+            if state["phase"] as? String != "manual" || operation != "status" {
+                change(["phase": "manual", "message": "轻量客户端使用独立安装包更新；连接配置会保留，云端任务不受影响。"])
+            }
+            return state
+        }
         let busy = ["checking", "downloading", "downloaded", "verifying", "installing"].contains(state["phase"] as? String ?? "")
         switch operation {
         case "status": break

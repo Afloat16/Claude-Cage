@@ -14,7 +14,6 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func interfaceMonitorServer(t *testing.T) (*Server, *cage.EgressGate) {
@@ -43,7 +42,7 @@ func interfaceMonitorServer(t *testing.T) (*Server, *cage.EgressGate) {
 	if err := os.WriteFile(filepath.Join(s.profile, "proxy", "config.yaml"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
-	dir := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()))
+	dir := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()))
 	if err := writePrivate(filepath.Join(dir, "cage-running.json"), map[string]int{"pid": os.Getpid()}); err != nil {
 		t.Fatal(err)
 	}

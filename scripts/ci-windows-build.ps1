@@ -57,8 +57,14 @@ try {
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
     Invoke-BuildTool 'dotnet' @('run', '--project', 'desktop/windows.tests/Cage.Windows.Tests.csproj')
     Invoke-BuildTool 'go' @('test', './internal/workbench', './internal/appupdate', './internal/host', './internal/managedproxy', './internal/env', './internal/paths', './internal/mounts')
-    Invoke-BuildTool 'go' @('test', './internal/cage', '-run', 'Test(Gate|ProxyRevision|ConfigChange|JobStop|CONNECT|SOCKS|DNS|RejectHostLAN|Credentials|ProxyHostname|SafetyReport|Renew)')
+    # Exercise a second volume when the runner keeps its workspace and temp on different drives.
+    if ($env:GITHUB_WORKSPACE -and -not $env:CAGE_TEST_STORAGE_VOLUME -and
+        [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE) -ne [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())) {
+        $env:CAGE_TEST_STORAGE_VOLUME = $env:GITHUB_WORKSPACE
+    }
+    Invoke-BuildTool 'go' @('test', './internal/cage', '-run', 'Test(Storage|Gate|ProxyRevision|ConfigChange|JobStop|CONNECT|SOCKS|DNS|RejectHostLAN|Credentials|ProxyHostname|SafetyReport|Renew)')
     Invoke-BuildTool 'go' @('test', './internal/vm', '-run', 'Test(NetworkConfined|WindowsQEMUIdentity)')
+    Invoke-BuildTool 'go' @('test', 'github.com/lima-vm/lima/v2/pkg/driver/qemu', '-run', 'Test(WindowsFirmwareArgument|WindowsPackagedFirmwareBeatsOldUserCopy|WHPXQEMU64Features|WindowsCPUResolution)$')
     Invoke-BuildTool 'go' @('test', 'github.com/lima-vm/lima/v2/pkg/networks/usernet', '-run', 'TestNetstackWindowsNativeSocketPaths')
     Invoke-BuildTool 'go' @('vet', './cmd/cage', './internal/cage', './internal/workbench', './internal/appupdate', './internal/host')
     $packageArguments = @{ Release = $Release; SkipBuild = $true }

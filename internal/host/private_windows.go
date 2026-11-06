@@ -33,11 +33,25 @@ func protectPrivate(path string, dir bool) error {
 	if err != nil {
 		return err
 	}
-	// Elevated Windows processes may create files owned by Administrators.
-	// Preserve the same per-user contract for elevated and normal launches by
-	// explicitly assigning the current user's SID as well as the private ACL.
-	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
-		windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, sid, nil, acl, nil)
+	// An owner may replace its DACL even when the parent granted only Modify.
+	// Requesting WRITE_OWNER on that path would deny a normal user's install.
+	current, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION)
+	if err != nil {
+		return err
+	}
+	owner, _, err := current.Owner()
+	if err != nil {
+		return err
+	}
+	information := windows.SECURITY_INFORMATION(windows.DACL_SECURITY_INFORMATION | windows.PROTECTED_DACL_SECURITY_INFORMATION)
+	var newOwner *windows.SID
+	if owner == nil || !windows.EqualSid(owner, sid) {
+		// An elevated process can create objects owned by Administrators.
+		// Transfer them to the user so both normal and elevated launches work.
+		information |= windows.OWNER_SECURITY_INFORMATION
+		newOwner = sid
+	}
+	return windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, information, newOwner, nil, acl, nil)
 }
 
 func checkPrivate(path string, _ os.FileInfo) error {

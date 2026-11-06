@@ -458,6 +458,11 @@ func resolveCPUType(y *limatype.LimaYAML, qemuVersion *semver.Version) string {
 	if err := limayaml.Convert(y.VMOpts[limatype.QEMU], &qemuOpts, "vmOpts.qemu"); err != nil {
 		logrus.WithError(err).Warnf("Couldn't convert %#q", y.VMOpts[limatype.QEMU])
 	}
+	// WHPX uses qemu64 when host passthrough is unavailable. Preserve an
+	// explicit CPU model, including an explicitly requested bare qemu64.
+	if cpuType[*y.Arch] == "qemu64" && qemuOpts.CPUType[*y.Arch] == "" {
+		cpuType[*y.Arch] = whpxQEMU64()
+	}
 	for k, v := range qemuOpts.CPUType {
 		if !slices.Contains(limatype.ArchTypes, *y.Arch) {
 			logrus.Warnf("field `vmOpts.qemu.cpuType` uses unsupported arch %#q", k)
@@ -480,6 +485,10 @@ func resolveCPUType(y *limatype.LimaYAML, qemuVersion *semver.Version) string {
 }
 
 func Cmdline(ctx context.Context, cfg Config) (exe string, args []string, err error) {
+	return cmdline(ctx, cfg, nil)
+}
+
+func cmdline(ctx context.Context, cfg Config, workingDir *string) (exe string, args []string, err error) {
 	y := cfg.LimaYAML
 	exe, args, err = Exe(*y.Arch)
 	if err != nil {
@@ -647,7 +656,11 @@ func Cmdline(ctx context.Context, cfg Config) (exe string, args []string, err er
 			logrus.Infof("Using system firmware (%#q)", firmware)
 		}
 		if firmware != "" {
-			args = append(args, "-drive", fmt.Sprintf("if=pflash,format=raw,readonly=on,file=%s", firmware))
+			if runtime.GOOS == "windows" && workingDir != nil {
+				firmware, *workingDir = windowsFirmwareArgument(firmware)
+			}
+			// Commas in -drive filenames are escaped by doubling them.
+			args = append(args, "-drive", "if=pflash,format=raw,readonly=on,file="+strings.ReplaceAll(firmware, ",", ",,"))
 		}
 	}
 
@@ -1315,6 +1328,14 @@ func getFirmware(qemuExe string, arch limatype.Arch) (string, error) {
 
 	relativePath := fmt.Sprintf("share/qemu/edk2-%s-code.fd", qemuEdk2Arch(arch))
 	relativePathWin := fmt.Sprintf("share/edk2-%s-code.fd", qemuEdk2Arch(arch))
+	if runtime.GOOS == "windows" {
+		// The firmware shipped beside QEMU belongs to that QEMU version.
+		// Prefer it over an old manual copy in the user's .local directory.
+		bundled := filepath.Join(binDir, relativePathWin)
+		if _, err := os.Stat(bundled); err == nil || !errors.Is(err, os.ErrNotExist) {
+			return bundled, err
+		}
+	}
 	candidates := []string{
 		filepath.Join(userLocalDir, relativePath), // XDG-like
 		filepath.Join(localDir, relativePath),     // macOS (homebrew)
@@ -1407,7 +1428,7 @@ func hasHostCPU(qemuVersion *semver.Version) bool {
 		return true
 	case "windows":
 		// Should have been 11.1.0, but it contained a regression when running in nested virt
-		if qemuVersion.LessThan(*semver.New("11.1.1")) {
+		if qemuVersion == nil || qemuVersion.LessThan(*semver.New("11.1.1")) {
 			return false
 		}
 		return true

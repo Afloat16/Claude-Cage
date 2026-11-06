@@ -37,9 +37,13 @@ func TestPinnedDownloadResumesInterruptedBody(t *testing.T) {
 	}))
 	defer s.Close()
 	cache := t.TempDir()
-	r, err := Download(t.Context(), "", s.URL, WithCacheDir(cache), WithExpectedDigest(digest.FromString(data)))
+	t.Setenv("CAGE_LIMA_CACHE_DIR", cache)
+	r, err := Download(t.Context(), "", s.URL, WithCache(), WithExpectedDigest(digest.FromString(data)))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if rel, err := filepath.Rel(cache, r.CachePath); err != nil || !filepath.IsLocal(rel) {
+		t.Fatalf("download landed outside chosen cache: %q", r.CachePath)
 	}
 	got, err := os.ReadFile(r.CachePath)
 	if err != nil || string(got) != data || calls.Load() != 2 {
@@ -176,5 +180,58 @@ func TestPinnedDownloadCancellationRetainsPartial(t *testing.T) {
 	}
 	if _, err := os.Stat(local); !os.IsNotExist(err) {
 		t.Fatal("cancelled data published")
+	}
+}
+
+func TestPinnedDownloadUsesLatestBodyActivity(t *testing.T) {
+	for _, mode := range []string{"slow", "stalled", "headers-only", "no-response"} {
+		t.Run(mode, func(t *testing.T) {
+			const data = "abcdef"
+			const idle = 200 * time.Millisecond
+			s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if mode != "no-response" {
+					w.Header().Set("Content-Length", fmt.Sprint(len(data)))
+					w.(http.Flusher).Flush()
+				}
+				if mode == "headers-only" || mode == "no-response" {
+					<-r.Context().Done()
+					return
+				}
+				for i := range len(data) {
+					fmt.Fprint(w, data[i:i+1])
+					w.(http.Flusher).Flush()
+					if mode == "stalled" {
+						<-r.Context().Done()
+						return
+					}
+					select {
+					case <-r.Context().Done():
+						return
+					case <-time.After(idle / 3):
+					}
+				}
+			}))
+			defer s.Close()
+			local := filepath.Join(t.TempDir(), "data")
+			start := time.Now()
+			retry, err := resumeHTTPOnce(t.Context(), local, "", "", s.URL, "test", digest.FromString(data), idle)
+			if mode == "slow" {
+				if err != nil || retry || time.Since(start) <= idle {
+					t.Fatalf("progressing transfer interrupted: retry=%v err=%v", retry, err)
+				}
+				got, err := os.ReadFile(local + ".part")
+				if err != nil || string(got) != data {
+					t.Fatalf("received %q: %v", got, err)
+				}
+			} else if !retry || err == nil {
+				t.Fatalf("stalled transfer not retried: retry=%v err=%v", retry, err)
+			}
+			if mode == "stalled" {
+				got, err := os.ReadFile(local + ".part")
+				if err != nil || string(got) != data[:1] {
+					t.Fatalf("partial data lost: %q %v", got, err)
+				}
+			}
+		})
 	}
 }

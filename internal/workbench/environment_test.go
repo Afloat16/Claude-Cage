@@ -2,14 +2,13 @@ package workbench
 
 import (
 	"encoding/json"
+	"github.com/sylvinus/agent-vm/internal/cage"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 type browserTransport func(*http.Request) (*http.Response, error)
@@ -42,7 +41,7 @@ func TestEnvironmentEntryPreservesLiveProject(t *testing.T) {
 	s := testServer(t)
 	s.preferences.Workspace, _ = filepath.EvalSymlinks(t.TempDir())
 	workspace := s.workspace()
-	path := filepath.Join(s.profile, "state", "lima", vmname.Name(workspace), "cage-running.json")
+	path := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, workspace), "cage-running.json")
 	if err := writePrivate(filepath.Join(filepath.Dir(path), "lima.yaml"), map[string]string{}); err != nil {
 		t.Fatal(err)
 	}

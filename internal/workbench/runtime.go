@@ -14,8 +14,8 @@ import (
 	"al.essio.dev/pkg/shellescape"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 var loadConfig = cage.Load
@@ -28,6 +28,27 @@ type guestCredentials struct {
 
 func (s *Server) workspace() string      { s.mu.Lock(); defer s.mu.Unlock(); return s.preferences.Workspace }
 func (s *Server) environmentDir() string { return environmentWorkspace(s.profile) }
+func (s *Server) sshTarget() string {
+	if containerenv.Configured(s.profile) {
+		return "cage-container"
+	}
+	return "lima-" + cage.InstanceName(s.profile, s.environmentDir())
+}
+
+func (s *Server) environmentPrepared() bool {
+	if containerenv.Configured(s.profile) {
+		environment, err := containerenv.Load(s.profile)
+		if err != nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(s.lifetimeContext(), 3*time.Second)
+		defer cancel()
+		state, err := environment.State(ctx)
+		return err == nil && state.Exists
+	}
+	_, err := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version"))
+	return err == nil
+}
 func (s *Server) sshCommand(ctx context.Context, args ...string) *exec.Cmd {
 	return s.sshCommandOptions(ctx, false, args...)
 }
@@ -35,8 +56,7 @@ func (s *Server) sshCommandWithForwarding(ctx context.Context, args ...string) *
 	return s.sshCommandOptions(ctx, true, args...)
 }
 func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args ...string) *exec.Cmd {
-	name := vmname.Name(s.environmentDir())
-	cfg := filepath.Join(s.profile, "state", "lima", name, "ssh.config")
+	cfg := filepath.Join(s.instanceDir(), "ssh.config")
 	base := []string{"-q", "-e", "none", "-F", cfg, "-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes", "-o", "PermitLocalCommand=no", "-o", "PasswordAuthentication=no", "-o", "KbdInteractiveAuthentication=no", "-o", "ProxyCommand=none", "-o", "ProxyJump=none", "-o", "ConnectTimeout=3", "-o", "ServerAliveInterval=15", "-o", "ServerAliveCountMax=2", "-o", "ForwardAgent=no", "-o", "IdentityAgent=none", "-o", "ForwardX11=no", "-o", "ClearAllForwardings=yes", "-o", "ControlPath=none"}
 	if maintenance {
 		for index, value := range base {
@@ -52,11 +72,10 @@ func (s *Server) sshCommandOptions(ctx context.Context, maintenance bool, args .
 	return cmd
 }
 func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
-	name := vmname.Name(s.environmentDir())
 	// SSH enters the user's default shell. Run control scripts in Bash so
 	// zsh initialization cannot change their redirection or error behavior.
 	command := "exec /bin/bash --noprofile --norc -c " + shellescape.Quote(script)
-	cmd := s.sshCommand(ctx, "-T", "lima-"+name, "--", command)
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", command)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {
 		return nil, err
@@ -76,12 +95,35 @@ func (s *Server) guest(ctx context.Context, script string) ([]byte, error) {
 	return data, nil
 }
 func (s *Server) attach() error {
-
-	if !s.vmRunning() {
-		return errors.New("环境尚未启动")
-	}
 	ctx, cancel := s.controlContext()
 	defer cancel()
+	if containerenv.Configured(s.profile) {
+		environment, err := containerenv.Load(s.profile)
+		if err != nil {
+			return err
+		}
+		state, err := environment.State(ctx)
+		if err != nil {
+			return err
+		}
+		if !state.Running {
+			return errors.New("环境尚未启动")
+		}
+		if !state.Ready {
+			s.mu.Lock()
+			s.ready = false
+			s.mu.Unlock()
+			if !state.MountsReady {
+				return errors.New("容器项目共享需要初始化，请保存工作后完整停止并重新启动环境")
+			}
+			if !state.ResourcesVerified {
+				return errors.New("容器资源限制尚未通过核验，请检查服务器资源配置")
+			}
+			return errors.New("容器网络与文件连接尚未就绪，请重试启动")
+		}
+	} else if !s.vmRunning() {
+		return errors.New("环境尚未启动")
+	}
 	b, err := s.guest(ctx, guestConnectionSnapshot)
 	if err != nil {
 		return errors.New("环境尚未准备好")
@@ -152,8 +194,14 @@ func (s *Server) monitor(ctx context.Context) {
 }
 
 func (s *Server) runCage(args ...string) error {
-	ctx, cancel := context.WithTimeout(s.operationContext(), 30*time.Minute)
-	defer cancel()
+	ctx := s.operationContext()
+	// Setup and startup can both install dependencies. Downloads own their
+	// inactivity timeouts; the operation context still permits an explicit stop.
+	if len(args) != 1 || (args[0] != "setup" && args[0] != "up") {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Minute)
+		defer cancel()
+	}
 	cmd := exec.CommandContext(ctx, s.exe, args...)
 	hideCommand(cmd)
 	cmd.Dir = s.environmentDir()
@@ -162,6 +210,9 @@ func (s *Server) runCage(args ...string) error {
 	}
 	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+s.configPath)
 	execution := s.jobs.execution()
+	if len(args) == 1 && args[0] == "setup" {
+		cmd.Env = append(cmd.Env, "CAGE_SETUP_PROGRESS=1")
+	}
 	cmd.Env = append(cmd.Env, cage.JobEnv+"="+execution.id)
 	cmd.Stdout, cmd.Stderr = execution, execution
 	if err := cmd.Run(); err != nil {
@@ -177,6 +228,22 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	}
 	if _, err := validateWorkspace(s.environmentDir(), s.profile); err != nil {
 		return err
+	}
+	if containerenv.Configured(s.profile) {
+		environment, err := containerenv.Load(s.profile)
+		if err != nil {
+			return err
+		}
+		state, err := environment.State(s.operationContext())
+		if err != nil {
+			return err
+		}
+		if state.Running && !state.MountsReady {
+			s.mu.Lock()
+			s.ready = false
+			s.mu.Unlock()
+			return errors.New("容器项目共享需要初始化，请保存工作后先停止环境，再重新启动；项目和登录数据会保留")
+		}
 	}
 	cfg, err := loadConfig(s.configPath)
 	if err != nil {
@@ -261,7 +328,7 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	}
 	if auto && syncTimezone && !s.vmRunning() {
 		if probeErr != nil {
-			if _, e := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); e != nil {
+			if !s.environmentPrepared() {
 				return probeErr
 			}
 		}
@@ -286,17 +353,21 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 		}
 	} else if probeErr != nil {
 		s.setMessage("正在检查代理连通性…")
-		if _, e := os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); e != nil {
+		if !s.environmentPrepared() {
 			if err = s.runCage("check"); err != nil {
 				return err
 			}
 		}
 	}
-	if _, err = os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); os.IsNotExist(err) {
+	if _, err = os.Stat(filepath.Join(s.profile, "state", ".agent-vm-base-version")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
 		s.setMessage("首次准备 Linux 环境与开发工具，可能需要数分钟…")
+		job := s.jobs.execution()
+		job.setSetupProgress(&SetupProgress{Phase: "image", Label: "正在准备 Debian 13 镜像"})
 		if err = s.runCage("setup"); err != nil {
 			return err
 		}
+		job.setSetupProgress(&SetupProgress{Phase: "services", Label: "正在启动浏览器和编辑器"})
+		defer job.setSetupProgress(nil)
 	}
 	s.setMessage("正在启动浏览器、编辑器与共享文件…")
 	if err = s.runCage("up"); err != nil {
@@ -321,7 +392,7 @@ func (s *Server) stopEnvironment() (returned error) {
 			returned = managedproxy.Stop(s.profile)
 		}
 	}()
-	if explicitStop && cage.InstanceJobID(filepath.Join(s.profile, "state"), "base-building") != "" {
+	if (explicitStop || s.jobs.snapshot().Kind == "storage") && cage.InstanceJobID(filepath.Join(s.profile, "state"), "base-building") != "" {
 		if err := s.runCage("stop", "base-building"); err != nil {
 			return err
 		}
@@ -344,7 +415,7 @@ func (s *Server) stopEnvironment() (returned error) {
 	if s.workspace() == "" {
 		return nil
 	}
-	if _, err := os.Stat(filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()), "lima.yaml")); os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.instanceDir(), "lima.yaml")); !containerenv.Configured(s.profile) && os.IsNotExist(err) {
 		return nil
 	}
 	if err := s.runCage("stop"); err != nil {
@@ -464,10 +535,20 @@ func (s *Server) monitorNetwork(ctx context.Context) {
 }
 
 func vmAlive(profile, workspace string) bool {
+	if containerenv.Configured(profile) {
+		environment, err := containerenv.Load(profile)
+		if err != nil {
+			return false
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		state, err := environment.State(ctx)
+		return err == nil && state.Running
+	}
 	if workspace == "" {
 		return false
 	}
-	b, e := os.ReadFile(filepath.Join(profile, "state", "lima", vmname.Name(workspace), "cage-running.json"))
+	b, e := os.ReadFile(filepath.Join(profile, "state", "lima", cage.InstanceName(profile, workspace), "cage-running.json"))
 	if e != nil {
 		return false
 	}

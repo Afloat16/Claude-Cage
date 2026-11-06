@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowDownToLine, CircleAlert } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
+import { isRemoteClient, runtimeURL } from "./client-context.mjs";
 import { Modal } from "./views";
 
 export function useDownloadNotifications(
@@ -68,7 +69,7 @@ export function useDesktopFiles(ready) {
 async function saveDownload(item) {
   if (!nativeAvailable()) {
     const link = document.createElement("a");
-    link.href = `/api/browser/files/downloads/${encodeURIComponent(item.id)}/content`;
+    link.href = runtimeURL(`/browser/files/downloads/${encodeURIComponent(item.id)}/content`);
     link.download = item.name;
     link.click();
     return;
@@ -90,6 +91,7 @@ export function BrowserDownloads({
   onStatus,
   sidebar = false,
 }) {
+  const remote = isRemoteClient();
   const [open, setOpen] = useState(false),
     [retrying, setRetrying] = useState("");
   const [saved, setSaved] = useState([]);
@@ -105,17 +107,17 @@ export function BrowserDownloads({
   const items = downloads.map((item) => {
     const local = saved.find((entry) => entry.id === item.id);
     return local
-      ? { ...item, ...local, state: "saved", retryable: false, error: "" }
+      ? { ...item, ...local, localSaved: true, state: "saved", retryable: false, error: "" }
       : item;
   });
   for (const item of saved)
     if (!items.some((entry) => entry.id === item.id))
-      items.push({ ...item, state: "saved" });
+      items.push({ ...item, localSaved: true, state: "saved" });
   const failed = items.some((item) => item.state === "failed");
   const labels = {
     downloading: "正在下载",
-    saving: "正在保存到本机",
-    saved: "已保存到本机",
+    saving: remote ? "正在保存到云端" : "正在保存到本机",
+    saved: remote ? "已保存到云端" : "已保存到本机",
     failed: "保存失败",
     canceled: "下载已取消",
   };
@@ -138,7 +140,7 @@ export function BrowserDownloads({
             <div className="browser-download-list">
               {!items.length && (
                 <p>
-                  暂无下载。下载完成后可另存为到本机；取消时，原文件仍保留在默认工作区的
+                  暂无下载。下载完成后可另存为到本机；取消时，原文件仍保留在{remote ? "云端" : ""}默认工作区的
                   Downloads 文件夹。
                 </p>
               )}
@@ -146,12 +148,12 @@ export function BrowserDownloads({
                 <article key={item.id} className="browser-download-item">
                   <strong>{item.name}</strong>
                   <p>
-                    {labels[item.state] || "状态待确认"}
+                    {item.localSaved ? "已保存到本机" : labels[item.state] || "状态待确认"}
                     {item.state === "downloading" &&
                       item.totalBytes > 0 &&
                       ` · ${Math.min(100, Math.floor((item.receivedBytes / item.totalBytes) * 100))}%`}
                   </p>
-                  {item.path && <p className="download-path">{item.path}</p>}
+                  {item.path && <p className="download-path">{remote ? item.localSaved ? "本机：" : "云端：" : ""}{item.path}</p>}
                   {item.error && <p role="status">{item.error}</p>}
                   {(item.state === "saved" || (item.target !== "desktop" && item.retryable)) && (
                     <div className="download-actions">
@@ -172,6 +174,7 @@ export function BrowserDownloads({
                       </button>
                       {nativeAvailable() &&
                         item.state === "saved" &&
+                        (!remote || item.localSaved) &&
                         [
                           ["open", "打开文件"],
                           ["reveal", "在文件夹中显示"],

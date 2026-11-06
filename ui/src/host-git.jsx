@@ -1,9 +1,11 @@
 import React, { useEffect, useRef, useState } from "react";
 import { LoaderCircle, ShieldCheck } from "lucide-react";
 import { api } from "./api";
+import { isRemoteClient } from "./client-context.mjs";
 import { Modal } from "./views";
 
 export function HostGitPreparation({ onClose, onReady }) {
+  const machine = isRemoteClient() ? "云端主机" : "本机";
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState("");
@@ -36,7 +38,7 @@ export function HostGitPreparation({ onClose, onReady }) {
   if (!state && !error) return null;
   return (
     <Modal
-      title="启动前，保护本机 Git"
+      title={`启动前，保护${machine} Git`}
       onClose={busy ? undefined : onClose}
       footer={
         <>
@@ -65,25 +67,25 @@ export function HostGitPreparation({ onClose, onReady }) {
     >
       <div className="modal-body host-git-preparation">
         {busy && !state ? (
-          <p role="status">正在检查本机 Git，尚未修改任何设置…</p>
+          <p role="status">正在检查{machine} Git，尚未修改任何设置…</p>
         ) : (
           <>
             <p>{state?.message}</p>
             {state?.can_enable && (
               <>
                 <p>
-                  Claude 可以修改共享文件。启用这项保护后，本机 Git
-                  会忽略未经你明确指定的裸仓库，避免共享目录里的配置在本机
+                  Claude 可以修改共享文件。启用这项保护后，{machine} Git
+                  会忽略未经你明确指定的裸仓库，避免共享目录里的配置在{machine}
                   上执行命令。
                 </p>
                 <p>
-                  点击“启用保护并继续”将修改本机当前用户的一项全局 Git 设置：
+                  点击“启用保护并继续”将修改{machine}当前用户的一项全局 Git 设置：
                 </p>
                 <pre>git config --global safe.bareRepository explicit</pre>
                 <p>
                   普通的 <code>.git</code>{" "}
                   项目、提交记录和远程地址保持不变。使用裸仓库时，需要通过{" "}
-                  <code>--git-dir</code> 明确指定。设置会影响本机其他使用 Git
+                  <code>--git-dir</code> 明确指定。设置会影响{machine}其他使用 Git
                   的工具。
                 </p>
               </>

@@ -10,9 +10,11 @@ Enable Windows Hypervisor Platform in "Turn Windows features on or off", then
 restart Windows if Cage reports that the hypervisor is unavailable.
 Windows on ARM and 32-bit Windows are not supported by this package.
 
-In Cage, configure your own proxy and start the environment. Initial setup
-downloads the Linux image and development tools. Proxy service and Claude
-account are not included. Changes to shared projects affect the original files.
+In Cage, choose an environment data folder before starting the environment if
+you want the Linux image, cache and virtual disks on another drive. Configure
+your own proxy and start the environment to download the Linux image and tools.
+Proxy service and Claude account are not included. Changes to shared projects
+affect the original files.
 
 Updates preserve the Cage configuration, virtual disk and project files.
 Stop the environment and quit Cage before running an installer manually.

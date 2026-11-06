@@ -158,7 +158,24 @@ var toolVersions string
 //go:embed guest-tools.sh
 var guestTools string
 
-func ToolInstallPrelude() string { return toolVersions + "\n" + guestTools + "\n" }
+//go:embed debian-mirrors.sh
+var DebianMirrorsScript string
+
+//go:embed chromium-download.py
+var chromiumDownload string
+
+func ToolInstallPrelude() string {
+	return toolVersions + "\n" + guestTools + `
+cage_cache_chromium() {
+  local status=0
+  sudo env APT_CONFIG="${CAGE_APT_CONFIG:-}" CAGE_SETUP_PROGRESS="${CAGE_SETUP_PROGRESS:-}" /usr/bin/python3 -I - "$@" <<'CAGE_CHROMIUM_DOWNLOAD' || status=$?
+` + chromiumDownload + `
+CAGE_CHROMIUM_DOWNLOAD
+  if (( status >= 128 )); then return "$status"; fi
+  if (( status != 0 )); then echo 'Chromium mirror prefetch unavailable; continuing with APT.' >&2; fi
+}
+`
+}
 
 func RequiredToolVersions() map[string]string {
 	result := map[string]string{"chromium": "Debian security repository"}
@@ -183,6 +200,7 @@ func ToolsUpdateScript() string {
 	return "set -euo pipefail\nexport PATH=\"$HOME/.local/bin:$PATH\"\n" + ToolInstallPrelude() + `
 sudo env DEBIAN_FRONTEND=noninteractive dpkg --configure -a </dev/null
 sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get update </dev/null
+cage_cache_chromium --only-upgrade chromium
 sudo env DEBIAN_FRONTEND=noninteractive APT_CONFIG="${CAGE_APT_CONFIG:-/dev/null}" apt-get install -y --only-upgrade chromium </dev/null
 cage_install_tool mise
 cage_install_tool code-server

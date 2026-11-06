@@ -31,6 +31,11 @@ func LimaDir() (string, error) {
 		}
 		dir = filepath.Join(homeDir, DotLima)
 	}
+	// Cage keeps a stable logical path for QEMU backing files, SSH and sockets
+	// when the profile's private VM storage is moved to another volume.
+	if stable := os.Getenv("CAGE_LOGICAL_LIMA_HOME"); stable != "" && filepath.Clean(dir) == filepath.Clean(stable) {
+		return filepath.Clean(dir), nil
+	}
 	if _, err := os.Stat(dir); errors.Is(err, os.ErrNotExist) {
 		return dir, nil
 	}

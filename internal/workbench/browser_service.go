@@ -5,7 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
+	"time"
+
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 )
 
 var (
@@ -38,6 +42,23 @@ func (s *Server) browserClient() *browserClient {
 	defer s.mu.Unlock()
 	if s.browserControl == nil {
 		s.browserControl = newBrowserClient(s.lifetimeContextLocked())
+		if containerenv.Configured(s.profile) {
+			transport := s.browserControl.http.Transport.(*http.Transport)
+			transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+				environment, err := containerenv.Load(s.profile)
+				if err != nil {
+					return nil, err
+				}
+				state, err := environment.State(ctx)
+				if err != nil {
+					return nil, err
+				}
+				if !state.Ready {
+					return nil, errBrowserNotReady
+				}
+				return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, network, state.BrowserAddress)
+			}
+		}
 	}
 	return s.browserControl
 }

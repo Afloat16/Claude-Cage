@@ -1,7 +1,7 @@
 {
   "name": "cage-workbench",
   "private": true,
-  "version": "0.1.5-alpha.2",
+  "version": "0.1.6-alpha-preview",
   "type": "module",
   "scripts": {
     "prepare-vnc": "node scripts/prepare-vnc.mjs",

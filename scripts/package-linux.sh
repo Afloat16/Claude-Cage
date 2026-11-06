@@ -36,12 +36,13 @@ Section: devel
 Priority: optional
 Architecture: amd64
 Maintainer: Cage contributors <noreply@github.com>
-Depends: $dependencies, libwebkit2gtk-4.1-0 (>= 2.40), libglib2.0-bin, qemu-system-x86, qemu-utils, ovmf, openssh-client, iproute2, ca-certificates, git
+Depends: $dependencies, libwebkit2gtk-4.1-0 (>= 2.40), libglib2.0-bin, ca-certificates
+Suggests: qemu-system-x86, qemu-utils, ovmf, openssh-client, iproute2, git
 Recommends: dbus-user-session, fonts-noto-cjk, libnotify-bin, zenity | kdialog
 Homepage: https://github.com/Lee-xeo/Claude-Cage
 Description: Isolated coding workspace with a persistent Linux VM
  Cage combines projects, terminals, a browser and an editor in a native
- desktop window. Hardware virtualization and a user-supplied proxy are required.
+ desktop window. Select a local virtual machine or connect to a Cage server over SSH.
 EOF
 deb="$output/Cage-$version-linux-amd64.deb"
 dpkg-deb --root-owner-group --build "$stage" "$deb"

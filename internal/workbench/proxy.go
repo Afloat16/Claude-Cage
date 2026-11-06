@@ -474,8 +474,8 @@ func (s *Server) proxyLogs(w http.ResponseWriter, r *http.Request) {
 		lines = append(lines, src.Updated.Format("2006-01-02 15:04")+" · "+src.Name+" · "+src.Error)
 	}
 	s.mu.Lock()
-	if s.networkError != "" {
-		lines = append(lines, s.networkError)
+	if issue := s.currentNetworkErrorLocked(); issue != "" {
+		lines = append(lines, issue)
 	}
 	s.mu.Unlock()
 	jsonReply(w, map[string]any{"lines": lines})

@@ -1,4 +1,5 @@
 import { api } from "./api";
+import { runtimeSocketURL } from "./client-context.mjs";
 import workletURL from "./audio-worklet.js?url&no-inline";
 
 export class AudioOutput {
@@ -83,7 +84,7 @@ export class AudioOutput {
       const format = await api("/audio");
       if (!live()) return;
       if (format.format !== "s16le" || format.sample_rate !== 48000 || format.channels !== 2) throw new Error("声音格式不兼容");
-      const socket = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/audio`);
+      const socket = new WebSocket(runtimeSocketURL("/audio"));
       socket.binaryType = "arraybuffer";
       this.socket = socket;
       let confirmed = false;

@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/containerenv"
 )
 
 func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
@@ -18,7 +20,21 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境尚未就绪", 409)
 		return
 	}
-	remote, e := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(r.Context(), "tcp", "127.0.0.1:15900")
+	address := "127.0.0.1:15900"
+	if containerenv.Configured(s.profile) {
+		environment, err := containerenv.Load(s.profile)
+		if err != nil {
+			requestError(w, err)
+			return
+		}
+		state, err := environment.State(r.Context())
+		if err != nil || !state.Ready {
+			http.Error(w, "容器画面连接尚未就绪", 409)
+			return
+		}
+		address = state.VNCAddress
+	}
+	remote, e := (&net.Dialer{Timeout: 3 * time.Second}).DialContext(r.Context(), "tcp", address)
 	if e != nil {
 		http.Error(w, "画面连接暂时不可用", 502)
 		return

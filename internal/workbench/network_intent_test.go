@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func reloadedIntentServer(t *testing.T, previous *Server) *Server {
@@ -131,7 +130,7 @@ func TestQueuedSettingsApplyCannotClearLaterPersistentPause(t *testing.T) {
 	s, gate := interfaceMonitorServer(t)
 	pauseProxyNetwork(t, s)
 	// Keep the real settings write, but there is no live VM to stop in this fixture.
-	if err := os.Remove(filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()), "cage-running.json")); err != nil {
+	if err := os.Remove(filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()), "cage-running.json")); err != nil {
 		t.Fatal(err)
 	}
 	cfg, err := loadConfig(s.configPath)

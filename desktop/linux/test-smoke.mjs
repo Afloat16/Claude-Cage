@@ -17,7 +17,9 @@ const output = resolve(outputArgument);
 const root = await mkdtemp(join(tmpdir(), 'cage-linux-smoke-'));
 // Cage places the default workspace beside the profile; both stay in this
 // fixture directory so cleanup also removes the temporary workspace.
-const env = { ...process.env, CLAUDE_CAGE_CONFIG: join(root, 'profile', 'config.json') };
+// Keep the selected gateway alive for the two native storage phases. The
+// native windows register their own owners in addition to this test process.
+const env = { ...process.env, CLAUDE_CAGE_CONFIG: join(root, 'profile', 'config.json'), CAGE_DESKTOP_OWNER_PID: String(process.pid) };
 let clean = false;
 let result = 1;
 
@@ -78,13 +80,36 @@ try {
   if (!authenticate.ok) throw new Error('Session authentication failed.');
   const cookie = authenticate.headers.get('set-cookie')?.split(';')[0];
   if (!cookie) throw new Error('Authenticated response did not create a session cookie.');
+  async function api(path, body, generation) {
+    const headers = { Origin: url.origin, Cookie: cookie };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (generation) headers['X-Cage-Connection'] = generation;
+    const response = await fetch(url.origin + '/api/' + path, {
+      method: body === undefined ? 'GET' : 'POST', redirect: 'error', headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    if (!response.ok) throw new Error(`Isolated smoke API ${path} failed with ${response.status}.`);
+    return response.json();
+  }
+  let current = await api('client/context');
+  if (!current.desktop_gateway || current.mode !== 'none') throw new Error('A fresh full Cage must start at the environment picker.');
+  const idle = await api('client/local-status');
+  if (!idle.known || idle.service_running || idle.running) throw new Error('The desktop picker started a local workload.');
+  const original = current.connection_id;
+  const pending = await api('client/candidate', { connection_id: original, mode: 'local' });
+  const deadline = Date.now() + 30000;
+  while (true) {
+    current = await api('client/context');
+    if (current.connection_id !== original || current.candidate?.id !== pending.id) throw new Error('The local candidate lost its original desktop view.');
+    if (current.candidate.connection.state === 'connected') break;
+    if (current.candidate.connection.state === 'failed' || Date.now() > deadline) throw new Error('Could not open the local test workbench.');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  current = await api('client/commit', { connection_id: original, candidate_id: pending.id, local_action: 'auto' });
+  if (current.mode !== 'local' || current.connection_id === original) throw new Error('Local workbench generation was not selected.');
   const password = randomBytes(24).toString('base64url');
-  const account = await fetch(url.origin + '/api/account/create', {
-    method: 'POST', redirect: 'error',
-    headers: { 'Origin': url.origin, 'Content-Type': 'application/json', 'Cookie': cookie },
-    body: JSON.stringify({ username: 'Linux Smoke', password, confirm_password: password }),
-  });
-  if (!account.ok || !(await account.json()).unlocked) throw new Error('Could not prepare the isolated unlocked test account.');
+  const account = await api('account/create', { username: 'Linux Smoke', password, confirm_password: password }, current.connection_id);
+  if (!account.unlocked) throw new Error('Could not prepare the isolated unlocked test account.');
   env.CAGE_SMOKE_STORAGE_MARKER = randomBytes(24).toString('hex');
   for (const phase of ['seed', 'verify']) {
     env.CAGE_SMOKE_STORAGE_PHASE = phase;

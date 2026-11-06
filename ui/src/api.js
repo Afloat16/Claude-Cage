@@ -1,4 +1,5 @@
 import { reportDiagnostic } from "./diagnostics.mjs";
+import { assertConnection, connectionHeaders, getClientContext } from "./client-context.mjs";
 let sessionRenewal;
 async function responseError(response) {
   const error = new Error(
@@ -29,9 +30,10 @@ async function renewSession() {
   return sessionRenewal;
 }
 export async function api(path, body, method) {
+  const connection = getClientContext().connection_id;
   const options = {
     method: method || (body === undefined ? "GET" : "POST"),
-    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    headers: { ...connectionHeaders(path), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   };
   const send = async () => {
@@ -45,11 +47,15 @@ export async function api(path, body, method) {
     await renewSession();
     response = await send();
   }
-  if (response.status === 423) window.dispatchEvent(new Event("cage-account-locked"));
+  if (response.status === 423 && !path.startsWith("/client/")) window.dispatchEvent(new Event("cage-account-locked"));
   if (!response.ok) throw await responseError(response);
-  return response.json();
+  const value = await response.json();
+  if (path !== "/session" && !path.startsWith("/client/")) assertConnection(connection);
+  return value;
 }
 export async function uploadFile(path, file, { signal, onProgress } = {}) {
+  const headers = connectionHeaders(path);
+  const connection = getClientContext().connection_id;
   const send = () => new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new DOMException("上传已取消", "AbortError")); return; }
     const request = new XMLHttpRequest();
@@ -57,6 +63,7 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
     const cleanup = () => signal?.removeEventListener("abort", abort);
     request.open("POST", "/api" + path);
     request.setRequestHeader("Content-Type", "application/octet-stream");
+    for (const [name, value] of Object.entries(headers)) request.setRequestHeader(name, value);
     request.upload.onprogress = event => onProgress?.(event.loaded, event.total || file.size);
     request.onerror = () => { cleanup(); reject(new Error("文件传递中断，请重试")); };
     request.onabort = () => { cleanup(); reject(new DOMException("上传已取消", "AbortError")); };
@@ -67,7 +74,7 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
         const error = new Error(request.responseText.trim() || "文件传递未完成");
         error.status = request.status; reject(error); return;
       }
-      try { resolve(JSON.parse(request.responseText)); }
+      try { assertConnection(connection); resolve(JSON.parse(request.responseText)); }
       catch { reject(new Error("文件传递响应无效")); }
     };
     signal?.addEventListener("abort", abort, { once: true });
@@ -83,11 +90,16 @@ export async function uploadFile(path, file, { signal, onProgress } = {}) {
 export const nativeAvailable = () =>
   Boolean(window.webkit?.messageHandlers?.cage);
 export async function native(action, extra = {}) {
-  if (action === "quitNow") {
+  const connection = getClientContext().connection_id;
+  if (action === "quitNow" && getClientContext().mode === "local" && !getClientContext().client_only) {
     try { await api("/account/suspend", {}); }
     catch (error) { if (error.status !== 423) throw error; }
   }
-  try { return await window.webkit.messageHandlers.cage.postMessage({ action, ...extra }); }
+  try {
+    const result = await window.webkit.messageHandlers.cage.postMessage({ action, ...extra, connection_id: connection });
+    assertConnection(connection);
+    return result;
+  }
   catch (error) { reportDiagnostic("frontend", error); throw error; }
 }
 export const readClipboard = () =>

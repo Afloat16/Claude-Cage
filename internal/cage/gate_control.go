@@ -127,7 +127,7 @@ func StartGateControl(configPath, instanceDir string, gate *EgressGate) (func(),
 				} else {
 					operationError = gate.SyncProxyRevision(cfg)
 					if operationError == nil {
-						operationError = cfg.RecordRunning(filepath.Dir(filepath.Dir(instanceDir)), filepath.Base(instanceDir))
+						operationError = cfg.RecordRunningAt(instanceDir)
 					}
 				}
 			case "check":

@@ -533,7 +533,11 @@ func (e *app) buildBase(ctx context.Context, in install, disk, memory, cpus int)
 
 func cageInstallEnv() string {
 	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
-		return "export CLAUDE_CAGE=1\n" + cage.ToolInstallPrelude()
+		progress := ""
+		if os.Getenv("CAGE_SETUP_PROGRESS") == "1" {
+			progress = "export CAGE_SETUP_PROGRESS=1\n"
+		}
+		return "set -e\nexport CLAUDE_CAGE=1\n" + progress + cage.DebianMirrorsScript + "\n" + cage.ToolInstallPrelude()
 	}
 	return ""
 }

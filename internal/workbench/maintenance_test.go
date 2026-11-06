@@ -127,6 +127,11 @@ func TestMaintenanceClosesTLSConnectionsAndRefusesBusinessHosts(t *testing.T) {
 			t.Fatal("business or non-HTTPS destination accepted", address)
 		}
 	}
+	for _, host := range []string{"mirrors.nju.edu.cn", "mirrors.ustc.edu.cn", "cdn.npmmirror.com"} {
+		if !maintenanceDestination(host+":443", true) || maintenanceDestination(host+":80", false) || maintenanceDestination(host+".evil.test:443", true) {
+			t.Fatalf("unexpected mirror policy for %s", host)
+		}
+	}
 }
 
 func TestMaintenanceScriptUsesPrivateTemporaryConfiguration(t *testing.T) {

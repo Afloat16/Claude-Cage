@@ -27,10 +27,9 @@ const Template = "base"
 // The names Scratch makes.
 var scratchRe = regexp.MustCompile(`^[A-Za-z0-9-]+-scratch-[0-9a-f]{8}$`)
 
-// MaxLen is the longest name a VM may have: Lima's 76 characters, or less
-// where its sockets would not fit under the Lima home (set from it, see
-// vm.MaxName). Names longer are cut in their folder part (fit).
-var MaxLen = 76
+// Limit is the instance-name length supported by one Lima home. Zero
+// selects Lima's normal 76-byte cap.
+type Limit int
 
 // Name is the VM of the project dir, spelled as `pwd` spells it: the name
 // hashes that string, so /tmp/ and /tmp give one VM and a symlink to the
@@ -38,19 +37,24 @@ var MaxLen = 76
 // other characters than ASCII letters and digits made one "-" ("project"
 // when nothing is left), and hash 8 hex digits of the path's SHA-256. On
 // Windows, the path as Git Bash spelled it (/c/...), as 0.2 hashed it.
-func Name(dir string) string {
+func Name(dir string) string { return Limit(0).Name(dir) }
+
+func (limit Limit) Name(dir string) string {
 	dir = paths.Guest(dir)
 	sum := sha256.Sum256([]byte(dir))
 	b := base(dir, 0)
 	if b == "" {
 		b = "project"
 	}
-	return fit(b, "-"+hex.EncodeToString(sum[:])[:8])
+	return limit.fit(b, "-"+hex.EncodeToString(sum[:])[:8])
 }
 
 // fit is b+suffix, b cut to keep it within MaxLen, never to nothing.
-func fit(b, suffix string) string {
-	if n := MaxLen - len(suffix); len(b) > n {
+func (limit Limit) fit(b, suffix string) string {
+	if limit == 0 {
+		limit = 76
+	}
+	if n := int(limit) - len(suffix); len(b) > n {
 		b = strings.TrimRight(b[:max(n, 1)], "-")
 		if b == "" {
 			b = "p"
@@ -61,13 +65,15 @@ func fit(b, suffix string) string {
 
 // FromOld is the name of the VM 0.2 named old: without OldPrefix, its base
 // template Template, cut as Name cuts a name too long here.
-func FromOld(old string) string {
+func FromOld(old string) string { return Limit(0).FromOld(old) }
+
+func (limit Limit) FromOld(old string) string {
 	if old == OldPrefix+"base" {
 		return Template
 	}
 	n := strings.TrimPrefix(old, OldPrefix)
 	if i := strings.LastIndexByte(n, '-'); i > 0 {
-		return fit(n[:i], n[i:])
+		return limit.fit(n[:i], n[i:])
 	}
 	return n
 }
@@ -76,7 +82,9 @@ func FromOld(old string) string {
 // never the folder's VM and several can run at once. Short enough for Lima:
 // 76 characters, and a socket path under the Lima home of at most 104 on
 // macOS.
-func Scratch(dir string) (string, error) {
+func Scratch(dir string) (string, error) { return Limit(0).Scratch(dir) }
+
+func (limit Limit) Scratch(dir string) (string, error) {
 	var b [4]byte
 	if _, err := rand.Read(b[:]); err != nil {
 		return "", fmt.Errorf("cannot read random bytes to name the VM: %w", err)
@@ -85,7 +93,7 @@ func Scratch(dir string) (string, error) {
 	if name == "" {
 		name = "project"
 	}
-	return fit(name, "-scratch-"+hex.EncodeToString(b[:])), nil
+	return limit.fit(name, "-scratch-"+hex.EncodeToString(b[:])), nil
 }
 
 // IsScratch reports whether name looks like one Scratch makes. It only

@@ -8,7 +8,6 @@ package paths
 
 import (
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"unicode/utf8"
@@ -36,10 +35,10 @@ func Home() string {
 	return Host(h)
 }
 
-// Real is p with its links resolved (filepath.EvalSymlinks), spelled as
+// Real is p with its links resolved (including directory junctions), spelled as
 // Host does.
 func Real(p string) (string, error) {
-	r, err := filepath.EvalSymlinks(p)
+	r, err := Resolve(p)
 	return Host(r), err
 }
 

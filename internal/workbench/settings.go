@@ -17,7 +17,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/mounts"
 	"github.com/sylvinus/agent-vm/internal/paths"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 type Preferences struct {
@@ -56,7 +55,7 @@ func (s *Server) prepareEnvironment() error {
 	if _, err := os.Stat(filepath.Join(s.profile, "environment.json")); os.IsNotExist(err) {
 		previous := s.workspace()
 		if previous != "" {
-			if _, err := os.Stat(filepath.Join(s.profile, "state", "lima", vmname.Name(previous), "lima.yaml")); err == nil {
+			if _, err := os.Stat(filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, previous), "lima.yaml")); err == nil {
 				path = previous
 			}
 		}
@@ -183,7 +182,7 @@ func validateWorkspace(path, profile string) (string, error) {
 	if err != nil {
 		return "", errors.New("项目路径无效")
 	}
-	abs, err = filepath.EvalSymlinks(abs)
+	abs, err = paths.Resolve(abs)
 	if err != nil {
 		return "", errors.New("项目目录不存在或无法访问")
 	}
@@ -191,24 +190,28 @@ func validateWorkspace(path, profile string) (string, error) {
 	if err != nil || !st.IsDir() {
 		return "", errors.New("请选择一个项目文件夹")
 	}
-	realProfile, err := filepath.EvalSymlinks(profile)
-	if err != nil {
-		realProfile = profile
-	}
-	contains := func(parent, child string) bool {
-		rel, e := filepath.Rel(parent, child)
-		return e == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	if realHome, err := paths.Resolve(home); err == nil {
+		home = realHome
 	}
 	if executable, e := os.Executable(); e == nil {
-		if real, e := filepath.EvalSymlinks(executable); e == nil && contains(abs, real) {
+		if real, e := paths.Resolve(executable); e == nil && cage.StorageContains(abs, real) {
 			return "", errors.New("不能共享正在运行的工作台程序所在目录。请将安装版 Cage 放在项目外，并重启控制服务后选择此项目。")
 		}
 	}
 	if mounts.UnderName(filepath.ToSlash(abs), nil) {
 		return "", errors.New("请选择项目根目录，不要共享 Git 等版本控制元数据目录")
 	}
-	if contains(abs, realProfile) || contains(realProfile, abs) || abs == home || abs == "/" {
+	if paths.Equal(abs, home) || filepath.Dir(abs) == abs {
 		return "", errors.New("请选择具体项目，不要共享主目录、Cage 配置或包含配置的上级目录")
+	}
+	private, err := privateProjectDirectories(profile)
+	if err != nil {
+		return "", err
+	}
+	for _, dir := range private {
+		if cage.StoragePathsOverlap(abs, dir) {
+			return "", errors.New("Cage 配置、环境存储、迁移备份及其上级目录不能共享给虚拟机")
+		}
 	}
 	return abs, nil
 }

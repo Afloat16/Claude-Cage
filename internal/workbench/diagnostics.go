@@ -101,6 +101,10 @@ CAGE_DIAGNOSTIC_JOURNAL`)
 // controller authenticates through the native launch ticket; offline recovery
 // exports host logs only. No raw configuration is exported.
 func ExportDiagnostics(configPath, destination string) error {
+	return ExportDiagnosticsForConnection(configPath, "", destination)
+}
+
+func ExportDiagnosticsForConnection(configPath, connectionID, destination string) error {
 	if !filepath.IsAbs(destination) {
 		return errors.New("请选择本机绝对保存路径")
 	}
@@ -120,6 +124,9 @@ func ExportDiagnostics(configPath, destination string) error {
 	export := func() error {
 		c, e := connectController(profile)
 		if e != nil {
+			if connectionID != "" && connectionID != "local" {
+				return errors.New("远程连接不可用，无法导出云端诊断包")
+			}
 			if e := store.ImportLegacy(profile); e != nil {
 				return e
 			}
@@ -134,6 +141,9 @@ func ExportDiagnostics(configPath, destination string) error {
 		code, e := c.call("POST", "/api/session", map[string]string{"token": ticket}, nil)
 		if e != nil || code != 200 {
 			return errors.New("无法创建诊断导出会话，请重新打开 Cage")
+		}
+		if _, err := c.bindConnection(connectionID); err != nil {
+			return err
 		}
 		c.client.Timeout = 30 * time.Second
 		req, _ := http.NewRequest("GET", c.origin+"/api/diagnostics/export", nil)

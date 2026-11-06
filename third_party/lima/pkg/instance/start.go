@@ -183,6 +183,9 @@ func Prepare(ctx context.Context, inst *limatype.Instance, guestAgent string) (*
 		}
 	}
 
+	if os.Getenv("CAGE_SETUP_PROGRESS") == "1" {
+		fmt.Fprintln(os.Stderr, "CAGE_IMAGE_READY")
+	}
 	if err := limaDriver.CreateDisk(ctx); err != nil {
 		return nil, err
 	}

@@ -1,6 +1,8 @@
 # Linux 安装、使用与验收
 
-Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式；所有项目共用一个持久 Linux 虚拟机。
+Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，所有本机项目共用一个持久 Linux 虚拟机。
+
+同一个桌面应用也可以从侧栏 SSH 连接已部署 Cage 的服务器。使用远程工作台只需本机图形依赖，本机模式另需 KVM 和虚拟机工具。云服务器的无 KVM 容器部署见[云端部署设计](design/cloud-deployment.md)和[部署说明](../deploy/cloud/README.md)。
 
 Linux 支持处于开发验收阶段。安装包及真实测试范围以对应发行说明为准；云服务器中的窗口测试不能代表所有桌面环境、显卡和输入法均已通过验收。ARM64、RPM 发行版及 Wayland 的完整交互尚未验收。
 
@@ -32,7 +34,7 @@ Cage 日常以普通用户运行。不要用 `sudo cage-desktop` 启动工作台
 sudo apt install ./Cage-<版本>-linux-amd64.deb
 ```
 
-安装器随附 Cage 后台、工作台和 Mihomo 代理核心。APT 从系统软件源安装 WebKitGTK、QEMU、OVMF 虚拟机固件及 OpenSSH 等依赖；无需安装 Go、Node.js、Docker 或其他代理客户端。首次启动环境仍需联网下载 Linux 镜像与客机工具。
+安装器随附 Cage 后台、工作台和 Mihomo 代理核心。APT 安装 WebKitGTK 等图形依赖。只连接 SSH 主机时可直接打开应用。要使用本机环境，请再运行 `sudo apt install qemu-system-x86 qemu-utils ovmf openssh-client iproute2 git` 并确认 KVM 可用。首次启动本机环境时会下载 Linux 镜像与客机工具。
 
 从应用菜单打开 **Cage**，也可运行 `cage-desktop`。系统包名和后台命令为 `claude-cage`，避免与发行版自带的同名 Wayland 程序冲突。导入自己的代理、选择节点，再按[开始使用](getting-started.md#2-导入并选择代理)打开项目。项目路径例如 `/home/alice/Projects/demo`，只共享默认工作区与明确选择的目录；项目中的修改和删除会同步到主机。Git 元数据保护沿用现有约束，提交在主机 Git 中完成。
 

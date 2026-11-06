@@ -13,7 +13,6 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func testServer(t *testing.T) *Server {
@@ -242,7 +241,7 @@ func TestSSHIsolationOverridesLocalClientSettings(t *testing.T) {
 	}
 	s := testServer(t)
 	s.preferences.Workspace = t.TempDir()
-	dir := filepath.Join(s.profile, "state", "lima", vmname.Name(s.environmentDir()))
+	dir := filepath.Join(s.profile, "state", "lima", cage.InstanceName(s.profile, s.environmentDir()))
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		t.Fatal(err)
 	}

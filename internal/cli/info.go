@@ -23,11 +23,13 @@ import (
 func (e *app) refs() []mounts.Ref {
 	self := ""
 	if exe, err := os.Executable(); err == nil {
-		if p, err := filepath.EvalSymlinks(exe); err == nil {
+		if p, err := paths.Resolve(exe); err == nil {
 			self = paths.Host(filepath.Dir(p))
 		}
 	}
-	return mounts.Refs(paths.Home(), self, string(e.state), LimaHome(e.state), oldLimaHome())
+	private := []string{LimaHome(e.state), oldLimaHome()}
+	private = append(private, e.privateStorage...)
+	return mounts.Refs(paths.Home(), self, string(e.state), private...)
 }
 
 // entries are the usable entries of ~/.agent-vm/volumes for the project
@@ -79,7 +81,7 @@ func (e *app) infoCmd(ctx context.Context, args []string) int {
 		fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
 		return 1
 	}
-	name := vmname.Name(dir)
+	name := e.instanceName(dir)
 	w := e.io.Stdout
 	fmt.Fprintf(w, "version=%s\n", version.Version)
 	fmt.Fprintf(w, "template=%s\n", vmname.Template)

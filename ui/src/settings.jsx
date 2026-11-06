@@ -1,6 +1,7 @@
 import { PasswordVaultSettings } from "./password-vault";
 import { KeyRound } from "lucide-react";
 import { InlineSelect } from "./inline-select";
+import { clientKeyboard, isRemoteClient, saveClientKeyboard } from "./client-context.mjs";
 import { shortcut, usesControl } from "./platform.mjs";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -22,6 +23,7 @@ import { ProxySettings } from "./proxy-settings";
 import { ExitPolicyFields } from "./exit-policy";
 import { canonicalExitPolicy } from "./safety-state.mjs";
 import { EnvironmentVersions } from "./environment-versions";
+import { EnvironmentStorage } from "./environment-storage";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { AccountSettings } from "./account";
@@ -47,6 +49,7 @@ export function SettingsPanel({
   onClaudeLogin,
   initialSection = "keyboard",
 }) {
+  const [localKeyboard, setLocalKeyboard] = useState(() => clientKeyboard(current.keyboard));
   const [accountDirty, setAccountDirty] = useState(false);
   const [proxyDirty, setProxyDirty] = useState(false);
   const [draft, setDraft] = useState({ ...current }),
@@ -511,15 +514,19 @@ export function SettingsPanel({
                     ],
                   ].map(([value, title, help]) => (
                     <label
-                      className={`choice ${draft.keyboard === value ? "checked" : ""}`}
+                      className={`choice ${(isRemoteClient() ? localKeyboard : draft.keyboard) === value ? "checked" : ""}`}
                       key={value}
                     >
                       <input
                         type="radio"
                         name="keyboard"
                         value={value}
-                        checked={draft.keyboard === value}
-                        onChange={() => update("keyboard", value)}
+                        checked={(isRemoteClient() ? localKeyboard : draft.keyboard) === value}
+                        onChange={() => {
+                          if (!isRemoteClient()) { update("keyboard", value); return; }
+                          try { saveClientKeyboard(value); setLocalKeyboard(value); setError(""); }
+                          catch { setError("未能保存本机键盘习惯，请检查本地存储空间。"); }
+                        }}
                       />
                       <span>
                         <strong>{title}</strong>
@@ -530,6 +537,7 @@ export function SettingsPanel({
                 </div>
                 <p className="field-help">
                   终端使用 {usesControl ? "Ctrl+Shift+C / Ctrl+Shift+V" : "⌘C / ⌘V"} 复制粘贴；Ctrl+C 始终用于中断命令。
+                  {isRemoteClient() && "键盘习惯立即生效，仅保存在当前客户端，不修改云端设置。"}
                 </p>
                 <h4>工作台快捷键</h4>
                 <div className="shortcut-list">
@@ -554,8 +562,9 @@ export function SettingsPanel({
               <>
                 <div className="section-title">
                   <h3>环境与恢复</h3>
-                  <p>本机与 Cage 中的改动会双向同步。</p>
+                  <p>{isRemoteClient() ? "项目位于云端，Cage 中的改动会直接保存到云端文件。" : "本机与 Cage 中的改动会双向同步。"}</p>
                 </div>
+                {status.local_vm_storage && !isRemoteClient() && <EnvironmentStorage status={status} onConfirm={onConfirm} />}
                 <div className="setting-summary-row">
                   <span>当前项目</span>
                   <strong title={current.workspace}>
@@ -565,7 +574,7 @@ export function SettingsPanel({
                   </strong>
                 </div>
                 <p className="field-help">
-                  点击侧栏“项目”标题旁的加号，可选择其他本地文件夹。
+                  {isRemoteClient() ? "点击侧栏“项目”标题旁的加号，可浏览并选择云端文件夹。" : "点击侧栏“项目”标题旁的加号，可选择其他本地文件夹。"}
                 </p>
                 <div className="project-explanation">
                   <FolderOpen size={22} />

@@ -35,6 +35,7 @@ import (
 	"github.com/lima-vm/lima/v2/pkg/sshutil"
 	"github.com/lima-vm/lima/v2/pkg/store"
 	"github.com/lima-vm/lima/v2/pkg/yqutil"
+	"github.com/sylvinus/agent-vm/internal/vmname"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
@@ -56,23 +57,8 @@ type Lima struct {
 // home (UNIX_PATH_MAX: 104 bytes on macOS), and Lima's 76 at most. Lima
 // resolves the home's symlinks: so does this, as far as it exists.
 func MaxName(home string) int {
-	real, rest := home, ""
-	for {
-		if p, err := filepath.EvalSymlinks(real); err == nil {
-			real = filepath.Join(p, rest)
-			break
-		}
-		parent := filepath.Dir(real)
-		if parent == real {
-			real = home
-			break
-		}
-		rest = filepath.Join(filepath.Base(real), rest)
-		real = parent
-	}
-	// <home>/<name>/<socket>, shorter than UnixPathMax (its NUL).
-	n := osutil.UnixPathMax - 1 - len(real) - len("/") - len("/"+filenames.LongestSock)
-	return min(n, 76)
+	stable := os.Getenv("CAGE_LOGICAL_LIMA_HOME")
+	return int(vmname.HomeLimit(home, stable != "" && filepath.Clean(home) == filepath.Clean(stable)))
 }
 
 // NewLima keeps its VMs in home (LIMA_HOME), and writes Lima's guest agent
@@ -332,6 +318,16 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 			if err != nil {
 				return err
 			}
+			if template == "template:debian-13" {
+				images, err := cageDebianImages(tmpl.Config.Images)
+				if err != nil {
+					return err
+				}
+				e = append(e, ".images = "+string(images))
+				// cloud-init rewrites Debian's mirror list after bootcmd.
+				// Configure it immediately before Lima installs dependencies.
+				e = append(e, `.provision += [{"mode": "dependency", "script": `+strconv.Quote(cage.DebianMirrorsScript)+`}]`)
+			}
 			tz, _ := json.Marshal(cfg.Timezone)
 			e = append(e, ".propagateProxyEnv = false", `.env = {"http_proxy":"","https_proxy":"","ftp_proxy":"","no_proxy":"","HTTP_PROXY":"","HTTPS_PROXY":"","FTP_PROXY":"","NO_PROXY":"","ALL_PROXY":"","all_proxy":""}`, ".timezone = "+string(tz), ".user.name = \"cage\"", ".user.home = \"/home/cage\"", ".user.uid = 1000")
 		}
@@ -343,6 +339,28 @@ func (l *Lima) Create(ctx context.Context, name, template string, s Settings, lo
 		_, err = instance.Create(ctx, name, tmpl.Bytes, false)
 		return err
 	})
+}
+
+// All three locations must supply the exact release pinned by the embedded
+// template. In particular, never accept an unpinned daily image on fallback.
+func cageDebianImages(images []limatype.Image) ([]byte, error) {
+	const upstream = "https://cloud.debian.org/images/cloud/"
+	var candidates []limatype.Image
+	for _, img := range images {
+		suffix, ok := strings.CutPrefix(img.Location, upstream)
+		if !ok || img.Variant != "genericcloud" || img.Digest.Validate() != nil || img.Digest.Algorithm() != "sha512" {
+			continue
+		}
+		for _, base := range []string{"https://mirrors.nju.edu.cn/debian-cdimage/cloud/", "https://mirrors.ustc.edu.cn/debian-cdimage/cloud/", upstream} {
+			candidate := img
+			candidate.Location = base + suffix
+			candidates = append(candidates, candidate)
+		}
+	}
+	if len(candidates) == 0 {
+		return nil, errors.New("embedded Debian template contains no pinned cloud image")
+	}
+	return json.Marshal(candidates)
 }
 
 func (l *Lima) Clone(ctx context.Context, from, to string) error {

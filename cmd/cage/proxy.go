@@ -45,7 +45,7 @@ func proxyCommand(command, profile string, cfg cage.Config) error {
 	if err = managedproxy.Write(path, data); err != nil {
 		return err
 	}
-	files, _ := filepath.Glob(filepath.Join(profile, "state", "lima", "*", "cage-gate.json"))
+	files := managedGateFiles(profile)
 	for _, file := range files {
 		if client, e := cage.OpenGateClient(filepath.Dir(file)); e == nil {
 			if _, e = client.Status(context.Background()); e == nil {
@@ -59,7 +59,7 @@ func proxyCommand(command, profile string, cfg cage.Config) error {
 }
 
 func closeManagedGates(profile string) error {
-	files, _ := filepath.Glob(filepath.Join(profile, "state", "lima", "*", "cage-gate.json"))
+	files := managedGateFiles(profile)
 	for _, file := range files {
 		if client, e := cage.OpenGateClient(filepath.Dir(file)); e == nil {
 			if _, e = client.Status(context.Background()); e == nil {
@@ -70,4 +70,10 @@ func closeManagedGates(profile string) error {
 		}
 	}
 	return nil
+}
+
+func managedGateFiles(profile string) []string {
+	files, _ := filepath.Glob(filepath.Join(profile, "state", "lima", "*", "cage-gate.json"))
+	containers, _ := filepath.Glob(filepath.Join(profile, "state", "container", "*", "cage-gate.json"))
+	return append(files, containers...)
 }

@@ -2,8 +2,8 @@ package host
 
 import "golang.org/x/sys/windows"
 
-// FreeGiB is the space free for this user on dir's volume.
-func FreeGiB(dir string) (int, bool) {
+// freeGiB is the space free for this user on dir's volume.
+func freeGiB(dir string) (int, bool) {
 	p, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
 		return 0, false

@@ -2324,3 +2324,8 @@ svg {
   background: color-mix(in srgb, var(--accent) 15%, transparent);
   border: 2px solid var(--accent); color: var(--accent); pointer-events: none;
 }
+
+.environment-storage .setting-summary-row strong,
+.environment-storage .field-help code { overflow-wrap: anywhere; }
+.environment-storage .storage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.start-project-box .storage-entry { justify-self: start; margin: 0 16px 8px; }

@@ -16,7 +16,7 @@ const call = async (binary, ...args) => {
   const { stdout } = await runFile(binary, [...args, "--json"], { env, timeout: 150_000, maxBuffer: 512 * 1024 });
   return JSON.parse(stdout);
 };
-const record = async () => JSON.parse(await readFile(path.join(profile, "control.json"), "utf8"));
+const record = async (entry = false) => JSON.parse(await readFile(path.join(profile, entry ? "desktop-entry" : ".", "control.json"), "utf8"));
 const wait = async (test) => {
   for (let i = 0; i < 100; i++) {
     try { if (await test()) return; } catch {}
@@ -27,17 +27,18 @@ const wait = async (test) => {
 const old = spawn(legacy, ["serve"], { cwd: profile, env, stdio: "ignore" });
 try {
   await wait(async () => (await record()).pid === old.pid);
-  assert.equal((await call(current, "desktop")).status, "upgrade_pending");
+  assert.equal((await call(current, "desktop")).status, "ready", "Chooser can open without taking over the older workload");
+  assert.equal((await record()).pid, old.pid);
   assert.equal((await call(current, "desktop", "--existing")).status, "existing");
   assert.equal((await call(current, "prepare-update")).status, "stop_required");
   assert.equal((await call(current, "prepare-update", "--stop")).status, "prepared");
   await wait(() => old.exitCode !== null || old.signalCode !== null);
   assert.equal((await call(current, "desktop")).status, "ready");
-  const first = await record();
+  const first = await record(true);
   assert.equal((await call(current, "desktop")).status, "ready");
-  assert.equal((await record()).pid, first.pid, "Same build must reuse its controller");
+  assert.equal((await record(true)).pid, first.pid, "Same build must reuse its controller");
   assert.equal((await call(next, "desktop")).status, "ready");
-  const replacement = await record();
+  const replacement = await record(true);
   assert.notEqual(replacement.pid, first.pid, "Different build must replace an idle controller");
   assert.notEqual(replacement.controller.build, first.controller.build);
   assert.equal(replacement.controller.version, first.controller.version, "Exercise same-version distinct builds");

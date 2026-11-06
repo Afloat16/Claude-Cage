@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"io"
+
+	"github.com/sylvinus/agent-vm/internal/mounts/spec"
 )
 
 // ErrNotFound is returned for a VM that does not exist.
@@ -68,22 +70,10 @@ type Instance struct {
 }
 
 // Mount is a host folder shared with the guest.
-type Mount struct {
-	Location   string `json:"location"`             // on the host
-	MountPoint string `json:"mountPoint,omitempty"` // in the guest; Location's spelling when empty
-	Writable   bool   `json:"writable"`
-	SSHFS      *SSHFS `json:"sshfs,omitempty"`
-}
+type Mount = spec.Mount
 
 // SSHFS options of a reverse-sshfs share.
-type SSHFS struct {
-	SFTPDriver string `json:"sftpDriver,omitempty"`
-	// Cache is sshfs's own; nil for the backend's default.
-	Cache *bool `json:"cache,omitempty"`
-	// ReadonlyNames are read-only at any depth under the share, whatever
-	// the guest does: .git and the like.
-	ReadonlyNames []string `json:"readonlyNames,omitempty"`
-}
+type SSHFS = spec.SSHFS
 
 // ReverseSSHFS is the mount type whose shares the host serves over SFTP,
 // which is where readonlyNames are enforced.

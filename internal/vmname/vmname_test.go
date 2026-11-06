@@ -67,11 +67,9 @@ func TestNameBash(t *testing.T) {
 // A name longer than this machine allows is cut in its folder part, the
 // hash of the whole path kept; 0.2's name of the same folder is cut alike.
 func TestNameFits(t *testing.T) {
-	old := MaxLen
-	t.Cleanup(func() { MaxLen = old })
-	MaxLen = 20
+	limit := Limit(20)
 	dir := "/home/u/" + strings.Repeat("long-folder-", 4)
-	n := Name(dir)
+	n := limit.Name(dir)
 	full := strings.TrimSuffix(strings.Repeat("long-folder-", 4), "-")
 	// The hash is of the whole path, whatever the cut.
 	sum := sha256.Sum256([]byte(paths.Guest(dir)))
@@ -79,19 +77,16 @@ func TestNameFits(t *testing.T) {
 	if n != "long-folder"+hash {
 		t.Errorf("Name = %q, want %q", n, "long-folder"+hash)
 	}
-	if other := Name("/elsewhere/" + strings.Repeat("long-folder-", 4)); other == n {
+	if other := limit.Name("/elsewhere/" + strings.Repeat("long-folder-", 4)); other == n {
 		t.Error("two folders, one name")
 	}
-	MaxLen = 76
 	oldName := OldPrefix + Name(dir)
-	MaxLen = 20
-	if FromOld(oldName) != n {
-		t.Errorf("FromOld(%q) = %q, Name %q", oldName, FromOld(oldName), n)
+	if limit.FromOld(oldName) != n {
+		t.Errorf("FromOld(%q) = %q, Name %q", oldName, limit.FromOld(oldName), n)
 	}
-	if s, _ := Scratch(dir); len(s) > 20 || !IsScratch(s) {
+	if s, _ := limit.Scratch(dir); len(s) > 20 || !IsScratch(s) {
 		t.Errorf("Scratch = %q", s)
 	}
-	MaxLen = 76
 	if Name(dir) != full+hash {
 		t.Errorf("cut though it fits: %q", Name(dir))
 	}

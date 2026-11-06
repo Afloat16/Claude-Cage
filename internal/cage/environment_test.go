@@ -1,23 +1,23 @@
 package cage
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 func TestEnvironmentIdentitySurvivesProjectSelectionAndLegacyUpgrade(t *testing.T) {
 	profile := t.TempDir()
 	legacy, _ := filepath.EvalSymlinks(t.TempDir())
-	if err := os.WriteFile(filepath.Join(profile, "workbench.json"), []byte(`{"workspace":"`+legacy+`"}`), 0600); err != nil {
+	prefs, _ := json.Marshal(map[string]string{"workspace": legacy})
+	if err := os.WriteFile(filepath.Join(profile, "workbench.json"), prefs, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if EnvironmentDir(profile) == legacy {
 		t.Fatal("selected project without an existing VM became the environment")
 	}
-	vmDir := filepath.Join(profile, "state", "lima", vmname.Name(legacy))
+	vmDir := filepath.Join(profile, "state", "lima", InstanceName(profile, legacy))
 	if err := os.MkdirAll(vmDir, 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,8 @@ func TestEnvironmentIdentitySurvivesProjectSelectionAndLegacyUpgrade(t *testing.
 	if EnvironmentDir(profile) != legacy {
 		t.Fatal("existing VM disk was not retained during upgrade")
 	}
-	if err := os.WriteFile(filepath.Join(profile, "environment.json"), []byte(`{"directory":"`+legacy+`"}`), 0600); err != nil {
+	saved, _ := json.Marshal(map[string]string{"directory": legacy})
+	if err := os.WriteFile(filepath.Join(profile, "environment.json"), saved, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(profile, "workbench.json"), []byte(`{"workspace":"/different-project"}`), 0600); err != nil {

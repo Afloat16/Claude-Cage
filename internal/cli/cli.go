@@ -97,7 +97,7 @@ func (e *app) main(ctx context.Context, args []string) int {
 	case "licenses":
 		return licensesCmd(args, io)
 	case "name":
-		return nameCmd(args, io)
+		return e.nameCmd(args, io)
 	case "list", "status":
 		return e.listCmd(ctx, args)
 	case "stop":
@@ -195,7 +195,7 @@ func updateCommandFor(exe string) string {
 }
 
 // `name [dir]`: the VM name of a directory, the current one by default.
-func nameCmd(args []string, io IO) int {
+func (e *app) nameCmd(args []string, io IO) int {
 	dir := ""
 	if len(args) > 0 {
 		dir = args[0]
@@ -205,7 +205,7 @@ func nameCmd(args []string, io IO) int {
 		fmt.Fprintf(io.Stderr, "Error: %v\n", err)
 		return 1
 	}
-	fmt.Fprintln(io.Stdout, vmname.Name(abs))
+	fmt.Fprintln(io.Stdout, e.instanceName(abs))
 	return 0
 }
 

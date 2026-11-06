@@ -66,7 +66,7 @@ func (e *app) inVM(ctx context.Context, opts VMOpts, fn session) int {
 	if opts.Scratch {
 		return e.scratch(ctx, cleanup, opts, dir, fn)
 	}
-	s := &start{app: e, ctx: ctx, opts: opts, dir: dir, name: vmname.Name(dir)}
+	s := &start{app: e, ctx: ctx, opts: opts, dir: dir, name: e.instanceName(dir)}
 	if os.Getenv("CLAUDE_CAGE_CONFIG") != "" {
 		b, err := s.backend()
 		if err != nil {
@@ -260,7 +260,7 @@ func (e *app) scratch(ctx, cleanup context.Context, opts VMOpts, dir string, fn 
 	for _, left := range unknown {
 		fmt.Fprintf(e.io.Stderr, "Note: scratch VM '%s' has a record without a process number, so it is not known whether a run still uses it: left alone. 'agent-vm rm %s' deletes it.\n", left, left)
 	}
-	name, err := vmname.Scratch(dir)
+	name, err := e.names.Scratch(dir)
 	if err != nil {
 		fmt.Fprintf(e.io.Stderr, "Error: %v\n", err)
 		return 1

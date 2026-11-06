@@ -12,7 +12,6 @@ import (
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/host"
-	"github.com/sylvinus/agent-vm/internal/vmname"
 	"io"
 	"io/fs"
 	"log"
@@ -20,10 +19,12 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -39,6 +40,11 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	instanceID                                       string
+	clientOnly                                       bool
+	desktopEntry                                     bool
+	windowOwners                                     map[int]bool
+	remote                                           *remoteGateway
 	account                                          *localAccount
 	identity                                         ControllerIdentity
 	guestManifest                                    *cage.GuestManifest
@@ -94,7 +100,17 @@ func randomToken() string {
 func equalSecret(a, b string) bool {
 	return len(a) > 0 && subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
 }
-func Serve(configPath string) (returned error) {
+func Serve(configPath string) error { return serve(configPath, false, "") }
+
+func ServeClient(configPath string) error { return serve(configPath, true, "") }
+
+// ServeDesktop is the desktop window's connection gateway. Its control lock and
+// logs live separately from the workload it may later attach to.
+func ServeDesktop(fullConfigPath string) error {
+	return serve(desktopConfigPath(fullConfigPath), false, fullConfigPath)
+}
+
+func serve(configPath string, clientOnly bool, fullConfigPath string) (returned error) {
 	store := diagnostics.New(filepath.Dir(configPath))
 	diagnostics.SetDefault(store)
 	if err := store.Clean(); err != nil {
@@ -115,6 +131,9 @@ func Serve(configPath string) (returned error) {
 	if err = lockController(lock); err != nil {
 		return errors.New("此配置已有工作台服务正在运行")
 	}
+	if err := host.ProtectFile(lock.Name()); err != nil {
+		return err
+	}
 	if err := store.ImportLegacy(filepath.Dir(configPath)); err != nil {
 		diagnostics.Log("warn", "diagnostics", "legacy log import failed: "+err.Error())
 	}
@@ -134,59 +153,97 @@ func Serve(configPath string) (returned error) {
 		return err
 	}
 	defer listener.Close()
-	s := &Server{profile: profile, configPath: configPath, exe: exe, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard()}}
-	s.account, err = loadLocalAccount(profile)
-	if err != nil {
-		return err
+	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard()}}
+	s.desktopEntry = fullConfigPath != ""
+	workload := !s.desktopEntry && !clientOnly
+	if s.desktopEntry {
+		if err = importDesktopConnections(filepath.Dir(fullConfigPath), profile); err != nil {
+			return err
+		}
+		s.remote = newDesktopGateway(profile, NewDesktopLocalController(fullConfigPath, exe))
+	} else {
+		s.remote = newRemoteGateway(profile)
+		s.remote.clientOnly = clientOnly
 	}
-	defer s.account.lock()
-	defer func() { returned = errors.Join(returned, s.closeService()) }()
+	defer s.remote.close()
+	if workload {
+		s.instanceID, err = ensureRemoteInstance(profile)
+		if err != nil {
+			return err
+		}
+		s.account, err = loadLocalAccount(profile)
+		if err != nil {
+			return err
+		}
+		defer s.account.lock()
+		defer func() { returned = errors.Join(returned, s.closeService()) }()
+		if b, e := os.ReadFile(filepath.Join(profile, "workbench.json")); e == nil {
+			_ = json.Unmarshal(b, &s.preferences)
+		}
+		if err = s.prepareEnvironment(); err != nil {
+			return err
+		}
+		if intentErr := s.restoreNetworkIntent(); intentErr != nil {
+			s.networkError = intentErr.Error()
+		}
+		if s.preferences.Keyboard == "" {
+			s.preferences.Keyboard = defaultKeyboard()
+		}
+		if _, e := os.Stat(configPath); os.IsNotExist(e) {
+			if err = writePrivate(configPath, defaultConfig()); err != nil {
+				return err
+			}
+		}
+		// A previously running VM cannot keep an unmanaged endpoint online.
+		if cfg, e := loadConfig(configPath); e != nil || cfg.RequireManagedProxy(profile) != nil {
+			_ = s.closeProxyGate("尚未配置有效节点，外网保持关闭")
+		}
+		if s.networkPaused {
+			_ = s.closeProxyGate("网络保持暂停，请手动恢复后再联网")
+		}
+		s.startMonitors()
+	}
 	s.identity, err = currentController()
 	if err != nil {
 		return err
-	}
-	if b, e := os.ReadFile(filepath.Join(profile, "workbench.json")); e == nil {
-		_ = json.Unmarshal(b, &s.preferences)
-	}
-	if err = s.prepareEnvironment(); err != nil {
-		return err
-	}
-	if intentErr := s.restoreNetworkIntent(); intentErr != nil {
-		s.networkError = intentErr.Error()
-	}
-	if s.preferences.Keyboard == "" {
-		s.preferences.Keyboard = defaultKeyboard()
-	}
-	if _, e := os.Stat(configPath); os.IsNotExist(e) {
-		if e = writePrivate(configPath, defaultConfig()); e != nil {
-			return e
-		}
 	}
 	if err = writePrivate(filepath.Join(profile, "control.json"), controlFile{Port: port, Token: s.token, PID: os.Getpid(), Controller: s.identity}); err != nil {
 		return err
 	}
 	s.controlPublished = true
-	// A previously running VM cannot keep an unmanaged endpoint online.
-	if cfg, e := loadConfig(configPath); e != nil || cfg.RequireManagedProxy(profile) != nil {
-		_ = s.closeProxyGate("尚未配置有效节点，外网保持关闭")
+	if !workload {
+		defer os.Remove(filepath.Join(profile, "control.json"))
 	}
-	if s.networkPaused {
-		_ = s.closeProxyGate("网络保持暂停，请手动恢复后再联网")
-	}
-	s.startMonitors()
 	serverErrors := store.Stream("http", "error")
 	defer serverErrors.Close()
 	server := &http.Server{ErrorLog: log.New(serverErrors, "", 0), Handler: s.handler(), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
 	defer server.Close()
 	shutdownDone := make(chan struct{})
+	var shutdownOnce sync.Once
 	s.shutdown = func() {
-		defer close(shutdownDone)
-		s.beginClose()
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
-		_ = server.Close()
+		shutdownOnce.Do(func() {
+			defer close(shutdownDone)
+			s.beginClose()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			_ = server.Shutdown(ctx)
+			_ = server.Close()
+		})
 	}
+	signals, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+	serveDone := make(chan struct{})
+	defer close(serveDone)
+	if s.desktopEntry {
+		go s.watchDesktopOwners(serveDone)
+	}
+	go func() {
+		select {
+		case <-signals.Done():
+			s.shutdown()
+		case <-serveDone:
+		}
+	}()
 	err = server.Serve(listener)
 	if errors.Is(err, http.ErrServerClosed) {
 		<-shutdownDone
@@ -201,9 +258,17 @@ func (s *Server) handler() http.Handler {
 		if !s.launcherAuthenticated(w, r) {
 			return
 		}
-		jsonReply(w, launchResponse{URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket(), Controller: s.identity})
+		jsonReply(w, launchResponse{DesktopGateway: s.desktopEntry, URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket(), Controller: s.identity})
 	})
-	mux.HandleFunc("POST /api/handoff", s.handoff)
+	if s.desktopEntry || s.clientOnly {
+		mux.HandleFunc("POST /api/handoff", s.handoffEntry)
+	} else {
+		mux.HandleFunc("POST /api/handoff", s.handoff)
+		mux.HandleFunc("POST /api/desktop-local/{action}", s.desktopLocalControl)
+	}
+	if s.desktopEntry {
+		mux.HandleFunc("POST /api/desktop-owner", s.registerDesktopOwner)
+	}
 	mux.HandleFunc("POST /api/session", func(w http.ResponseWriter, r *http.Request) {
 		var v struct {
 			Token string `json:"token"`
@@ -219,6 +284,8 @@ func (s *Server) handler() http.Handler {
 		jsonReply(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/remote/manifest", s.remoteManifest)
+	mux.HandleFunc("GET /api/projects/directories", s.projectDirectories)
 	mux.HandleFunc("POST /api/input", s.remoteInput)
 	mux.HandleFunc("GET /api/diagnostics", s.diagnosticStatus)
 	mux.HandleFunc("POST /api/diagnostics/events", s.diagnosticEvent)
@@ -233,6 +300,8 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("POST /api/projects/open", s.openProject)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("GET /api/environment/storage", s.environmentStorage)
+	mux.HandleFunc("POST /api/environment/storage", s.environmentStorage)
 	mux.HandleFunc("GET /api/environment/resources", s.resourceStatus)
 	mux.HandleFunc("POST /api/environment/resources", s.applyResources)
 	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
@@ -307,12 +376,29 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 		}
+		// Launcher-token routes are handled only by this listener, never by a
+		// selected workload. They perform their own authentication.
+		if strings.HasPrefix(r.URL.Path, "/api/desktop-local/") || r.URL.Path == "/api/desktop-owner" {
+			if (strings.HasPrefix(r.URL.Path, "/api/desktop-local/") && (s.desktopEntry || s.clientOnly)) || (r.URL.Path == "/api/desktop-owner" && !s.desktopEntry) {
+				http.NotFound(w, r)
+				return
+			}
+			mux.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/api/remote/manifest" && (s.desktopEntry || s.clientOnly) {
+			http.NotFound(w, r)
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") && r.URL.Path != "/api/session" && r.URL.Path != "/api/launch" && r.URL.Path != "/api/handoff" {
 			c, e := r.Cookie(s.cookieName())
 			if e != nil || !equalSecret(c.Value, s.session) {
 				http.Error(w, "请从 Cage 应用重新打开工作台", 401)
 				return
 			}
+		}
+		if s.routeRemote(w, r) {
+			return
 		}
 		ctx, finish, err := s.beginActivity(r.Context())
 		if err != nil {
@@ -322,7 +408,7 @@ func (s *Server) handler() http.Handler {
 		defer finish()
 		r = r.WithContext(ctx)
 		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
-		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff"
+		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff" || r.URL.Path == "/api/remote/manifest"
 		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
 			epoch, unlocked := s.account.access()
 			if !unlocked {
@@ -330,6 +416,7 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 			ctx, cancel := context.WithCancel(r.Context())
+
 			stop := context.AfterFunc(epoch, cancel)
 			defer func() { stop(); cancel() }()
 			r = r.WithContext(ctx)
@@ -387,6 +474,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 		requestError(w, errors.New("无法读取项目列表，请检查项目配置"))
 		return
 	}
+	running := vmAlive(s.profile, s.environmentDir())
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
@@ -394,7 +482,7 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	if len(s.projectErrors) > 0 {
 		projectError = "部分项目文件夹尚未连接，环境和浏览器可继续使用。"
 	}
-	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": vmAlive(s.profile, s.environmentDir()), "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "project_error": projectError, "project_errors": s.projectErrors, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(), "location": s.location, "network_error": s.networkError, "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
+	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": running, "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "local_vm_storage": s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(), "location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
 }
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	c, err := loadConfig(s.configPath)
@@ -489,7 +577,7 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
-	for _, name := range []string{vmname.Name(s.environmentDir()), "base-building"} {
+	for _, name := range []string{cage.InstanceName(s.profile, s.environmentDir()), "base-building"} {
 		if owner := cage.InstanceJobID(filepath.Join(s.profile, "state"), name); owner != "" {
 			_ = cage.RequestJobStop(s.profile, owner)
 		}

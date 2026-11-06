@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
 const maxImageBytes = 20 << 20
@@ -97,7 +95,7 @@ func (s *Server) guestImage(ctx context.Context, target string, data []byte) (ma
 	if target == "desktop" {
 		script = "systemctl is-active --quiet cage-claude-desktop.service && sudo -H -u cage env DISPLAY=:78 XAUTHORITY=/run/cage-desktop/Xauthority /usr/local/bin/cage-image-input paste"
 	}
-	cmd := s.sshCommand(ctx, "-T", "lima-"+vmname.Name(s.environmentDir()), "--", script)
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", script)
 	cmd.Stdin = bytes.NewReader(data)
 	pipe, err := cmd.StdoutPipe()
 	if err != nil {

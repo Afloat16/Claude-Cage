@@ -56,6 +56,8 @@ try {
     Invoke-BuildTool $dotnet @('publish', 'desktop/windows/Cage.Windows.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
         '-p:EnableWindowsTargeting=true', '-p:PublishSingleFile=true', '-p:RestoreLockedMode=true', "-p:Version=$version", "-p:InformationalVersion=$version", '-o', $app)
     Get-ChildItem -LiteralPath $app -File | Where-Object { $_.Extension -in @('.pdb', '.xml') } | Remove-Item -Force
+    node scripts/bundle-cloud-kit.mjs $resources
+    if ($LASTEXITCODE -ne 0) { throw "Cloud deployment kit verification failed." }
     $coreArchive = Get-VerifiedDependency $dependencies.mihomo $DependencyCache
     $core = Join-Path $stage 'mihomo'
     Expand-BuildArchive $coreArchive $core $sevenZip

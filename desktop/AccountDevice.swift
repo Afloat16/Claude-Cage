@@ -1,6 +1,7 @@
 import Foundation
 import Security
 import LocalAuthentication
+import CryptoKit
 
 struct CageAccountError: LocalizedError {
     let message: String
@@ -19,12 +20,13 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
     }()
     private let base: URL
     private let ticket: String
+    private let connection: String
 
-    init(entry: URL) throws {
+    init(entry: URL, connection: String = "local") throws {
         guard entry.scheme == "http", entry.host == "localhost", let ticket = entry.fragment, !ticket.isEmpty else { throw CageAccountError("本地账户连接无效") }
         var parts = URLComponents(url: entry, resolvingAgainstBaseURL: false)!
         parts.fragment = nil; parts.path = ""; parts.query = nil
-        base = parts.url!; self.ticket = ticket
+        base = parts.url!; self.ticket = ticket; self.connection = connection
         super.init()
     }
     deinit { session.invalidateAndCancel() }
@@ -32,8 +34,10 @@ final class CageAccountDevice: NSObject, URLSessionTaskDelegate, @unchecked Send
     private func call(_ path: String, _ body: [String: Any]? = nil) async throws -> [String: Any] {
         var request = URLRequest(url: base.appendingPathComponent("api/account" + path))
         if path == "@session" { request.url = base.appendingPathComponent("api/session") }
+        if path == "@context" { request.url = base.appendingPathComponent("api/client/context") }
         request.httpMethod = body == nil ? "GET" : "POST"
         request.setValue(base.absoluteString.trimmingCharacters(in: CharacterSet(charactersIn: "/")), forHTTPHeaderField: "Origin")
+        request.setValue(connection, forHTTPHeaderField: "X-Cage-Connection")
         if let body { request.setValue("application/json", forHTTPHeaderField: "Content-Type"); request.httpBody = try JSONSerialization.data(withJSONObject: body) }
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse, response.statusCode == 200 else {
@@ -125,7 +129,21 @@ extension CageAccountDevice {
         defer { session.invalidateAndCancel() }
         _ = try await call("@session", ["token": ticket])
         let account = try await call("")
-        guard let binding = account["device_binding"] as? String, binding.count == 64 else { throw CageAccountError("当前后台不支持快捷登录，请先完成更新") }
+        guard let accountBinding = account["device_binding"] as? String, accountBinding.count == 64 else { throw CageAccountError("当前后台不支持快捷登录，请先完成更新") }
+        var binding = accountBinding
+        if connection != "local" {
+            let selected = try await call("@context")
+            guard selected["connection_id"] as? String == connection else { throw CageAccountError("工作环境已切换，请重新解锁") }
+            if selected["mode"] as? String == "remote" {
+                guard let host = selected["host_id"] as? String, !host.isEmpty,
+                      let fingerprint = selected["host_fingerprint"] as? String, fingerprint.hasPrefix("SHA256:"),
+                      let instance = selected["instance_id"] as? String, instance.count == 64 else { throw CageAccountError("远程连接已经切换，请重新解锁当前主机") }
+                let scoped = ["remote", host, fingerprint, instance, accountBinding].joined(separator: "\u{0}")
+                binding = SHA256.hash(data: Data(scoped.utf8)).map { String(format: "%02x", $0) }.joined()
+            } else if selected["mode"] as? String != "local" {
+                throw CageAccountError("请先选择工作环境")
+            }
+        }
         let context = LAContext()
         let biometricAvailable = context.canEvaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, error: nil)
         if operation == "status" {
