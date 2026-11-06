@@ -131,6 +131,9 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	if err = lockController(lock); err != nil {
 		return errors.New("此配置已有工作台服务正在运行")
 	}
+	if err := host.ProtectFile(lock.Name()); err != nil {
+		return err
+	}
 	if err := store.ImportLegacy(filepath.Dir(configPath)); err != nil {
 		diagnostics.Log("warn", "diagnostics", "legacy log import failed: "+err.Error())
 	}

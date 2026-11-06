@@ -7,8 +7,8 @@ import (
 	"github.com/sylvinus/agent-vm/internal/bashref"
 )
 
-// windows makes the host a Windows one for the test.
-func windows(t *testing.T, on bool) {
+// simulateWindows makes the host a Windows one for the test.
+func simulateWindows(t *testing.T, on bool) {
 	old := Windows
 	Windows = func() bool { return on }
 	t.Cleanup(func() { Windows = old })
@@ -16,7 +16,7 @@ func windows(t *testing.T, on bool) {
 
 // On Windows, a drive is the root: ".." stops there, and C:/x is absolute.
 func TestWindowsPaths(t *testing.T) {
-	windows(t, true)
+	simulateWindows(t, true)
 	for _, c := range [][3]string{
 		{"C:/Users/me", "proj", "C:/Users/me/proj"},
 		{"C:/Users/me", "../../../x", "C:/x"},
@@ -51,7 +51,7 @@ func TestWindowsPaths(t *testing.T) {
 		t.Errorf("In, case ignored: %q %v", rel, ok)
 	}
 	// Elsewhere, none of it.
-	windows(t, false)
+	simulateWindows(t, false)
 	if Guest("C:/x") != "C:/x" || FromGitBash("/c/x") != "/c/x" || IsAbs("C:/x") || Host(`a\b`) != `a\b` || Join("C:", "x") != "C:/x" {
 		t.Error("not Windows")
 	}
