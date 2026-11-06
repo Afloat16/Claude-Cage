@@ -17,7 +17,7 @@ const published = JSON.parse(fs.readFileSync(path.join(root, 'www/src/data/relea
 for (const code of codes) {
   const html = fs.readFileSync(path.join(dist,code === 'zh' ? '' : code,'index.html'),'utf8');
   const picker = html.match(/<details\b[^>]*id="site-language"[^>]*>([\s\S]*?)<\/details>/)?.[1];
-  assert.ok(picker, `${code}: missing inline language picker`);
+  assert.ok(picker, `${code}: missing language picker`);
   const options = [...picker.matchAll(/<a\b[^>]*href="([^"]+)"/g)].map(m=>m[1]);
   assert.equal(options.length,codes.length, `${code}: language dropdown missing options`);
   assert.deepEqual(options, codes.map(locale => `/Claude-Cage/${locale === 'zh' ? '' : locale + '/'}`), `${code}: incorrect language destinations`);
