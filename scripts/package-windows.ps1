@@ -27,7 +27,8 @@ if ($IsWindows) {
 }
 $signTool = $null
 if ($Release) {
-    if (-not $IsWindows -or $env:CAGE_WINDOWS_CERT_SHA1 -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Release packaging requires Windows and CAGE_WINDOWS_CERT_SHA1.' }
+    Assert-WindowsSigningConfiguration
+    if ($env:CAGE_WINDOWS_CERT_SHA1 -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Build and verify the signed app before packaging.' }
     if (Test-Path -LiteralPath (Join-Path $AppDirectory 'DEVELOPMENT-BUILD.txt')) { throw 'Use build-windows.ps1 -Release before packaging a release.' }
     if (-not $QemuSourceArchive -or -not (Test-Path -LiteralPath $QemuSourceArchive -PathType Leaf)) {
         throw 'Release packaging requires -QemuSourceArchive containing the corresponding patched QEMU and bundled library sources. A generic upstream QEMU tarball is not the source for the Weilnetz build.'
@@ -62,7 +63,9 @@ foreach ($directory in (Get-ChildItem -LiteralPath $AppDirectory -Directory -Rec
 $numericVersion = ($version -split '-')[0] + '.0'
 $prefix = if ($IsWindows) { '/' } else { '-' }
 $arguments = @("${prefix}V3", "${prefix}DAPP_DIR=$AppDirectory", "${prefix}DVERSION=$version", "${prefix}DVERSION_NUMERIC=$numericVersion", "${prefix}DOUTPUT_FILE=$artifact", "${prefix}DUNINSTALL_MANIFEST=$manifest")
-if ($Release) { $arguments += @("${prefix}DSIGNTOOL=$signTool", "${prefix}DCERT_SHA1=$env:CAGE_WINDOWS_CERT_SHA1") }
+if ($Release) {
+    $arguments += @("${prefix}DSIGN_PWSH=$((Get-Process -Id $PID).Path)", "${prefix}DSIGN_SCRIPT=$(Join-Path $PSScriptRoot 'sign-windows-file.ps1')")
+}
 $arguments += (Join-Path $repository 'packaging/windows/Cage.nsi')
 Invoke-BuildTool $makeNSIS $arguments
 if ($Release) { Sign-CageFile $artifact $signTool }

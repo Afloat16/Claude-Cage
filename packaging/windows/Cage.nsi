@@ -40,8 +40,8 @@ VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "FileDescription" "Cage Windows Installer"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Cage contributors"
 
-!ifdef SIGNTOOL
-  !uninstfinalize '"${SIGNTOOL}" sign /sha1 "${CERT_SHA1}" /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 "%1"' = 0
+!ifdef SIGN_SCRIPT
+  !uninstfinalize '"${SIGN_PWSH}" -NoProfile -File "${SIGN_SCRIPT}" -Path "%1"' = 0
 !endif
 
 !define MUI_ABORTWARNING

@@ -71,6 +71,19 @@ pwsh -File scripts/build-windows.ps1
 pwsh -File scripts/package-windows.ps1 -SkipBuild
 ```
 
-应用目录输出到 `_output/windows-amd64/app`，安装器与校验文件输出到 `_output/releases/<版本>/windows`。正式签名构建使用构建脚本的 `-Release` 模式，并配置当前用户证书存储中的代码签名证书；发布脚本还要求与 QEMU 构建相对应的源码归档。参数以脚本帮助为准。签名完成后再生成发行物摘要，不能对签名后的文件重新修改。两个平台同批发布时，使用[公开发行流程](public-releases.md#发布安装包)生成共用校验清单；官网仅在公开 Release 的 Windows 附件和摘要有效时显示下载按钮。
+应用目录输出到 `_output/windows-amd64/app`，安装器与校验文件输出到 `_output/releases/<版本>/windows`。正式签名构建使用构建脚本的 `-Release` 模式，支持 SSL.com eSigner 或当前用户证书存储中的代码签名证书；发布脚本还要求与 QEMU 构建相对应的源码归档。参数以脚本帮助为准。签名完成后再生成发行物摘要，不能对签名后的文件重新修改。两个平台同批发布时，使用[公开发行流程](public-releases.md#发布安装包)生成共用校验清单；官网仅在公开 Release 的 Windows 附件和摘要有效时显示下载按钮。
+
+首次验证 eSigner 时，在自己的终端运行下面的命令。需要 Java 21 和 Node.js；macOS、Windows 和 Linux 都可以调用签名工具。工具固定版本与摘要保存在 `packaging/windows/signing.json`，下载内容变化时会停止，须审核后更新。输入 SSL.com 用户名、密码、凭据 ID，等工具提示后再输入验证器当时显示的六位验证码。密码和验证码不显示、不保存；签名后的副本写入新的输出目录，原文件保留。
+
+```sh
+node scripts/esigner.mjs install
+node scripts/esigner.mjs sign /absolute/path/to/Cage.exe --output-dir /absolute/path/to/fresh-signed-output
+```
+
+签名单个文件不会发版。完整 Windows 构建选择 `CAGE_WINDOWS_SIGNING_PROVIDER=esigner`，并设置 `CAGE_ESIGNER_USERNAME`、`CAGE_ESIGNER_PASSWORD`、`CAGE_ESIGNER_CREDENTIAL_ID`、`CAGE_ESIGNER_CERTIFICATE_SERIAL` 和 `CAGE_ESIGNER_TOTP_SECRET`；其中 TOTP 密钥供无人值守流程生成验证码，不能用六位验证码代替。NSIS 的卸载器签名子进程不提供交互终端，因此完整打包需要这些环境配置。密码和密钥不要写入 shell 命令历史或源码。GitHub 环境配置见 [CI/CD 说明](ci-cd.md#首次配置发布材料)。
+
+Windows 正式构建会检查可信 Authenticode 签名、时间戳与指定证书；只通过这些检查的副本才会替换待打包文件。其他平台上的签名测试不能替代 Windows 信任与安装验收。自动更新继续要求旧应用和新安装器使用相同发布者公钥，换用新密钥前需要单独安排更新迁移。
+
+工具参数与验证器配置以 SSL.com 的 [CodeSignTool 指南](https://www.ssl.com/guide/esigner-codesigntool-command-guide/)和 [签名凭据指南](https://www.ssl.com/guide/esigner-signing-credential-guide/)为准。
 
 CI 负责源码、原生窗口、安装器和 Windows 可执行测试；干净 Windows 10/11 上的虚拟化仍需要设备验收。每次正式发行至少记录：首次安装、WebView2 首次启动、无虚拟化时的提示、代理导入、VM 首次下载与启动、网络隔离检查、中文和空格路径共享、终端输入与缩放、退出恢复、从旧签名版升级、失败恢复、卸载后数据保留。只有真实执行的项目才能标记通过。

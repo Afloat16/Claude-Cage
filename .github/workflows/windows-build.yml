@@ -98,9 +98,19 @@ jobs:
         with:
           path: _output/windows-deps
           key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json') }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Build, sign, test and install the release candidate
         env:
           CAGE_BUILD_REF: ${{ inputs.ref }}
+          CAGE_WINDOWS_SIGNING_PROVIDER: ${{ vars.CAGE_WINDOWS_SIGNING_PROVIDER }}
+          CAGE_ESIGNER_USERNAME: ${{ secrets.CAGE_ESIGNER_USERNAME }}
+          CAGE_ESIGNER_PASSWORD: ${{ secrets.CAGE_ESIGNER_PASSWORD }}
+          CAGE_ESIGNER_CREDENTIAL_ID: ${{ secrets.CAGE_ESIGNER_CREDENTIAL_ID }}
+          CAGE_ESIGNER_CERTIFICATE_SERIAL: ${{ vars.CAGE_ESIGNER_CERTIFICATE_SERIAL }}
+          CAGE_ESIGNER_TOTP_SECRET: ${{ secrets.CAGE_ESIGNER_TOTP_SECRET }}
           CAGE_WINDOWS_PFX_BASE64: ${{ secrets.CAGE_WINDOWS_PFX_BASE64 }}
           CAGE_WINDOWS_PFX_PASSWORD: ${{ secrets.CAGE_WINDOWS_PFX_PASSWORD }}
           CAGE_WINDOWS_QEMU_SOURCE_URL: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_URL }}

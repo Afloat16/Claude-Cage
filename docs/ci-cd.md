@@ -60,21 +60,27 @@ gh workflow run release.yml --repo Lee-xeo/Claude-Cage --ref main -f bump=prerel
 | `CAGE_MACOS_NOTARY_KEY_ID` | API Key ID |
 | `CAGE_MACOS_NOTARY_ISSUER_ID` | API Issuer ID |
 | `CAGE_MACOS_PROVISIONING_PROFILE_BASE64` | 可选；原生能力需要时提供对应 Provisioning Profile |
-| `CAGE_WINDOWS_PFX_BASE64` | 含可信代码签名私钥的 PFX 文件，以 Base64 保存 |
-| `CAGE_WINDOWS_PFX_PASSWORD` | PFX 密码 |
+| `CAGE_ESIGNER_USERNAME` | 使用 eSigner 时，SSL.com 登录用户名 |
+| `CAGE_ESIGNER_PASSWORD` | 使用 eSigner 时，SSL.com 登录密码 |
+| `CAGE_ESIGNER_CREDENTIAL_ID` | 使用 eSigner 时，已启用的签名凭据 ID |
+| `CAGE_ESIGNER_TOTP_SECRET` | 使用 eSigner 无人值守签名时，验证器的 TOTP 密钥；不是每 30 秒变化的六位验证码 |
+| `CAGE_WINDOWS_PFX_BASE64` | 仅证书存储方案需要：含可信代码签名私钥的 PFX 文件，以 Base64 保存 |
+| `CAGE_WINDOWS_PFX_PASSWORD` | 仅证书存储方案需要：PFX 密码 |
 
-Windows 对应源码地址放入同一环境的 Variables：
+Windows 签名方式和对应源码地址放入同一环境的 Variables：
 
 | Variable | 用途 |
 |---|---|
+| `CAGE_WINDOWS_SIGNING_PROVIDER` | 云签名填 `esigner`；留空或填 `certificate-store` 使用证书存储方案 |
+| `CAGE_ESIGNER_CERTIFICATE_SERIAL` | 使用 eSigner 时，预期发布者证书的十六进制序列号，不含空格 |
 | `CAGE_WINDOWS_QEMU_SOURCE_URL` | 经核对的完整 QEMU 对应源码归档公开 HTTPS 地址，不含认证信息或临时签名参数，包含随附库与固件源码 |
 | `CAGE_WINDOWS_QEMU_SOURCE_SHA256` | 该归档的 SHA-256 |
 
-Windows 的普通开发包不需要证书。正式发布缺少可信证书时停止，不能用自签名证书或未签名包代替。当前签名接入使用 PFX；若以后采用硬件密钥或云签名服务，应调整签名接入并重新验收。
+Windows 的普通开发包不需要证书。正式发布缺少可信证书时停止，不能用自签名证书或未签名包代替。eSigner 使用云端私钥，不要求 PFX；构建逐个签名应用、后端、Mihomo、卸载器和安装器，再由 Windows 验证信任链、时间戳及预期证书。任何一步失败就停止。首次签名的本机操作见 [Windows 维护者说明](windows.md#维护者构建与验收)。
 
-macOS 使用临时钥匙串，Windows 使用临时证书导入；成功、失败及中断路径均清理签名材料。发布产物只包含安装包、对应源码和摘要；中间公证凭据、私钥与配置文件不进入附件。
+macOS 使用临时钥匙串，Windows 证书存储方案使用临时证书导入。eSigner 使用固定摘要的官方 CodeSignTool 和 Java 21，通过临时参数文件传递密码，进程命令行只包含该文件路径；运行结束清理参数文件及工具日志。保留服务端恶意软件检查设置。发布产物只包含安装包、对应源码和摘要；中间公证凭据、私钥与配置文件不进入附件。
 
-签名文件通常体积较小，按 GitHub Secret 的限制保存；首次使用前应在相应平台确认凭据可用。材料存在不代表签名、公证或安装一定成功，正式构建仍会验证。
+签名文件通常体积较小，按 GitHub Secret 的限制保存；首次使用前应在相应平台确认凭据可用。是否把账号密码和 TOTP 密钥交给 GitHub 必须由证书持有人决定；只做本机手动签名不需要保存这些 Secrets。材料存在不代表签名、公证或安装一定成功，正式构建仍会验证。
 
 ## 失败后继续
 

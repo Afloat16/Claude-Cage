@@ -91,9 +91,43 @@ function Get-SigningTool {
     throw 'Release signing requires Windows SDK signtool.exe on Windows.'
 }
 
+function Assert-WindowsSigningConfiguration {
+    if (-not $IsWindows) { throw 'Trusted Windows build verification requires Windows.' }
+    $null = Get-SigningTool
+    if ($env:CAGE_WINDOWS_SIGNING_PROVIDER -eq 'esigner') {
+        if ($env:CAGE_ESIGNER_CREDENTIAL_ID -notmatch '^[0-9A-Fa-f-]{36}$' -or
+            $env:CAGE_ESIGNER_CERTIFICATE_SERIAL -notmatch '^[0-9A-Fa-f]{32,40}$') {
+            throw 'eSigner requires CAGE_ESIGNER_CREDENTIAL_ID and the expected CAGE_ESIGNER_CERTIFICATE_SERIAL.'
+        }
+    } elseif ($env:CAGE_WINDOWS_SIGNING_PROVIDER -and $env:CAGE_WINDOWS_SIGNING_PROVIDER -ne 'certificate-store') {
+        throw 'Unknown CAGE_WINDOWS_SIGNING_PROVIDER; use esigner or certificate-store.'
+    } elseif ($env:CAGE_WINDOWS_CERT_SHA1 -notmatch '^[0-9A-Fa-f]{40}$') {
+        throw 'Certificate-store signing requires CAGE_WINDOWS_CERT_SHA1.'
+    }
+}
+
 function Sign-CageFile {
     param([string]$Path, [string]$SignTool)
-    Invoke-BuildTool $SignTool @('sign', '/sha1', $env:CAGE_WINDOWS_CERT_SHA1, '/fd', 'SHA256',
-        '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', '/d', 'Cage', $Path)
-    Invoke-BuildTool $SignTool @('verify', '/pa', '/all', $Path)
+    Assert-WindowsSigningConfiguration
+    if ($env:CAGE_WINDOWS_SIGNING_PROVIDER -eq 'esigner') {
+        $Path = [IO.Path]::GetFullPath($Path)
+        $stage = Join-Path ([IO.Path]::GetTempPath()) ('cage-signed-' + [guid]::NewGuid().ToString('N'))
+        try {
+            Invoke-BuildTool (Get-BuildCommand @('node.exe', 'node')) @((Join-Path $PSScriptRoot 'esigner.mjs'), 'sign', $Path, '--output-dir', $stage)
+            $signed = Join-Path $stage ([IO.Path]::GetFileName($Path))
+            Invoke-BuildTool $SignTool @('verify', '/pa', '/all', '/tw', $signed)
+            $signature = Get-AuthenticodeSignature -LiteralPath $signed
+            if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate -or
+                $signature.SignerCertificate.SerialNumber -ne $env:CAGE_ESIGNER_CERTIFICATE_SERIAL -or
+                ($env:CAGE_WINDOWS_CERT_SHA1 -and $signature.SignerCertificate.Thumbprint -ne $env:CAGE_WINDOWS_CERT_SHA1)) {
+                throw 'eSigner output lacks the expected trusted publisher certificate or timestamp. Original file retained.'
+            }
+            $env:CAGE_WINDOWS_CERT_SHA1 = $signature.SignerCertificate.Thumbprint
+            Copy-Item -LiteralPath $signed -Destination $Path -Force
+        } finally { if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force } }
+    } else {
+        Invoke-BuildTool $SignTool @('sign', '/sha1', $env:CAGE_WINDOWS_CERT_SHA1, '/fd', 'SHA256',
+            '/tr', 'http://timestamp.digicert.com', '/td', 'SHA256', '/d', 'Cage', $Path)
+        Invoke-BuildTool $SignTool @('verify', '/pa', '/all', $Path)
+    }
 }

@@ -13,9 +13,7 @@ if (-not $DependencyCache) { $DependencyCache = Join-Path $repository '_output/w
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
 if (Test-Path -LiteralPath (Join-Path $OutputDirectory 'Uninstall.exe')) { throw 'Do not build over an installed application. Choose a separate output directory and use the installer to upgrade.' }
 $version = Get-CageVersion $repository
-if ($Release -and (-not $IsWindows -or $env:CAGE_WINDOWS_CERT_SHA1 -notmatch '^[0-9A-Fa-f]{40}$')) {
-    throw 'A release build requires Windows and CAGE_WINDOWS_CERT_SHA1 for a trusted code-signing certificate in the current user certificate store.'
-}
+if ($Release) { Assert-WindowsSigningConfiguration }
 $go = Get-BuildCommand @('go')
 $dotnet = Get-BuildCommand @('dotnet')
 $node = Get-BuildCommand @('node')

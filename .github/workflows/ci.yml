@@ -23,10 +23,15 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - name: Version consistency and release safety tests
         run: |
           node scripts/check-version.mjs
-          node --test scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs
+          node --test scripts/release-version.test.mjs scripts/release-control.test.mjs scripts/prepare-release-assets.test.mjs scripts/esigner.test.mjs
+          pwsh -NoProfile -File scripts/test-windows-signing.ps1
       - name: Validate workflow syntax
         run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -color
   macos:

@@ -18,7 +18,15 @@ try {
     if ($LASTEXITCODE -ne 0 -or $actual -ne $env:CAGE_BUILD_REF) { throw 'Checkout differs from the requested commit.' }
     if ($Release) {
         if ($env:GITHUB_EVENT_NAME -ne 'workflow_dispatch') { throw 'Release candidates require an explicitly dispatched release workflow.' }
-        if (-not $env:CAGE_WINDOWS_PFX_BASE64 -or -not $env:CAGE_WINDOWS_PFX_PASSWORD) {
+        if ($env:CAGE_WINDOWS_SIGNING_PROVIDER -eq 'esigner') {
+            foreach ($name in @('CAGE_ESIGNER_USERNAME', 'CAGE_ESIGNER_PASSWORD', 'CAGE_ESIGNER_CREDENTIAL_ID', 'CAGE_ESIGNER_CERTIFICATE_SERIAL', 'CAGE_ESIGNER_TOTP_SECRET')) {
+                if (-not [Environment]::GetEnvironmentVariable($name)) { throw "Missing cage-release setting: $name" }
+            }
+            Assert-WindowsSigningConfiguration
+            Invoke-BuildTool 'node' @('scripts/esigner.mjs', 'install')
+        } elseif ($env:CAGE_WINDOWS_SIGNING_PROVIDER -and $env:CAGE_WINDOWS_SIGNING_PROVIDER -ne 'certificate-store') {
+            throw 'Unknown Windows signing provider.'
+        } elseif (-not $env:CAGE_WINDOWS_PFX_BASE64 -or -not $env:CAGE_WINDOWS_PFX_PASSWORD) {
             throw 'Configure CAGE_WINDOWS_PFX_BASE64 and CAGE_WINDOWS_PFX_PASSWORD in the cage-release environment.'
         }
         $sourceUri = $null
@@ -36,18 +44,20 @@ try {
         if ((Get-FileHash -LiteralPath $qemuSource -Algorithm SHA256).Hash -ne $env:CAGE_WINDOWS_QEMU_SOURCE_SHA256) {
             throw 'Reviewed corresponding-source archive checksum mismatch.'
         }
-        $pfx = Join-Path $env:RUNNER_TEMP ('cage-signing-' + [guid]::NewGuid().ToString('N') + '.pfx')
-        [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CAGE_WINDOWS_PFX_BASE64))
-        $password = ConvertTo-SecureString $env:CAGE_WINDOWS_PFX_PASSWORD -AsPlainText -Force
-        $certificates = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password)
-        Remove-Item -LiteralPath $pfx -Force
-        $signers = @($certificates | Where-Object {
-            $_.HasPrivateKey -and @($_.EnhancedKeyUsageList | Where-Object { $_.ObjectId -eq '1.3.6.1.5.5.7.3.3' }).Count -gt 0
-        })
-        if ($signers.Count -ne 1) { throw 'PFX must contain exactly one code-signing certificate with its private key.' }
-        $certificate = $signers[0]
-        $env:CAGE_WINDOWS_CERT_SHA1 = $certificate.Thumbprint
-        Remove-Item Env:CAGE_WINDOWS_PFX_BASE64, Env:CAGE_WINDOWS_PFX_PASSWORD
+        if ($env:CAGE_WINDOWS_SIGNING_PROVIDER -ne 'esigner') {
+            $pfx = Join-Path $env:RUNNER_TEMP ('cage-signing-' + [guid]::NewGuid().ToString('N') + '.pfx')
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:CAGE_WINDOWS_PFX_BASE64))
+            $password = ConvertTo-SecureString $env:CAGE_WINDOWS_PFX_PASSWORD -AsPlainText -Force
+            $certificates = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password)
+            Remove-Item -LiteralPath $pfx -Force
+            $signers = @($certificates | Where-Object {
+                $_.HasPrivateKey -and @($_.EnhancedKeyUsageList | Where-Object { $_.ObjectId -eq '1.3.6.1.5.5.7.3.3' }).Count -gt 0
+            })
+            if ($signers.Count -ne 1) { throw 'PFX must contain exactly one code-signing certificate with its private key.' }
+            $certificate = $signers[0]
+            $env:CAGE_WINDOWS_CERT_SHA1 = $certificate.Thumbprint
+            Remove-Item Env:CAGE_WINDOWS_PFX_BASE64, Env:CAGE_WINDOWS_PFX_PASSWORD
+        }
     }
 
     & (Join-Path $PSScriptRoot 'install-nsis.ps1') -Destination $env:RUNNER_TEMP
@@ -88,5 +98,6 @@ try {
     if ($qemuSource) { Remove-Item -LiteralPath $qemuSource -Force -ErrorAction SilentlyContinue }
     $env:PATH = $savedPath
     $env:CAGE_WINDOWS_CERT_SHA1 = $savedCertificate
+    Remove-Item Env:CAGE_ESIGNER_PASSWORD, Env:CAGE_ESIGNER_TOTP_SECRET -ErrorAction SilentlyContinue
     Pop-Location
 }
