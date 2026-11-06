@@ -25,7 +25,7 @@
 
 **ቀንዲ መተሓላለፊ Cage፤**
 
-![Cage · hello-cage](www/public/workbench.jpg)
+![Cage](www/public/workbench-2026-11.jpg)
 
 ## ብCage እንታይ ክትገብር ትኽእል
 

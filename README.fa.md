@@ -25,7 +25,7 @@ Claude Cage یک ماشین مجازی لینوکس سبک وزن است که ت
 
 **رابط اصلی Cage:**
 
-![Cage · hello-cage](www/public/workbench.jpg)
+![Cage](www/public/workbench-2026-11.jpg)
 
 ## کاری که می توانید با Cage انجام دهید
 

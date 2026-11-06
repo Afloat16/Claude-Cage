@@ -25,7 +25,7 @@ Claude Cage သည် desktop အပလီကေးရှင်းတစ်ခ�
 
 **Cage ၏ အဓိက အင်တာဖေ့စ်**
 
-![Cage · hello-cage](www/public/workbench.jpg)
+![Cage](www/public/workbench-2026-11.jpg)
 
 ## Cage နဲ့ သင်ဘာလုပ်နိုင်လဲ။
 
