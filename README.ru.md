@@ -29,7 +29,7 @@ Claude Cage — это легкая виртуальная машина Linux, �
 
 | Проверка сети и изоляции | Проверка браузера от сообщества |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="Проверка сети и изоляции" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="Проверка браузера от сообщества" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="Проверка сети и изоляции" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="Проверка браузера от сообщества" width="400" /></a> |
 
 **Основной интерфейс Cage:**
 
@@ -133,7 +133,6 @@ Cage — это независимый общественный проект, н
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): ссылки на рабочую среду и дизайн взаимодействия.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) и [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ссылки для проверки сети и диагностики безопасности.
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

@@ -29,7 +29,7 @@ Claude Cage သည် desktop အပလီကေးရှင်းတစ်ခ�
 
 | ကွန်ရက်နှင့် သီးခြားခွဲထားမှု စစ်ဆေးချက်များ | အသိုင်းအဝိုင်း၏ ဘရောက်ဇာ စစ်ဆေးချက် |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="ကွန်ရက်နှင့် သီးခြားခွဲထားမှု စစ်ဆေးချက်များ" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="အသိုင်းအဝိုင်း၏ ဘရောက်ဇာ စစ်ဆေးချက်" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="ကွန်ရက်နှင့် သီးခြားခွဲထားမှု စစ်ဆေးချက်များ" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="အသိုင်းအဝိုင်း၏ ဘရောက်ဇာ စစ်ဆေးချက်" width="400" /></a> |
 
 **Cage ၏ အဓိက အင်တာဖေ့စ်**
 
@@ -133,7 +133,6 @@ Cage သည် လွတ်လပ်သောအသိုင်းအဝို�
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): လုပ်ငန်းခွင်ပတ်ဝန်းကျင်နှင့် အပြန်အလှန်အကျိုးပြုမှုဒီဇိုင်းအတွက် ကိုးကားချက်များ။
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) နှင့် [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ကွန်ရက်စစ်ဆေးမှုများနှင့် လုံခြုံရေးဆိုင်ရာ စစ်ဆေးမှုများအတွက် ကိုးကားချက်များ။
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

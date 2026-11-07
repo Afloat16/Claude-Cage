@@ -29,7 +29,7 @@
 
 | د شبکې او جلاوالي کتنې | د ټولنې د براوزر کتنه |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="د شبکې او جلاوالي کتنې" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="د ټولنې د براوزر کتنه" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="د شبکې او جلاوالي کتنې" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="د ټولنې د براوزر کتنه" width="400" /></a> |
 
 **د Cage اصلي انٹرفیس:**
 
@@ -133,7 +133,6 @@ Cage یوه خپلواکه ټولنه پروژه ده او د انتروپیک �
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): د کاري چاپیریال او تعامل ډیزاین لپاره حوالې.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) او [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): د شبکې چکونو او امنیت تشخیص لپاره حوالې.
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

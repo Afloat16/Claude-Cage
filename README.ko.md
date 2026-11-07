@@ -29,7 +29,7 @@ Claude Cage는 Linux 터미널, 브라우저 및 파일 편집기를 단일 데�
 
 | 네트워크 및 격리 검사 | 커뮤니티 브라우저 검사 |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="네트워크 및 격리 검사" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="커뮤니티 브라우저 검사" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="네트워크 및 격리 검사" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="커뮤니티 브라우저 검사" width="400" /></a> |
 
 **Cage의 기본 인터페이스:**
 
@@ -133,7 +133,6 @@ Cage는 독립적인 커뮤니티 프로젝트이며 Anthropic과 관련이 없�
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): 작업 환경 및 인터랙션 디자인에 대한 참고 자료입니다.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 그리고 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): 네트워크 점검 및 보안 진단을 위한 참고 자료입니다.
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

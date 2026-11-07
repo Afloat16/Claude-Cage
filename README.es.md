@@ -29,7 +29,7 @@ Claude Cage es una máquina virtual Linux liviana que combina una terminal Linux
 
 | Comprobación de red y aislamiento | Comprobación del navegador de la comunidad |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="Comprobación de red y aislamiento" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="Comprobación del navegador de la comunidad" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="Comprobación de red y aislamiento" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="Comprobación del navegador de la comunidad" width="400" /></a> |
 
 **Interfaz principal de Cage:**
 
@@ -133,7 +133,6 @@ Gracias a los siguientes proyectos por capacidades fundamentales y referencias d
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): referencias para el ambiente de trabajo y el diseño de interacción.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) y [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): referencias para comprobaciones de red y diagnósticos de seguridad.
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

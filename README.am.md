@@ -29,7 +29,7 @@ Claude Cage የሊኑክስ ተርሚናልን፣ አሳሽ እና ፋይል አ
 
 | የአውታረ መረብ እና የማግለል ምርመራዎች | የማህበረሰብ አሳሽ ምርመራ |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="የአውታረ መረብ እና የማግለል ምርመራዎች" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="የማህበረሰብ አሳሽ ምርመራ" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="የአውታረ መረብ እና የማግለል ምርመራዎች" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="የማህበረሰብ አሳሽ ምርመራ" width="400" /></a> |
 
 **የ Cage ዋና በይነገጽ**
 
@@ -133,7 +133,6 @@ Cage ራሱን የቻለ የማህበረሰብ ፕሮጀክት ነው እና ከ
 - [AIO Sandbox](https://github.com/agent-infra/sandbox) የሥራ አካባቢ እና መስተጋብር ንድፍ ማጣቀሻዎች.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) እና [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian) ለአውታረ መረብ ፍተሻዎች እና የደህንነት ምርመራዎች ማጣቀሻዎች።
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

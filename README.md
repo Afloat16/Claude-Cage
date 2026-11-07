@@ -29,7 +29,7 @@ Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Cla
 
 | 网络与隔离检查 | 浏览器环境检测（社区参考） |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="网络与隔离检查" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="浏览器环境检测（社区参考）" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="网络与隔离检查" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="浏览器环境检测（社区参考）" width="400" /></a> |
 
 **Cage 运行主界面：**
 
@@ -42,27 +42,10 @@ Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Cla
 - **看清网络状态。** 内置代理管理支持导入订阅、选择节点和检查出口。关键检查未通过时，环境保持离线；代理不可用时没有直连回退。
 - **下次继续使用。** 工具、文件和登录状态保存在虚拟磁盘里，关闭窗口可以保留后台任务。
 - **管理多个 Claude Code 订阅。** 独立登录多个账号，查看五小时和七天额度，为新建 Claude 终端分配账号；正在运行的终端保留原账号。[多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/)
-- **从手机继续处理任务。** Android / iPhone 开发客户端通过二维码或配对码连接电脑，创建和继续结构化 Claude Code 会话、处理工具审批；经电脑单独授权可使用远程浏览器。需要包含移动功能的构建，普通终端会话仍在原终端操作。[手机连接](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)
+- **从手机继续处理任务。** Android / iPhone 开发客户端通过二维码或配对码连接电脑，创建和继续结构化 Claude Code 会话、处理工具审批，以及操作远程浏览器和 Claude Desktop。需要包含移动功能的构建，普通终端会话仍在原终端操作。[手机连接](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)
 - **把环境放到自己的服务器。** 从侧栏添加 SSH 主机，核验指纹后部署或连接，在符合条件的 Linux x86_64 VPS 运行环境，无需 KVM。项目、账户和网络配置保存在服务器，断开客户端可保留任务。[云端部署与 SSH](https://lee-xeo.github.io/Claude-Cage/docs/cloud/)
 
 浏览器还提供收藏夹、无痕会话、Cookie 管理、扩展导入和密码保险箱；外观、资源上限、环境存储位置与工具更新都可以在工作台管理。各项入口、使用步骤和错误处理见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。功能以所用构建为准，手机端目前需要开发构建，公开安装包范围以对应 Release 说明为准。
-
-<details>
-<summary>查看实际应用界面（Cage 0.1.6-alpha-preview 开发构建）</summary>
-
-![Claude 账号管理入口](www/public/docs/screenshots/claude-accounts.jpg)
-
-Claude 账号管理入口，截图时环境未启动、尚未登记账号。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。
-
-![手机配对设置](www/public/docs/screenshots/mobile-pairing.jpg)
-
-手机配对与中继设置。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。
-
-![SSH 主机连接表单](www/public/docs/screenshots/ssh-host-form.jpg)
-
-SSH 主机连接表单。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。原图均为 2560 × 1764；更多分步骤截图见[使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。
-
-</details>
 
 ## 快速开始
 
@@ -156,8 +139,6 @@ Cage 是独立社区项目，与 Anthropic 无隶属关系。
 - [code-server](https://github.com/coder/code-server)：浏览器中的代码编辑器。
 - [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作环境和交互体验参考。
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：网络检查和安全诊断方法参考。
-
-## Star 增长曲线
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>

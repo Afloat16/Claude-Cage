@@ -29,7 +29,7 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 
 | فحص الشبكة والعزل | فحص المتصفح من المجتمع |
 | :---: | :---: |
-| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="فحص الشبكة والعزل" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check.png" alt="فحص المتصفح من المجتمع" width="400" /></a> |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="فحص الشبكة والعزل" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="فحص المتصفح من المجتمع" width="400" /></a> |
 
 **الواجهة الرئيسية للقفص:**
 
@@ -133,7 +133,6 @@ Cage هو مشروع مجتمعي مستقل ولا ينتمي إلى Anthropic.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع لبيئة العمل وتصميم التفاعل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع لفحوصات الشبكة والتشخيص الأمني.
 
-## Star History
 
 <a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
   <picture>
