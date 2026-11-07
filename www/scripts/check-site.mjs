@@ -47,3 +47,50 @@ for (const code of codes) {
 }
 assert.ok(!fs.existsSync(path.join(dist,'en/index.html')), 'Old English page still present');
 console.log(`Verified ${codes.length} README languages, dropdowns, directions and local assets.`);
+
+// Check actual guide pages and every cross-page anchor, including project bases.
+const guideDir = path.join(dist, 'docs');
+const guideFiles = fs.readdirSync(guideDir, { recursive: true }).filter(file => file.endsWith('index.html'));
+assert.ok(guideFiles.length >= 12, 'User guide chapters are missing');
+const guideSourceFiles = fs.readdirSync(path.join(root, 'docs/guide')).filter(file => file.endsWith('.md'));
+assert.equal(guideFiles.length, guideSourceFiles.length, 'Guide source and routes have drifted');
+for (const relative of guideFiles) {
+  const filename = path.join(guideDir, relative);
+  const html = fs.readFileSync(filename, 'utf8');
+  assert.ok(html.includes('id="guide-search"'), `${relative}: missing search`);
+  assert.ok(html.includes('id="guide-article"'), `${relative}: missing article`);
+  assert.ok(html.includes('aria-label="前后章节"'), `${relative}: missing chapter navigation`);
+  assert.ok(!html.includes('/Users/'), `${relative}: local developer path leaked`);
+  assert.ok(!html.includes('<select'), `${relative}: system popup selector remains`);
+  assert.equal([...html.matchAll(/<h1\b/g)].length, 1, `${relative}: expected one page title`);
+  const current = `/Claude-Cage/docs/${relative.replace(/index\.html$/, '').replaceAll(path.sep, '/')}`;
+  for (const match of html.matchAll(/href="([^\"]+)"/g)) {
+    const href = match[1].replaceAll('&amp;', '&');
+    if (!href.startsWith('/Claude-Cage/') && !href.startsWith('#')) continue;
+    const url = new URL(href, `https://example.test${current}`);
+    const local = decodeURIComponent(url.pathname.slice('/Claude-Cage/'.length));
+    const target = path.join(dist, !local || local.endsWith('/') ? local + 'index.html' : local);
+    assert.ok(fs.existsSync(target), `${relative}: broken guide link ${href}`);
+    if (url.hash) {
+      const targetHTML = fs.readFileSync(target, 'utf8');
+      const id = decodeURIComponent(url.hash.slice(1));
+      assert.ok(targetHTML.includes(`id="${id}"`), `${relative}: missing anchor ${href}`);
+    }
+  }
+}
+for (const code of codes) {
+  const html = fs.readFileSync(path.join(dist, code === 'zh' ? '' : code, 'index.html'), 'utf8');
+  assert.ok(html.includes('href="/Claude-Cage/docs/"'), `${code}: homepage needs a guide entry`);
+}
+console.log(`Verified ${guideFiles.length} user guide pages, local links, anchors, search and homepage entries.`);
+
+const screenshotManifest = JSON.parse(fs.readFileSync(path.join(root, 'www/public/docs/screenshots/manifest.json'), 'utf8'));
+for (const shot of screenshotManifest) {
+  assert.ok(shot.version && shot.platform && shot.capturedAt && shot.source, `${shot.id}: screenshot provenance missing`);
+  assert.ok(fs.existsSync(path.join(dist, 'docs/screenshots', shot.file)), `${shot.id}: screenshot was not shipped`);
+  const article = fs.readFileSync(path.join(guideDir, shot.chapter, 'index.html'), 'utf8');
+  assert.ok(article.includes(`src="/Claude-Cage/docs/screenshots/${shot.file}"`), `${shot.id}: broken screenshot URL`);
+  assert.ok(article.includes(shot.version), `${shot.id}: version caption missing`);
+  assert.ok(article.includes(`width="${shot.width}" height="${shot.height}"`), `${shot.id}: original dimensions missing`);
+}
+console.log(`Verified ${screenshotManifest.length} screenshots, original dimensions and version captions.`);
