@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ပါဝင်ကူညီပါ။](CONTRIBUTING.md) · [အသုံးပြုမှုလမ်းညွှန် (တရုတ်ဘာသာ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ပါဝင်ကူညီပါ။](CONTRIBUTING.md) · [အသုံးပြုမှုလမ်းညွှန် (တရုတ်ဘာသာ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
