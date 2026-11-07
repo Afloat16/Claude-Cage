@@ -1,12 +1,18 @@
-# Claude Cage
+<div align="center">
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+<h1>Claude Cage</h1>
 
 **احتفظ بالآنسة كلود في قفص، حتى نتمكن من حماية وقتنا معًا بشكل أفضل**
 
-<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
+<img src="assets/claude-cage-character.png" alt="Claude Cage" width="320" />
 
-[موقع المشروع](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [تنزيل التطبيق](https://lee-xeo.github.io/Claude-Cage/ar/#download) · [البدء](docs/getting-started.md) · [الأسئلة الشائعة](docs/troubleshooting.md) · [ساهم](CONTRIBUTING.md)
+[![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[موقع المشروع](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [تنزيل التطبيق](https://lee-xeo.github.io/Claude-Cage/ar/#download) · [البدء](docs/getting-started.md) · [الأسئلة الشائعة](docs/troubleshooting.md) · [ساهم](CONTRIBUTING.md) · [دليل الاستخدام (بالصينية)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+
+</div>
 
 ## ضقنا ذرعًا بـ Anthropic
 
@@ -21,7 +27,9 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 
 **نتائج فحص البيئة باستخدام Cage:**
 
-<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+| فحص الشبكة والعزل | فحص المتصفح من المجتمع |
+| :---: | :---: |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="فحص الشبكة والعزل" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="فحص المتصفح من المجتمع" width="400" /></a> |
 
 **الواجهة الرئيسية للقفص:**
 
@@ -33,6 +41,9 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 - **السيطرة على ما تشاركه.** تتم مشاركة مساحة العمل الافتراضية ومجلدات المشروع المفتوحة بشكل صريح فقط. لا يتم استيراد حالة تسجيل دخول Claude للمضيف وملفات تعريف المتصفح ومفاتيح SSH تلقائيًا.
 - **انظر حالة الشبكة الخاصة بك.** تتيح لك إدارة وكيل الشبكة المضمنة استيراد الاشتراكات وتحديد نقاط النهاية والتحقق من عنوان IP الخاص بالخروج. تظل البيئة غير متصلة بالإنترنت حتى تمر عمليات التحقق المهمة. إذا كان وكيل الشبكة غير متوفر، فلا يمكن الرجوع إلى الاتصال المباشر.
 - **استمر في المرة القادمة.** تستمر الأدوات والملفات وحالة تسجيل الدخول على القرص الظاهري. يمكن أن تستمر مهام الخلفية في العمل عند إغلاق النافذة.
+- **إدارة عدة حسابات Claude Code.** يُخصَّص حساب لكل طرفية Claude جديدة، ويمكن عرض حصص الاستخدام لخمس ساعات وسبعة أيام. لا تتغير حسابات الطرفيات الجاري تشغيلها تلقائيًا.
+- **متابعة العمل من الهاتف.** يتصل عميل الهاتف التطويري بالكمبيوتر لجلسات CLI المنظَّمة والموافقة على الأدوات؛ ويتطلب المتصفح البعيد إذنًا منفصلًا. يجب بناء عميل الهاتف من المصدر، ولا يتيح التحكم في أي طرفية عادية موجودة.
+- **تشغيل Cage في السحابة.** اتصل عبر SSH ببيئة Cage المنشورة على VPS متوافق يعمل بنظام Linux x86_64، دون الحاجة إلى KVM. تبقى البيانات ومخرج الشبكة على الخادم.
 
 ## بداية سريعة
 
@@ -54,7 +65,7 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 
 يشتمل برنامج التثبيت على منضدة العمل ونواة وكيل الشبكة. لا يتطلب الاستخدام اليومي تثبيت Go أو Node.js أو Docker أو Clash. لا يزال الإطلاق الأول يتطلب اتصالاً بالإنترنت لتنزيل صورة Linux وأدوات التطوير. لا يوفر Cage خدمة وكيل الشبكة ولا حساب Claude.
 
-الإصدار الحالي: `0.1.1-alpha`. كود المصدر والموقع الإلكتروني والإصدارات عامة. راجع ملاحظات كل إصدار لتوقيع المثبت وتوثيق Apple ونطاق التحقق من الصحة. لا يزال التثبيت النظيف للجهاز، والتوافق على أجهزة Mac الفعلية التي تعمل بنظام macOS 14، والترخيص الحقيقي لحساب Claude، وطلبات النماذج تتطلب التحقق الكامل من الصحة.
+راجع [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) لمعرفة الإصدارات العامة المتاحة. كود المصدر والموقع الإلكتروني والإصدارات عامة. راجع ملاحظات كل إصدار لتوقيع المثبت وتوثيق Apple ونطاق التحقق من الصحة. لا يزال التثبيت النظيف للجهاز، والتوافق على أجهزة Mac الفعلية التي تعمل بنظام macOS 14، والترخيص الحقيقي لحساب Claude، وطلبات النماذج تتطلب التحقق الكامل من الصحة.
 
 تُنزّل تحديثات macOS وWindows عبر الوكيل المختار دون اتصال مباشر احتياطي. احفظ العمل وأوقف المهام قبل التثبيت. يتطلب macOS توقيع Developer ID من الناشر نفسه والتحقق من Apple؛ ويتطلب Windows توقيع Authenticode موثوقًا ومفتاح الناشر العام نفسه. تُحدّث نسخة Windows التجريبية غير الموقعة وحزم Linux يدويًا. [التحديث وإلغاء التثبيت](docs/getting-started.md#升级与卸载).
 
@@ -96,7 +107,9 @@ Claude Cage عبارة عن جهاز Linux افتراضي خفيف الوزن ي
 
 المشروع يتطور بسرعة. انضم إلى مجموعة المجتمع لمشاركة التعليقات؛ مشرفو المجتمع مرحب بهم.
 
-<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+<p align="center">
+  <a href="assets/community-qq.png"><img src="assets/community-qq.png" alt="QQ · 1134250870" width="240" /></a>
+</p>
 
 ## الأصول والترخيص
 
@@ -119,3 +132,12 @@ Cage هو مشروع مجتمعي مستقل ولا ينتمي إلى Anthropic.
 - [code-server](https://github.com/coder/code-server): محرر التعليمات البرمجية القائم على المتصفح.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع لبيئة العمل وتصميم التفاعل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع لفحوصات الشبكة والتشخيص الأمني.
+
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

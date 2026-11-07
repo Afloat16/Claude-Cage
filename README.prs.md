@@ -1,12 +1,18 @@
-# Claude Cage
+<div align="center">
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+<h1>Claude Cage</h1>
 
 **خانم Claude را در Cage نگه دارید تا بتوانیم از زمان با هم بودنمان بهتر محافظت کنیم**
 
-<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
+<img src="assets/claude-cage-character.png" alt="Claude Cage" width="320" />
 
-[وب سایت پروژه](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [دانلود برنامه](https://lee-xeo.github.io/Claude-Cage/prs/#download) · [شروع کردن](docs/getting-started.md) · [سوالات متداول](docs/troubleshooting.md) · [مشارکت کنید](CONTRIBUTING.md)
+[![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[وب سایت پروژه](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [دانلود برنامه](https://lee-xeo.github.io/Claude-Cage/prs/#download) · [شروع کردن](docs/getting-started.md) · [سوالات متداول](docs/troubleshooting.md) · [مشارکت کنید](CONTRIBUTING.md) · [رهنمای استفاده (چینی)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+
+</div>
 
 ## از Anthropic خسته شده‌ایم
 
@@ -21,7 +27,9 @@ Claude Cage یک ماشین مجازی لینوکس سبک وزن است که ت
 
 **نتایج بررسی محیط با Cage:**
 
-<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+| بررسی شبکه و جداسازی | بررسی مرورگر توسط جامعۀ کاربران |
+| :---: | :---: |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="بررسی شبکه و جداسازی" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="بررسی مرورگر توسط جامعۀ کاربران" width="400" /></a> |
 
 **رابط اصلی Cage:**
 
@@ -33,6 +41,9 @@ Claude Cage یک ماشین مجازی لینوکس سبک وزن است که ت
 - **آنچه را که به اشتراک می گذارید کنترل کنید.** فقط فضای کاری پیش‌فرض و فولدر‌های پروژه به‌صراحت باز شده به اشتراک گذاشته می‌شوند. وضعیت ورود به سیستم Claude میزبان، نمایه‌های مرورگر و کلیدهای SSH به‌طور خودکار وارد نمی‌شوند.
 - **وضعیت شبکه خود را ببینید.** مدیریت پروکسی شبکه داخلی به شما امکان می‌دهد اشتراک‌ها را وارد کنید، نقاط پایانی را انتخاب کنید و IP خروجی را بررسی کنید. محیط آفلاین می‌ماند تا زمانی که بررسی‌های حیاتی با موفقیت انجام شوند. اگر پراکسی شبکه در دسترس نباشد، هیچ بازگشتی به اتصال مستقیم وجود ندارد.
 - **دفعه بعد ادامه بده** ابزارها، فایل‌ها و وضعیت ورود به سیستم روی دیسک مجازی باقی می‌مانند. وقتی پنجره را می‌بندید، کارهای پس‌زمینه می‌توانند همچنان اجرا شوند.
+- **چند حساب Claude Code را مدیریت کنید.** به ترمینال‌های جدید Claude حساب اختصاص دهید و سهمیه‌های ۵ ساعته و ۷ روزه را ببینید. حساب ترمینال‌های در حال اجرا خودکار عوض نمی‌شود.
+- **کار را از تیلفون ادامه دهید.** کلاینت توسعهٔ موبایل به کمپیوتر وصل می‌شود تا نشست‌های ساختاریافتهٔ CLI و تأیید ابزارها را مدیریت کنید؛ مرورگر راه دور اجازهٔ جداگانه می‌خواهد. باید نسخهٔ توسعهٔ موبایل را از کد منبع بسازید؛ این قابلیت هر ترمینال معمولی موجود را در اختیار نمی‌گیرد.
+- **Cage را در فضای ابری اجرا کنید.** از طریق SSH به Cage مستقر روی VPS سازگار با Linux x86_64 وصل شوید؛ KVM لازم نیست. داده‌ها و خروجی شبکه روی سرور قرار دارند.
 
 ## شروع سریع
 
@@ -54,7 +65,7 @@ Cage از macOS، Windows و Linux پشتیبانی می‌کند: Apple Silicon
 
 نصب کننده شامل میز کار و هسته پروکسی شبکه است. استفاده روزانه نیازی به نصب Go، Node.js، Docker یا Clash ندارد. اولین راه‌اندازی همچنان به اتصال اینترنت برای دانلود تصویر لینوکس و ابزارهای توسعه نیاز دارد. Cage نه سرویس پروکسی شبکه و نه حساب Claude ارائه می دهد.
 
-نسخه فعلی: `0.1.1-alpha`. کد منبع، وب‌سایت و نسخه‌ها عمومی هستند. به یادداشت‌های هر نسخه برای امضای نصب‌کننده، تأیید اسناد رسمی اپل و دامنه اعتبارسنجی مراجعه کنید. نصب ماشین تمیز، سازگاری در مک های فیزیکی دارای سیستم عامل macOS 14، مجوز واقعی حساب Claude، و درخواست های مدل هنوز به تأیید کامل نیاز دارند.
+برای نسخه‌های عمومی موجود، [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) را ببینید. کد منبع، وب‌سایت و نسخه‌ها عمومی هستند. به یادداشت‌های هر نسخه برای امضای نصب‌کننده، تأیید اسناد رسمی اپل و دامنه اعتبارسنجی مراجعه کنید. نصب ماشین تمیز، سازگاری در مک های فیزیکی دارای سیستم عامل macOS 14، مجوز واقعی حساب Claude، و درخواست های مدل هنوز به تأیید کامل نیاز دارند.
 
 به‌روزرسانی macOS و Windows از پراکسی انتخاب‌شده دریافت می‌شود و به اتصال مستقیم برنمی‌گردد. پیش از نصب، کار را ذخیره و متوقف کنید. macOS به امضای Developer ID همان ناشر و تأیید Apple نیاز دارد؛ Windows به امضای معتبر Authenticode و همان کلید عمومی ناشر نیاز دارد. نسخۀ آزمایشی بدون امضای Windows و بسته‌های Linux دستی به‌روز می‌شوند. [به‌روزرسانی و حذف](docs/getting-started.md#升级与卸载).
 
@@ -96,7 +107,9 @@ Cage از macOS، Windows و Linux پشتیبانی می‌کند: Apple Silicon
 
 این پروژه به سرعت در حال پیشرفت است. برای به اشتراک گذاشتن بازخورد به گروه جامعه بپیوندید. از نگهبانان جامعه استقبال می شود.
 
-<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+<p align="center">
+  <a href="assets/community-qq.png"><img src="assets/community-qq.png" alt="QQ · 1134250870" width="240" /></a>
+</p>
 
 ## مبدا و مجوز
 
@@ -119,3 +132,12 @@ Cage یک پروژه اجتماعی مستقل است و به آنتروپیک �
 - [code-server](https://github.com/coder/code-server): ویرایشگر کد مبتنی بر مرورگر.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): مراجع برای طراحی محیط کار و تعامل.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) و [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): مراجع برای بررسی شبکه و تشخیص امنیتی.
+
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

@@ -7,7 +7,6 @@
 #   make test         the Go tests
 #   make check-windows      the Windows build and tests compile and vet, from any OS
 #   make test-third-party   the tests of the modules in third_party/, patched
-#   make check-third-party  third_party/ is upstream plus patches/, nothing else
 
 GO ?= go
 GOOS ?= $(shell $(GO) env GOOS)
@@ -15,7 +14,7 @@ GOARCH ?= $(shell $(GO) env GOARCH)
 # Cage's VERSION file owns the default. Upstream release tooling can still
 # supply VERSION explicitly when building a historical agent-vm tag.
 VERSION ?= $(shell tr -d '\r\n' < VERSION)
-LIMA_VERSION := $(shell awk '$$1 == "lima" { print $$4 }' third_party/SOURCES)
+LIMA_VERSION := $(shell cat internal/limaembed/lima-version)
 
 ifeq ($(GOARCH),amd64)
 GUEST_ARCH := x86_64
@@ -45,7 +44,7 @@ CGO_ENABLED ?= 0
 endif
 GO_BUILD := CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -tags $(TAGS) -ldflags "$(LDFLAGS)"
 
-.PHONY: all agent-vm install limactl assets test test-go check-windows test-third-party check-third-party fuzz clean
+.PHONY: all agent-vm install limactl assets test test-go check-windows test-third-party fuzz clean
 
 all: agent-vm
 
@@ -126,9 +125,6 @@ test-third-party:
 	$(GO) test -race github.com/lima-vm/sshocker/pkg/...
 	$(GO) test $$($(GO) list -e github.com/lima-vm/lima/v2/pkg/... | grep -v /mcp)
 	$(GO) test github.com/containers/gvisor-tap-vsock/pkg/...
-
-check-third-party:
-	scripts/third-party-sync all --check
 
 # Each fuzzer for FUZZTIME (their seeds run with the tests). The vendored
 # sshocker's through tests/fuzz/go.work, which makes it fuzzable.

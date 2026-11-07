@@ -1,18 +1,24 @@
-# Claude Cage
+<div align="center">
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+<h1>Claude Cage</h1>
 
 **把 Claude 大小姐关起来，为了更好地保护我们的相遇**
 
-<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
+<img src="assets/claude-cage-character.png" alt="Claude Cage" width="320" />
 
-[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下载应用](https://lee-xeo.github.io/Claude-Cage/#download) · [开始使用](docs/getting-started.md) · [常见问题](docs/troubleshooting.md) · [参与开发](CONTRIBUTING.md)
+[![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下载应用](https://lee-xeo.github.io/Claude-Cage/#download) · [使用文档](https://lee-xeo.github.io/Claude-Cage/docs/) · [常见问题](https://lee-xeo.github.io/Claude-Cage/docs/troubleshooting/) · [参与开发](CONTRIBUTING.md)**
+
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+
+</div>
 
 ## 受够了 Anthropic
 
 作为一个只是想和 Claude 对话与合作的正常用户，受够了折腾各种 VPS，指纹浏览器，环境检测，面对封号的担惊受怕和财产损失。我们提出 **Claude Cage** 项目：**一个开箱即用的桌面程序，配置好自己的网络代理，集中管理隔离环境、时区语言和环境检查。**
 
-Claude Cage 是一个轻量 Linux 虚拟机，把 Linux 终端、浏览器和文件编辑器放进同一个桌面应用。支持以下几个重点功能：
+Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Claude Desktop 放进同一个桌面工作台。可以在本机运行轻量虚拟机，也可以通过 SSH 将工作环境部署到自己的 Linux 服务器；手机开发客户端可连接电脑，处理 Claude Code 会话与工具审批。支持以下几个重点功能：
 
 - 和主机隔离的网络设置，Cage 自己接管和代理内部的所有网络流量
 - 和主机隔离的指纹设置，包括时区、语言等，支持自动与代理 IP 同步
@@ -21,7 +27,9 @@ Claude Cage 是一个轻量 Linux 虚拟机，把 Linux 终端、浏览器和文
 
 **使用 Cage 的环境检测结果：**
 
-<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+| 网络与隔离检查 | 浏览器环境检测（社区参考） |
+| :---: | :---: |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="网络与隔离检查" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="浏览器环境检测（社区参考）" width="400" /></a> |
 
 **Cage 运行主界面：**
 
@@ -33,6 +41,11 @@ Claude Cage 是一个轻量 Linux 虚拟机，把 Linux 终端、浏览器和文
 - **控制共享范围。** 只共享默认工作区和明确打开的项目文件夹；主机的 Claude 登录、浏览器配置和 SSH 密钥不会自动导入。
 - **看清网络状态。** 内置代理管理支持导入订阅、选择节点和检查出口。关键检查未通过时，环境保持离线；代理不可用时没有直连回退。
 - **下次继续使用。** 工具、文件和登录状态保存在虚拟磁盘里，关闭窗口可以保留后台任务。
+- **管理多个 Claude Code 订阅。** 独立登录多个账号，查看五小时和七天额度，为新建 Claude 终端分配账号；正在运行的终端保留原账号。[多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/)
+- **从手机继续处理任务。** Android / iPhone 开发客户端通过二维码或配对码连接电脑，创建和继续结构化 Claude Code 会话、处理工具审批，以及操作远程浏览器和 Claude Desktop。需要包含移动功能的构建，普通终端会话仍在原终端操作。[手机连接](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)
+- **把环境放到自己的服务器。** 从侧栏添加 SSH 主机，核验指纹后部署或连接，在符合条件的 Linux x86_64 VPS 运行环境，无需 KVM。项目、账户和网络配置保存在服务器，断开客户端可保留任务。[云端部署与 SSH](https://lee-xeo.github.io/Claude-Cage/docs/cloud/)
+
+浏览器还提供收藏夹、无痕会话、Cookie 管理、扩展导入和密码保险箱；外观、资源上限、环境存储位置与工具更新都可以在工作台管理。各项入口、使用步骤和错误处理见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。功能以所用构建为准，手机端目前需要开发构建，公开安装包范围以对应 Release 说明为准。
 
 ## 快速开始
 
@@ -54,7 +67,7 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
 
-当前版本为 `0.1.5-alpha.2`。源码、主页与发行物公开；安装包的签名、公证和验收范围以对应 Release 说明为准。干净机器安装、macOS 14 实机兼容性、真实 Claude 授权与模型请求仍需完整验收。
+源码、主页与发行物公开；可下载版本、功能、签名、公证和平台验收范围以[公开 Release](https://github.com/Lee-xeo/Claude-Cage/releases)说明为准。源码中的新增能力可能尚未进入公开包，手机开发客户端的安装与连接方式见[移动端文档](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)。
 
 支持应用内更新的 macOS 和 Windows 版本通过所选代理下载，无直连回退；安装前请保存并停止任务。macOS 要求同一发布者的 Developer ID 签名并通过 Apple 验证，Windows 要求可信 Authenticode 签名和相同发布者公钥。Windows 未签名预览版和 Linux 系统包需手动更新。详见[升级与卸载](docs/getting-started.md#升级与卸载)。
 
@@ -83,20 +96,27 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 ## 文档与贡献
 
-完整入口见[文档导航](docs/README.md)。
+面向用户的[官网使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)支持按功能浏览、搜索与章节直达。源码与设计资料见[仓库文档导航](docs/README.md)。
 
 | 你要做什么 | 从这里开始 |
 |---|---|
-| 第一次安装、配置代理、打开项目 | [开始使用](docs/getting-started.md) |
-| 处理下载、启动、联网和登录问题 | [常见问题与恢复](docs/troubleshooting.md) |
-| 了解按键、外观、数据保存和退出行为 | [日常使用](docs/getting-started.md#日常使用) |
+| 第一次安装、配置代理、打开项目 | [安装与首次启动](https://lee-xeo.github.io/Claude-Cage/docs/installation/) |
+| 添加多个订阅、查看额度和分配终端 | [多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/) |
+| 手机扫码、工具审批、远程浏览器 | [手机连接与远程会话](https://lee-xeo.github.io/Claude-Cage/docs/mobile/) |
+| 在自己的 VPS 部署和连接环境 | [云端部署与 SSH](https://lee-xeo.github.io/Claude-Cage/docs/cloud/) |
+| 了解每一项设置及何时生效 | [设置参考](https://lee-xeo.github.io/Claude-Cage/docs/settings/) |
+| 维护存储、资源、更新与备份 | [维护、资源与数据](https://lee-xeo.github.io/Claude-Cage/docs/maintenance/) |
+| 处理下载、启动、联网和登录问题 | [故障排查](https://lee-xeo.github.io/Claude-Cage/docs/troubleshooting/) |
+| 了解文件、按键和关闭与退出行为 | [项目、终端与文件](https://lee-xeo.github.io/Claude-Cage/docs/workbench/) |
 | 从源码构建或提交改进 | [贡献指南](CONTRIBUTING.md) |
 | 了解模块与网络约束 | [工作台设计](docs/design/workbench.md) |
 | 报告可复现问题 | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 本项目仍在快速迭代中，欢迎加入交流群提意见，欢迎社区大佬一起维护
 
-<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+<p align="center">
+  <a href="assets/community-qq.png"><img src="assets/community-qq.png" alt="Claude Cage QQ 交流群二维码（群号：1134250870）" width="240" /></a>
+</p>
 
 ## 来源与许可
 
@@ -119,3 +139,11 @@ Cage 是独立社区项目，与 Anthropic 无隶属关系。
 - [code-server](https://github.com/coder/code-server)：浏览器中的代码编辑器。
 - [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作环境和交互体验参考。
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：网络检查和安全诊断方法参考。
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage 的 GitHub Star 增长曲线" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

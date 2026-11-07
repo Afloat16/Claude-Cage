@@ -1,12 +1,18 @@
-# Claude Cage
+<div align="center">
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+<h1>Claude Cage</h1>
 
 **Ku hay Miss Claude qafis, si aan si wanaagsan u ilaalin karno waqtigeena wada jirka ah**
 
-<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
+<img src="assets/claude-cage-character.png" alt="Claude Cage" width="320" />
 
-[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Soo dejiso abka](https://lee-xeo.github.io/Claude-Cage/so/#download) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Wax ku darso](CONTRIBUTING.md)
+[![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Soo dejiso abka](https://lee-xeo.github.io/Claude-Cage/so/#download) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Wax ku darso](CONTRIBUTING.md) · [Hagaha isticmaalka (Shiine)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+
+</div>
 
 ## Waan ka daalnay Anthropic
 
@@ -21,7 +27,9 @@ Claude Cage waa mashiin macmal ah oo Linux ah oo fudud kaas oo isku dara termina
 
 **Natiijooyinka hubinta deegaanka ee Cage:**
 
-<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+| Hubinta shabakadda iyo go’doominta | Hubinta biraawsarka ee bulshada |
+| :---: | :---: |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="Hubinta shabakadda iyo go’doominta" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="Hubinta biraawsarka ee bulshada" width="400" /></a> |
 
 **Interface ugu weyn ee Cage:**
 
@@ -33,6 +41,9 @@ Claude Cage waa mashiin macmal ah oo Linux ah oo fudud kaas oo isku dara termina
 - **Xakamee waxa aad wadaagto.** Kaliya goobta shaqada ee caadiga ah iyo galka mashruuca ee si cad loo furay ayaa la wadaagaa. Xaaladda soo galitaanka Claude ee martida loo yahay, boggaga browserka, iyo furayaasha SSH si toos ah looma soo dejiyo.
 - **Eeg heerka shabakadaada** Maaraynta wakiilnimada shabakada ee ku dhex jirta ayaa kuu ogolaanaysa inaad soo dejiso rukunsiyada, dooro meelaha dhamaadka, oo aad hubiso IP-ga ka baxa. Deegaanku internetka kuma xirmayo ilaa hubinnada muhiimka ahi ay si guul leh u gudbaan. Haddii wakiillada shabakadu maqan tahay, ma dhacayso xiriir toos ah.
 - **Sii wad marka xigta** Qalabka, faylalka, iyo xaaladda gelitaanku waxay ku sii jiraan saxanka casriga ah. Hawlaha asalka ahi waxay sii socon karaan markaad daaqadda xidhid.
+- **Maamul akoonno badan oo Claude Code ah.** Akoon ayaa loo qoondeeyaa terminal kasta oo Claude ah oo cusub; waxaad arki kartaa qoondada 5 saacadood iyo 7 maalmood. Akoonka terminal socda si toos ah isuma beddelo.
+- **Shaqada ka sii wad telefoonka.** Macmiilka moobilka ee horumarinta wuxuu ku xirmaa kombiyuutarka si loo adeegsado kulamada CLI ee habaysan iyo oggolaanshaha qalabka; biraawsarka fog wuxuu u baahan yahay oggolaansho gaar ah. Waa inaad macmiilka moobilka ka dhistaa koodhka isha; ma maamulo terminal kasta oo caadi ah oo hore u furnaa.
+- **Cage ku socodsii daruurta.** SSH kaga xirmo Cage lagu rakibay VPS ku habboon oo Linux x86_64 ah, adigoon u baahnayn KVM. Xogta iyo halka shabakadu ka baxdo waxay ku yaallaan serverka.
 
 ## Bilaw degdeg ah
 
@@ -54,7 +65,7 @@ Cage wuxuu taageeraa macOS, Windows iyo Linux: Apple Silicon oo leh macOS 14+, W
 
 Rakibahu waxa ka mid ah bench-ka shaqada iyo xudunta wakiilka network. Isticmaalka maalinlaha ah uma baahna rakibida Go, Node.js, Docker, ama Clash. Daahfurka ugu horreeya wuxuu weli u baahan yahay isku xirka internetka si loo soo dejiyo sawirka Linux iyo aaladaha horumarinta. Cage ma bixiso adeeg wakiil shabakad ama akoon Claude.
 
-Nooca hadda: `0.1.1-alpha`. Koodhka isha, mareegaha, iyo sii daynta waa dadwayne. Tixraac qoraalada sii daynta kasta ee saxeexa rakibaha, notarization Apple, iyo baaxadda ansixinta. Ku rakibida mashiinka nadiifka ah, waafaqid ku saabsan Macs-ka jireed ee ku shaqeeya macOS 14, oggolaanshaha koontada Claude dhabta ah, iyo codsiyada moodeelka ayaa wali u baahan ansaxinta buuxda.
+Noocyada dadweynaha ee la heli karo ka eeg [Releases](https://github.com/Lee-xeo/Claude-Cage/releases). Koodhka isha, mareegaha, iyo sii daynta waa dadwayne. Tixraac qoraalada sii daynta kasta ee saxeexa rakibaha, notarization Apple, iyo baaxadda ansixinta. Ku rakibida mashiinka nadiifka ah, waafaqid ku saabsan Macs-ka jireed ee ku shaqeeya macOS 14, oggolaanshaha koontada Claude dhabta ah, iyo codsiyada moodeelka ayaa wali u baahan ansaxinta buuxda.
 
 Cusboonaysiinta macOS iyo Windows waxay adeegsataa wakiilka la doortay, iyada oo aan loo noqon xiriir toos ah. Kaydi shaqada oo jooji hawlaha ka hor rakibidda. macOS wuxuu u baahan yahay saxiixa Developer ID ee isla daabacaha iyo xaqiijinta Apple; Windows wuxuu u baahan yahay Authenticode la aamini karo iyo isla furaha guud ee daabacaha. Nooca Windows ee aan saxiixnayn iyo Linux gacanta ayaa loo cusboonaysiiyaa. [Cusboonaysiin iyo saarid](docs/getting-started.md#升级与卸载).
 
@@ -96,7 +107,9 @@ Si aad u hesho tusmada buuxda, eeg [Tusmada dhokumentiyada](docs/README.md).
 
 Mashruucu si xawli ah ayuu u socdaa. Ku biir kooxda bulshada si aad ula wadaagto jawaab celinta; ilaaliyayaasha bulshada waa la soo dhawaynayaa.
 
-<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+<p align="center">
+  <a href="assets/community-qq.png"><img src="assets/community-qq.png" alt="QQ · 1134250870" width="240" /></a>
+</p>
 
 ## Asalka iyo shatiga
 
@@ -119,3 +132,12 @@ Waad ku mahadsan tahay mashaariicda soo socota ee kartida aasaasiga ah iyo tixra
 - [code-server](https://github.com/coder/code-server): tifaftiraha koodhka ku salaysan browserka.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): tixraacyada jawiga shaqada iyo naqshadeynta isdhexgalka.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) iyo [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): tixraacyada hubinta shabakada iyo ogaanshaha amniga.
+
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

@@ -25,7 +25,7 @@ for (const [path, entry] of Object.entries(lock.packages)) {
 }
 writeFileSync(join(target, "npm", "NOTICE.txt"), `${notices.join("\n")}\n`);
 const novnc = join(root, "ui/vendor/novnc");
-for (const file of ["LICENSE.txt", "AUTHORS", "README.cage.md", "docs", "vendor/pako/LICENSE"]) {
+for (const file of ["LICENSE.txt", "AUTHORS", "NOTICE.cage", "docs", "vendor/pako/LICENSE"]) {
   mkdirSync(join(target, "novnc", file.includes("/") ? file.slice(0, file.lastIndexOf("/")) : ""), { recursive: true });
   cpSync(join(novnc, file), join(target, "novnc", file), { recursive: true });
 }

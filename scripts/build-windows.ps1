@@ -29,7 +29,7 @@ try {
         Invoke-BuildTool $npm @('--prefix', 'ui', 'ci', '--no-audit', '--no-fund')
         Invoke-BuildTool $npm @('run', '--prefix', 'ui', 'build')
     }
-    $limaVersion = ((Get-Content 'third_party/SOURCES' | Where-Object { $_ -match '^lima\s' }) -split '\s+')[3]
+    $limaVersion = (Get-Content 'internal/limaembed/lima-version' -Raw).Trim()
     $assets = Join-Path $repository 'internal/limaembed/assets'
     $guest = Join-Path $assets 'lima-guestagent.Linux-x86_64'
     $env:GOOS = 'linux'; $env:GOARCH = 'amd64'; $env:CGO_ENABLED = '0'

@@ -1,12 +1,18 @@
-# Claude Cage
+<div align="center">
 
-[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+<h1>Claude Cage</h1>
 
 **አብረን ጊዜያችንን በተሻለ ሁኔታ ለመጠበቅ ሚስ Claudeን በቅርጫት ውስጥ አቆይ**
 
-<img src="assets/claude-cage-character.png" alt="hugo" style="zoom: 25%;" />
+<img src="assets/claude-cage-character.png" alt="Claude Cage" width="320" />
 
-[የፕሮጀክት ድር ጣቢያ](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [መተግበሪያውን ያውርዱ](https://lee-xeo.github.io/Claude-Cage/am/#download) · [በመጀመር ላይ](docs/getting-started.md) · [የሚጠየቁ ጥያቄዎች](docs/troubleshooting.md) · [አዋጡ](CONTRIBUTING.md)
+[![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
+**[የፕሮጀክት ድር ጣቢያ](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [መተግበሪያውን ያውርዱ](https://lee-xeo.github.io/Claude-Cage/am/#download) · [በመጀመር ላይ](docs/getting-started.md) · [የሚጠየቁ ጥያቄዎች](docs/troubleshooting.md) · [አዋጡ](CONTRIBUTING.md) · [የአጠቃቀም መመሪያ (በቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+
+[简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
+
+</div>
 
 ## በAnthropic ተሰላችተናል
 
@@ -21,7 +27,9 @@ Claude Cage የሊኑክስ ተርሚናልን፣ አሳሽ እና ፋይል አ
 
 **በ Cage የአካባቢ ፍተሻ ውጤቶች፡-**
 
-<img src="assets/network-checks.png" alt="image-20261101144540952" style="zoom:25%;" /><img src="assets/community-browser-check.png" alt="image-20261101144620093" style="zoom:18%;" />
+| የአውታረ መረብ እና የማግለል ምርመራዎች | የማህበረሰብ አሳሽ ምርመራ |
+| :---: | :---: |
+| <a href="assets/network-checks.png"><img src="assets/network-checks.png" alt="የአውታረ መረብ እና የማግለል ምርመራዎች" width="400" /></a> | <a href="assets/community-browser-check.png"><img src="assets/community-browser-check-cropped.png" alt="የማህበረሰብ አሳሽ ምርመራ" width="400" /></a> |
 
 **የ Cage ዋና በይነገጽ**
 
@@ -33,6 +41,9 @@ Claude Cage የሊኑክስ ተርሚናልን፣ አሳሽ እና ፋይል አ
 - **የሚያጋሩትን ይቆጣጠሩ።** ነባሪው የስራ ቦታ እና በግልፅ የተከፈቱ የፕሮጀክት ማህደሮች ብቻ ነው የሚጋሩት። የአስተናጋጁ Claude የመግባት ሁኔታ፣ የአሳሽ መገለጫዎች እና የኤስኤስኤች ቁልፎች በራስ ሰር አይመጡም።
 - **የአውታረ መረብ ሁኔታዎን ይመልከቱ።** አብሮገነብ የአውታረ መረብ ተኪ አስተዳደር የደንበኝነት ምዝገባዎችን እንድታስመጣ፣ የመጨረሻ ነጥቦችን እንድትመርጥ እና መውጫውን አይፒ እንድታረጋግጥ ያስችልሃል። ወሳኝ ፍተሻዎች እስኪያልፍ ድረስ አካባቢው ከመስመር ውጭ ይቆያል። የአውታረ መረቡ ተኪ የማይገኝ ከሆነ ቀጥታ ግንኙነት ወደ ኋላ መመለስ የለም።
 - **በሚቀጥለው ጊዜ ይቀጥሉ.** መሳሪያዎች፣ ፋይሎች እና የመግባት ሁኔታ በምናባዊ ዲስክ ላይ ይቆያሉ። መስኮቱን ሲዘጉ የበስተጀርባ ተግባራት መሮጥ ይችላሉ።
+- **ብዙ የClaude Code መለያዎችን ያስተዳድሩ።** ለአዲስ Claude ተርሚናሎች መለያ ይመደባል፤ የ5 ሰዓትና የ7 ቀን የአጠቃቀም ገደቦችን ማየት ይችላሉ። እየሠሩ ያሉ ተርሚናሎች መለያ በራስ-ሰር አይቀይሩም።
+- **ከስልክዎ ሥራ ይቀጥሉ።** የልማት ሞባይል ክላየንት ከኮምፒውተሩ ጋር በመገናኘት የተዋቀሩ CLI ክፍለ ጊዜዎችንና የመሣሪያ ማጽደቆችን ያቀርባል፤ የርቀት አሳሽ የተለየ ፈቃድ ይፈልጋል። የሞባይል ክላየንቱን ከምንጭ ኮድ መገንባት ያስፈልጋል፤ ማንኛውንም መደበኛ ተርሚናል አይቆጣጠርም።
+- **Cage በደመና ያስኪዱ።** መስፈርቶቹን በሚያሟላ Linux x86_64 VPS ላይ ከተጫነ Cage ጋር በSSH ይገናኙ፤ KVM አያስፈልግም። ውሂብና የአውታረ መረብ መውጫ በአገልጋዩ ላይ ናቸው።
 
 ## ፈጣን ጅምር
 
@@ -54,7 +65,7 @@ Cage macOS፣ Windows እና Linux ይደግፋል፦ Apple Silicon ከ macOS 14
 
 ጫኚው የስራ ቤንች እና የኔትወርክ ፕሮክሲ ኮርን ያካትታል። ዕለታዊ አጠቃቀም Go፣ Node.js፣ Docker ወይም Clash መጫን አያስፈልገውም። መጀመሪያ ማስጀመር የሊኑክስን ምስል እና የግንባታ መሳሪያዎችን ለማውረድ አሁንም የበይነመረብ ግንኙነት ይፈልጋል። Cage የኔትወርክ ተኪ አገልግሎትም ሆነ የClaude መለያ አይሰጥም።
 
-የአሁኑ ስሪት፡ `0.1.1-alpha`. የምንጭ ኮድ፣ ድር ጣቢያ እና የተለቀቁት ይፋዊ ናቸው። ለጫኚ ፊርማ፣ አፕል ኖተራይዜሽን እና የማረጋገጫ ወሰን የእያንዳንዱን ልቀት ማስታወሻ ይመልከቱ። ንጹህ ማሽን መጫን፣ macOS 14 ን በሚያሄዱ አካላዊ Macs ላይ ተኳሃኝነት፣ የእውነተኛ Claude መለያ ፈቃድ እና የሞዴል ጥያቄዎች አሁንም ሙሉ ማረጋገጫ ያስፈልጋቸዋል።
+የሚገኙ ይፋዊ ስሪቶችን በ [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) ይመልከቱ። የምንጭ ኮድ፣ ድር ጣቢያ እና የተለቀቁት ይፋዊ ናቸው። ለጫኚ ፊርማ፣ አፕል ኖተራይዜሽን እና የማረጋገጫ ወሰን የእያንዳንዱን ልቀት ማስታወሻ ይመልከቱ። ንጹህ ማሽን መጫን፣ macOS 14 ን በሚያሄዱ አካላዊ Macs ላይ ተኳሃኝነት፣ የእውነተኛ Claude መለያ ፈቃድ እና የሞዴል ጥያቄዎች አሁንም ሙሉ ማረጋገጫ ያስፈልጋቸዋል።
 
 የ macOS እና Windows ዝማኔዎች በተመረጠው ፕሮክሲ ይወርዳሉ፤ ወደ ቀጥታ ግንኙነት አይቀየሩም። ከመጫን በፊት ሥራውን ያስቀምጡ እና ያቁሙ። macOS የተመሳሳይ አሳታሚ Developer ID ፊርማ እና የ Apple ማረጋገጫ ይፈልጋል፤ Windows የታመነ Authenticode ፊርማ እና የተመሳሳይ አሳታሚ ይፋዊ ቁልፍ ይፈልጋል። ያልተፈረመ Windows ቅድመ እይታ እና Linux በእጅ ይዘምናሉ። [ማዘመን እና ማስወገድ](docs/getting-started.md#升级与卸载)።
 
@@ -96,7 +107,9 @@ Cage macOS፣ Windows እና Linux ይደግፋል፦ Apple Silicon ከ macOS 14
 
 ፕሮጀክቱ በፍጥነት እያደገ ነው. ግብረመልስ ለማጋራት የማህበረሰብ ቡድኑን ይቀላቀሉ; የማህበረሰብ ጠባቂዎች እንኳን ደህና መጡ።
 
-<img src="assets/community-qq.png" alt="qq" style="zoom:25%;" />
+<p align="center">
+  <a href="assets/community-qq.png"><img src="assets/community-qq.png" alt="QQ · 1134250870" width="240" /></a>
+</p>
 
 ## አመጣጥ እና ፈቃድ
 
@@ -119,3 +132,12 @@ Cage ራሱን የቻለ የማህበረሰብ ፕሮጀክት ነው እና ከ
 - [code-server](https://github.com/coder/code-server): በአሳሽ ላይ የተመሰረተ ኮድ አርታዒ.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox) የሥራ አካባቢ እና መስተጋብር ንድፍ ማጣቀሻዎች.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) እና [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian) ለአውታረ መረብ ፍተሻዎች እና የደህንነት ምርመራዎች ማጣቀሻዎች።
+
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>
