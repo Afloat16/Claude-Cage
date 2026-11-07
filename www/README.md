@@ -29,6 +29,8 @@ GitHub Pages 是当前主页的发布目标，部署配置由仓库工作流维�
 
 手册提供侧栏、手机内嵌目录、页内目录、全文搜索及无结果恢复；关闭 JavaScript 后仍可阅读和跳转。搜索只在当前浏览器中执行，不向服务器发送输入。主页所有语言入口可进入中文手册，手册未提供其他语言译文。
 
+实际应用截图保存在 `public/docs/screenshots/`，原始像素、版本、平台、日期与来源说明集中在同目录的 `manifest.json`。正文通过带图注的 `figure` 引用，并链接原图；`src/lib/guide.ts` 将仓库相对图片路径转为站点基路径。新增截图必须核对实际构建版本及敏感内容，开发构建、模拟器预览和历史版本分别标注，不用当前版本补标旧图。原图保持截图工具输出，不能把模拟账号或额度当作真实运行结果。
+
 完成构建后运行 `node scripts/check-site.mjs` 核对主页、文章、章节锚点和下载入口。交互验证使用 `node scripts/guide-smoke.mjs`，可用 `CAGE_PLAYWRIGHT_MODULE` 指定现有 Playwright；`CAGE_SITE_URL` 指向本地或线上站点，`CAGE_SITE_REPORT` 指定截图目录。
 
 维护者明确授权 Windows 未签名公开预览后，可手动运行 `platform-preview.yml`，提供已经成功的三平台 CI run ID 并启用 `unsigned_windows`。流程从该次 CI 获取安装包，核对源码版本、原始摘要、配套源码和上传后的 GitHub digest，补充到已存在的 `v<版本>` 预发行条目，合并校验清单并记录各平台源码提交，随后调用官网验收与部署。流程不创建新 Release 或标签，日常推送不触发发布，现有 macOS 安装包不被覆盖。

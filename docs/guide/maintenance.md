@@ -11,6 +11,11 @@ keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 �
 
 云端的数据在服务器上，包含配置、项目及容器引擎的持久文件系统。本机只保留连接和明确下载的副本。不要仅备份一份账户文件，或把重建账户当作恢复。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/environment-maintenance.jpg" target="_blank" rel="noopener" aria-label="查看原图：环境存储位置与版本组件入口"><img src="../../www/public/docs/screenshots/environment-maintenance.jpg" alt="环境存储位置与版本组件入口" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>环境存储位置与版本组件入口。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/environment-maintenance.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 迁移环境到另一块磁盘
 
 入口：“设置 → 环境与恢复 → 本机环境存储”。此功能针对本机 VM，云端容器按服务器部署方案维护。
@@ -21,6 +26,11 @@ keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 �
 4. 确认正常后，再通过面板清理本次迁移显示的旧备份。旧缓存可能供其他 Lima 实例使用，会留在原位置。
 
 目标盘须有足够空间并支持权限和稀疏文件。外接盘以后每次启动前都要接回；找不到磁盘时先连接原盘，不要新建环境覆盖状态。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/resources-manual.jpg" target="_blank" rel="noopener" aria-label="查看原图：手动调整内存与 CPU 上限的表单"><img src="../../www/public/docs/screenshots/resources-manual.jpg" alt="手动调整内存与 CPU 上限的表单" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>手动调整内存与 CPU 上限的表单。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/resources-manual.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
 
 ## 设置 CPU 与内存
 
@@ -41,6 +51,11 @@ keywords: 更新 升级 卸载 备份 迁移 存储 D盘 内存 CPU OOM 资源 �
 操作前保存工作。替换 App 不代表持久环境中的所有组件已经更新，看到版本不匹配时按页面同步。维护下载经过所选代理，手动暂停业务外网不会被维护操作解除。
 
 macOS 自动安装要求相同发布者的 Developer ID 签名与 Apple 验证；Windows 需可信 Authenticode 签名和相同发布者公钥。未签名 Windows 预览版与 Linux 使用完整安装包手动更新。自动更新下载失败可在原入口重试。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/windows-native-storage.png" target="_blank" rel="noopener" aria-label="查看原图：Windows 原生应用的版本与环境维护"><img src="../../www/public/docs/screenshots/windows-native-storage.png" alt="Windows 原生应用的版本与环境维护" width="1259" height="759" loading="lazy" decoding="async" /></a>
+  <figcaption>Windows 原生应用的版本与环境维护。截图版本：0.1.5-alpha.2（测试构建） · Windows 11 x64 原生应用 · 2026-11-06。<a href="../../www/public/docs/screenshots/windows-native-storage.png" target="_blank" rel="noopener">查看原图（1259 × 759） ↗</a></figcaption>
+</figure>
 
 ## 恢复配置与导出诊断
 

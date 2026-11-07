@@ -13,6 +13,11 @@ keywords: 移动端 手机 Android iOS iPhone 扫码 二维码 配对码 审批 
 
 桌面通过 SSH 切到服务器时，手机接口仍指向原电脑的本机 Cage。请切回本机工作台管理手机配对。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/mobile-pairing.jpg" target="_blank" rel="noopener" aria-label="查看原图：电脑端的手机配对入口与中继选择"><img src="../../www/public/docs/screenshots/mobile-pairing.jpg" alt="电脑端的手机配对入口与中继选择" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>电脑端的手机配对入口与中继选择。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/mobile-pairing.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 扫码或使用配对码
 
 1. 电脑进入“设置 → 远程连接 → 手机连接”，点“生成配对二维码”。二维码约两分钟有效，过期后刷新。
@@ -29,6 +34,11 @@ keywords: 移动端 手机 Android iOS iPhone 扫码 二维码 配对码 审批 
 需要执行工具时，手机显示工具名称和参数，选择“允许一次”或“拒绝”。先检查参数中的命令、文件路径和操作范围。同一项审批若已被另一端处理，重新读取最新状态。
 
 这里管理通过 Cage 会话界面创建的结构化 Claude Code 对话。普通终端里手工启动的 CLI 仍在原终端操作，当前不能承诺接管任意活跃终端。续聊会检查账号与服务地址，身份变化时拒绝继续；无法核实身份的配置只支持首轮，可按提示新建会话。
+
+<figure class="guide-shot guide-shot-phone">
+  <a href="../../www/public/docs/screenshots/mobile-ios-preview.jpg" target="_blank" rel="noopener" aria-label="查看原图：手机原生客户端的会话界面预览"><img src="../../www/public/docs/screenshots/mobile-ios-preview.jpg" alt="手机原生客户端的会话界面预览" width="456" height="972" loading="lazy" decoding="async" /></a>
+  <figcaption>手机原生客户端的会话界面预览。截图版本：Cage iOS 0.1（build 1，开发版） · iPhone 17 Pro 模拟器 · iOS 26.5 · 2026-11-07 · 界面预览，示例对话，未连接主机。<a href="../../www/public/docs/screenshots/mobile-ios-preview.jpg" target="_blank" rel="noopener">查看原图（456 × 972） ↗</a></figcaption>
+</figure>
 
 ## 在手机打开远程浏览器
 

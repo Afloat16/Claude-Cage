@@ -32,6 +32,11 @@ keywords: 错误 失败 白屏 断网 137 OOM 代理 账号 配对 SSH 损坏 �
 
 Git 前置检查未通过时，按提示更新本机 Git 至 2.38+、检查全局配置写入权限或重新检查；不必重配节点。启用保护会影响主机全局 Git，先阅读确认卡片。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/proxy-diagnostics.jpg" target="_blank" rel="noopener" aria-label="查看原图：代理核心状态与独立端口诊断"><img src="../../www/public/docs/screenshots/proxy-diagnostics.jpg" alt="代理核心状态与独立端口诊断" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>代理核心状态与独立端口诊断。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/proxy-diagnostics.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 节点已应用但无法联网
 
 点底部网络状态查看具体关键项。“已应用”只表示节点选择成功，外网还需检查通过。
@@ -96,6 +101,11 @@ Desktop 画面比例异常时先设“显示大小”为 100%，点“重试调�
 服务退出时重连可尝试启动；持续失败查看用户服务日志。关闭本机 App 不停止远端，若希望停止任务，须在对应服务器工作台停止环境。无人登录后服务停止时由管理员检查 linger；服务器重启恢复需单独配置和验证。
 
 不要通过删除容器、引擎 data-root 或账户修复部署。连接中断时先核对操作是否已完成，再重试有写入效果的动作。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/resources-diagnostics.jpg" target="_blank" rel="noopener" aria-label="查看原图：自动资源上限与导出诊断入口"><img src="../../www/public/docs/screenshots/resources-diagnostics.jpg" alt="自动资源上限与导出诊断入口" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>自动资源上限与导出诊断入口。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/resources-diagnostics.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
 
 ## 导出诊断与反馈
 

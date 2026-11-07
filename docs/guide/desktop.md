@@ -13,6 +13,11 @@ keywords: Desktop Chat Code Cowork 画质 缩放 安装 显示大小 上传
 
 Chat 和 Code 在同一个官方应用内使用。需要额外虚拟机的 Cowork 暂未适配；当前手机远程会话也不控制 Desktop 窗口。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/cloud-desktop-welcome.png" target="_blank" rel="noopener" aria-label="查看原图：云端 Linux 环境中的 Claude Desktop 欢迎页"><img src="../../www/public/docs/screenshots/cloud-desktop-welcome.png" alt="云端 Linux 环境中的 Claude Desktop 欢迎页" width="1192" height="875" loading="lazy" decoding="async" /></a>
+  <figcaption>云端 Linux 环境中的 Claude Desktop 欢迎页。截图版本：Claude Desktop 4.16336.0 · 真实 Linux 云端环境 · 2026-11-06 · Cage 版本未记录；未登录 Claude。<a href="../../www/public/docs/screenshots/cloud-desktop-welcome.png" target="_blank" rel="noopener">查看原图（1192 × 875） ↗</a></figcaption>
+</figure>
+
 ## 调整文字与画面
 
 右上角“显示大小”默认 100%，调小可显示更多内容，调大可放大文字和控件。窗口、侧栏变化时画面自动适配；设置保存在本机。提示“画面尺寸未能同步”时点“重试调整”。

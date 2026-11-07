@@ -83,3 +83,14 @@ for (const code of codes) {
   assert.ok(html.includes('href="/Claude-Cage/docs/"'), `${code}: homepage needs a guide entry`);
 }
 console.log(`Verified ${guideFiles.length} user guide pages, local links, anchors, search and homepage entries.`);
+
+const screenshotManifest = JSON.parse(fs.readFileSync(path.join(root, 'www/public/docs/screenshots/manifest.json'), 'utf8'));
+for (const shot of screenshotManifest) {
+  assert.ok(shot.version && shot.platform && shot.capturedAt && shot.source, `${shot.id}: screenshot provenance missing`);
+  assert.ok(fs.existsSync(path.join(dist, 'docs/screenshots', shot.file)), `${shot.id}: screenshot was not shipped`);
+  const article = fs.readFileSync(path.join(guideDir, shot.chapter, 'index.html'), 'utf8');
+  assert.ok(article.includes(`src="/Claude-Cage/docs/screenshots/${shot.file}"`), `${shot.id}: broken screenshot URL`);
+  assert.ok(article.includes(shot.version), `${shot.id}: version caption missing`);
+  assert.ok(article.includes(`width="${shot.width}" height="${shot.height}"`), `${shot.id}: original dimensions missing`);
+}
+console.log(`Verified ${screenshotManifest.length} screenshots, original dimensions and version captions.`);

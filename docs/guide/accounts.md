@@ -15,6 +15,11 @@ keywords: 多账号 账号池 登录 加入调度 自动分配 五小时 七天 
 
 先启动环境，等待工具就绪，再打开账号面板。账号功能以所用构建为准；没有该面板时先核对版本。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/claude-accounts.jpg" target="_blank" rel="noopener" aria-label="查看原图：Claude 账号面板：环境未启动、尚未登记账号"><img src="../../www/public/docs/screenshots/claude-accounts.jpg" alt="Claude 账号面板：环境未启动、尚未登记账号" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>Claude 账号面板：环境未启动、尚未登记账号。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/claude-accounts.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 将已有登录加入调度
 
 在 Cage 普通终端中完成 Claude Code 登录后，账号面板会显示默认终端检测到的邮箱。核对后点“加入调度”。它只读取 Cage 环境里的登录，不读取主机系统终端上的账号。

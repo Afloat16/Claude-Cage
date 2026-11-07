@@ -13,6 +13,11 @@ keywords: 项目 Claude Code 编辑器 code-server 文件 复制 粘贴 快捷�
 
 所有项目共用一个环境、工具和账户。切换项目不会改变已有终端的目录，也不会关闭网页或撤销之前的共享。云端的目录与权限见[云端部署与 SSH](cloud.md)。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener"><img src="../../www/public/docs/screenshots/first-start.jpg" alt="工作台侧栏、默认项目与终端入口（环境未启动）" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>工作台侧栏、默认项目与终端入口（环境未启动）。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 新建 Claude 终端
 
 1. 点击项目旁的终端图标，选“新建 Claude 终端”。Cage 会在该目录启动 `claude`。

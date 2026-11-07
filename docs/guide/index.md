@@ -9,6 +9,13 @@ Cage 把终端、浏览器、文件编辑器和 Claude Desktop 放进一个持�
 
 > 本手册覆盖当前源码中的功能。公开安装包的能力与验收范围以对应 [Release 说明](https://github.com/Lee-xeo/Claude-Cage/releases)为准。手机客户端目前需要开发构建，尚无商店安装入口；界面中缺少某项功能时，先确认所用版本。
 
+配图来自实际应用与隔离验收环境，每张图下方标注版本、平台和日期，点击图片可查看原始分辨率。桌面主图使用 `0.1.6-alpha-preview` 开发构建；Windows 旧版与手机模拟器预览会单独注明。界面里的空账号、停止状态或示例对话保留原样，不代表已登录或真实模型请求成功。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener"><img src="../../www/public/docs/screenshots/first-start.jpg" alt="Cage 工作台的首次使用引导" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>Cage 工作台的首次使用引导。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 第一次使用
 
 1. 阅读[安装与首次启动](installation.md)，选择对应平台的安装包并创建 Cage 账户。

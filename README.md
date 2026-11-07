@@ -47,6 +47,23 @@ Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Cla
 
 浏览器还提供收藏夹、无痕会话、Cookie 管理、扩展导入和密码保险箱；外观、资源上限、环境存储位置与工具更新都可以在工作台管理。各项入口、使用步骤和错误处理见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。功能以所用构建为准，手机端目前需要开发构建，公开安装包范围以对应 Release 说明为准。
 
+<details>
+<summary>查看实际应用界面（Cage 0.1.6-alpha-preview 开发构建）</summary>
+
+![Claude 账号管理入口](www/public/docs/screenshots/claude-accounts.jpg)
+
+Claude 账号管理入口，截图时环境未启动、尚未登记账号。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。
+
+![手机配对设置](www/public/docs/screenshots/mobile-pairing.jpg)
+
+手机配对与中继设置。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。
+
+![SSH 主机连接表单](www/public/docs/screenshots/ssh-host-form.jpg)
+
+SSH 主机连接表单。版本：0.1.6-alpha-preview 开发构建 · macOS 原生应用 · 2026-11-07。原图均为 2560 × 1764；更多分步骤截图见[使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。
+
+</details>
+
 ## 快速开始
 
 把这句话发给你的 agent（codex，dsh，workbuddy，反正不会是 claude code😁）

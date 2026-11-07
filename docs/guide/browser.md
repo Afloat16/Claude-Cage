@@ -47,6 +47,11 @@ keywords: Chromium 浏览器 设置 无痕 Cookie 扩展 插件 ZIP 收藏 新�
 
 旧环境缺少入口或安装组件报错时，先更新应用与环境组件，再重新打开浏览器。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/password-vault.jpg" target="_blank" rel="noopener" aria-label="查看原图：密码保险箱的管理入口"><img src="../../www/public/docs/screenshots/password-vault.jpg" alt="密码保险箱的管理入口" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>密码保险箱的管理入口。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/password-vault.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 保存网站密码
 
 网页登录完成后，在工具区选择“保存密码”或“更新密码”。再次访问时展开“密码”，选账号填入，最后由你提交登录。

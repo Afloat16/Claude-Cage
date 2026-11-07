@@ -17,9 +17,16 @@ keywords: 下载 安装 Apple Silicon WHPX KVM 账户 密码 镜像 继续安装
 
 Windows ARM64 和 Linux ARM64 暂不支持。平台依赖详情见 [Windows 指南](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/windows.md)与 [Linux 指南](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/linux.md)。
 
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/account-setup.jpg" target="_blank" rel="noopener" aria-label="查看原图：首次创建 Cage 账户"><img src="../../www/public/docs/screenshots/account-setup.jpg" alt="首次创建 Cage 账户" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>首次创建 Cage 账户。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/account-setup.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
+
 ## 创建 Cage 账户
 
-首次打开设置用户名和至少 8 个字符的密码。这个账户用于解锁当前 Cage，Claude 订阅需要另外在环境里登录。当前没有在线密码找回，请保存好密码。
+选择用户名和密码登录时，设置用户名和至少 8 个字符的密码。这个账户用于解锁当前 Cage，Claude 订阅需要另外在环境里登录。当前没有在线密码找回，请保存好密码。
+
+包含本机信任登录的较新桌面构建还可选择“信任此电脑并进入”，也可选“使用用户名和密码”进入下图所示的流程。已有密码账户保持原来的登录方式；本机信任的适用范围见[受信任的本机登录](https://github.com/Lee-xeo/Claude-Cage/blob/main/docs/getting-started.md#受信任的本机登录)。
 
 macOS 可在支持的启动方式中开启“记住登录”和 Touch ID；手动锁定后仍需再次验证。在“设置 → 账户”修改头像、用户名、密码及解锁选项。账户密码不会加密整个项目目录或虚拟磁盘。
 
@@ -30,6 +37,11 @@ macOS 可在支持的启动方式中开启“记住登录”和 Touch ID；手�
 首次启动前可以点击“选择环境存储位置”，选择本地磁盘上的专用空文件夹，再点击“使用此位置”。Windows 安装器里的程序目录与环境数据目录分开；例如应用装在 C 盘，环境可放在 `D:\CageData`。
 
 选择支持权限管理与稀疏文件的磁盘：Windows 可用 NTFS，Linux 可用 ext4 / XFS / Btrfs，macOS 使用已启用所有权的 APFS。不要选择磁盘根目录、网络盘、已有项目或应用安装目录。已有环境换盘请按[存储迁移](maintenance.md#迁移环境到另一块磁盘)操作。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener" aria-label="查看原图：首次启动的工作台与三步引导"><img src="../../www/public/docs/screenshots/first-start.jpg" alt="首次启动的工作台与三步引导" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>首次启动的工作台与三步引导。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
 
 ## 导入代理并启动
 
@@ -47,6 +59,11 @@ Git 保护会修改当前主机用户的全局 `safe.bareRepository=explicit`，
 初始虚拟磁盘容量上限为 24 GiB，实际占用会随安装和使用增加。Claude Desktop 按需单独下载。随后启动会复用工具、文件与登录资料。
 
 下载中断时查看错误，修复网络或磁盘空间后点“继续安装”。已保留的文件会尝试续传；摘要不符时必须重新下载。不要通过清空 `.claude-cage` 或重建账户解决安装失败。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/windows-native-download.png" target="_blank" rel="noopener" aria-label="查看原图：Windows 原生应用首次下载镜像的进度"><img src="../../www/public/docs/screenshots/windows-native-download.png" alt="Windows 原生应用首次下载镜像的进度" width="750" height="320" loading="lazy" decoding="async" /></a>
+  <figcaption>Windows 原生应用首次下载镜像的进度。截图版本：0.1.5-alpha.2（测试构建） · Windows 11 x64 原生应用 · 2026-11-06。<a href="../../www/public/docs/screenshots/windows-native-download.png" target="_blank" rel="noopener">查看原图（750 × 320） ↗</a></figcaption>
+</figure>
 
 ## 完成第一项工作
 
