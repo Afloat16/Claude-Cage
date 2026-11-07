@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[መርበብ ሓበሬታ ፕሮጀክት](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [ነቲ መተግበሪ ኣውርድ](https://lee-xeo.github.io/Claude-Cage/ti/#download) · [ምጅማር](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ኣበርክቶ ግበሩ](CONTRIBUTING.md)**
+**[መርበብ ሓበሬታ ፕሮጀክት](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [ነቲ መተግበሪ ኣውርድ](https://lee-xeo.github.io/Claude-Cage/ti/#download) · [ምጅማር](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ኣበርክቶ ግበሩ](CONTRIBUTING.md) · [መምርሒ ኣጠቓቕማ (ብቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@
 - **ነቲ እተካፍሎ ተቖጻጸሮ።** እቲ ነባሪ ናይ ስራሕ ቦታን ብግልጺ ዝተኸፍቱ ናይ ፕሮጀክት ማህደርን ጥራይ እዮም ዝካፈሉ። ናይቲ ኣአንጋዲ ናይ Claude መእተዊ ኩነታት፣ ናይ መርበብ ሓበሬታ ፕሮፋይላትን SSH መፍትሕታትን ብኣውቶማቲክ ኣይኣትዉን እዮም።
 - **ኩነታት መርበብካ ርአ።** ኣብ ውሽጢ ዝተሃንጸ ምሕደራ ፕሮክሲ መርበብ ምዝገባታት ከተእቱ፣ መወዳእታ ነጥብታት ክትመርጽን መውጽኢ IP ክትምርምርን የኽእለካ። እቲ ከባቢ ክሳብ ወሳኒ ምፍታሽ ዝሓልፍ ካብ መስመር ወጻኢ ይጸንሕ። እቲ ናይ መርበብ ፕሮክሲ እንተዘይተረኺቡ፡ ናብ ቀጥታዊ ምትእስሳር ዝኾነ ምምላስ የለን።
 - **ኣብ ዝቕጽል ግዜ ቀጽል።** መሳርሒታት፡ ፋይላትን ናይ ምእታው ኩነታትን ኣብቲ ቨርቹዋል ዲስክ ይጸንሑ። መስኮት ምስ ዓጸኻ ናይ ድሕረ ባይታ ዕማማት ክቕጽሉ ይኽእሉ።
+- **ብዙሓት ናይ Claude Code ኣካውንታት ኣመሓድር።** ንሓደስቲ Claude ተርሚናላት ኣካውንት ይምደብ፤ ናይ 5 ሰዓትን 7 መዓልትን ኣጠቓቕማ ገደባት ክትርኢ ትኽእል። ዝሰርሑ ዘለዉ ተርሚናላት ኣካውንት ብኣውቶማቲክ ኣይቀይሩን።
+- **ካብ ስልክኻ ስራሕ ቀጽል።** ናይ ልምዓት ሞባይል ክላየንት ምስ ኮምፒውተር ተራኺቡ ዝተወደቡ CLI ክፍለ ግዜታትን ፍቓድ መሳርሒታትን የቕርብ፤ ናይ ርሑቕ ቦታ ዳህሳሲ ፍሉይ ፍቓድ የድልዮ። ነቲ ሞባይል ክላየንት ካብ ምንጪ ኮድ ክትሃንጾ ኣለካ፤ ዝኾነ ንቡር ተርሚናል ኣይቆጻጸርን።
+- **Cage ኣብ ክላውድ ኣካይድ።** ነቲ መስፈርታት ዘማልእ Linux x86_64 VPS ዝተተኽለ Cage ብSSH ተራኸቦ፤ KVM ኣየድልን። ዳታን መውጽኢ መርበብን ኣብ ሰርቨር እዮም።
 
 ## ቅልጡፍ ምጅማር
 
@@ -62,7 +65,7 @@ Cage macOS፣ Windows እና Linux ይድግፍ፦ Apple Silicon ምስ macOS 14
 
 እቲ መተካእታ ንወርክቤንችን ኔትወርክ ፕሮክሲ ኮርን የጠቓልል። መዓልታዊ ኣጠቓቕማ Go, Node.js, Docker, ወይ Clash ምትካል ኣየድልዮን እዩ። መጀመርታ ምጅማር ሕጂ ውን ናይ ሊኑክስ ምስልን መሳርሒታት ምዕባለን ንምውራድ ናይ ኢንተርነት ምትእስሳር የድሊ። Cage ናይ መርበብ ፕሮክሲ ኣገልግሎት ይኹን ናይ Claude ኣካውንት ኣይህብን እዩ።
 
-ናይ ሕጂ ስሪት፤ `0.1.1-alpha`. እቲ ምንጪ ኮድ፡ መርበብ ሓበሬታን ምውጻእን ንህዝቢ ዝቐርብ እዩ። ንመተካእታ ምፍራም፣ ኣፕል ኖታራይዜሽንን ስፍሓት ምጽዳቕን ዝምልከት ናይ ነፍሲ ወከፍ ምውጻእ መዘኻኸሪታት ተወከስ። ጽሩይ-ማሽን ምትካል፡ ኣብ macOS 14 ዝሰርሓ ፊዚካዊ ማክስ ምትእስሳር፡ ሓቀኛ ክላውድ ኣካውንት ፍቓድ፡ ከምኡ’ውን ናይ ሞዴል ሕቶታት ሕጂ’ውን ምሉእ ምጽዳቕ የድልዮም።
+ንዝርከቡ ወግዓዊ ስሪታት [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) ተወከስ። እቲ ምንጪ ኮድ፡ መርበብ ሓበሬታን ምውጻእን ንህዝቢ ዝቐርብ እዩ። ንመተካእታ ምፍራም፣ ኣፕል ኖታራይዜሽንን ስፍሓት ምጽዳቕን ዝምልከት ናይ ነፍሲ ወከፍ ምውጻእ መዘኻኸሪታት ተወከስ። ጽሩይ-ማሽን ምትካል፡ ኣብ macOS 14 ዝሰርሓ ፊዚካዊ ማክስ ምትእስሳር፡ ሓቀኛ ክላውድ ኣካውንት ፍቓድ፡ ከምኡ’ውን ናይ ሞዴል ሕቶታት ሕጂ’ውን ምሉእ ምጽዳቕ የድልዮም።
 
 ምሕዳስ macOS እና Windows ብዝተመርጸ ፕሮክሲ ይወርድ፤ ናብ ቀጥታ ርክብ ኣይቅየርን። ቅድሚ ምትካል ስራሕ ዓቅብን ደው ኣብልን። macOS ናይ ሓደ ኣሕታሚ Developer ID ፊርማን ምርግጋጽ Appleን የድልዮ፤ Windows ዝእመን Authenticode ፊርማን ተመሳሳሊ ህዝባዊ መፍትሕ ኣሕታሚን የድልዮ። ዘይተፈረመ Windows ቅድመ ርእይቶን Linuxን ብኢድ ይሕደሱ። [ምሕዳስን ምእላይን](docs/getting-started.md#升级与卸载)።
 
@@ -129,3 +132,13 @@ Cage ናጻ ማሕበረሰባዊ ፕሮጀክት ኮይኑ ምስ ኣንትሮ�
 - [code-server](https://github.com/coder/code-server): እቲ ኣብ መርበብ ሓበሬታ ዝተመርኮሰ ናይ ኮድ ኣርታዒ።
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): መወከሲታት ንሃዋህው ስራሕን ዲዛይን ምትእስሳርን.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) ከምኡ’ውን... [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): መወከሲታት ንናይ መርበብ ምፍታሽን ናይ ድሕነት መርመራታትን።
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

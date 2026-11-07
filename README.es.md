@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Sitio web del proyecto](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Descargar aplicación](https://lee-xeo.github.io/Claude-Cage/es/#download) · [Empezando](docs/getting-started.md) · [Preguntas frecuentes](docs/troubleshooting.md) · [Contribuir](CONTRIBUTING.md)**
+**[Sitio web del proyecto](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Descargar aplicación](https://lee-xeo.github.io/Claude-Cage/es/#download) · [Empezando](docs/getting-started.md) · [Preguntas frecuentes](docs/troubleshooting.md) · [Contribuir](CONTRIBUTING.md) · [Guía de uso (chino)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage es una máquina virtual Linux liviana que combina una terminal Linux
 - **Controla lo que compartes.** Solo se comparten el espacio de trabajo predeterminado y las carpetas de proyectos abiertas explícitamente. El estado de inicio de sesión de Claude, los perfiles del navegador y las claves SSH del host no se importan automáticamente.
 - **Vea el estado de su red.** La administración de proxy de red incorporada le permite importar suscripciones, seleccionar puntos finales y verificar la IP de salida. El entorno permanece fuera de línea hasta que se superan las comprobaciones críticas. Si el proxy de red no está disponible, no se recurre a una conexión directa como alternativa.
 - **Continúe la próxima vez.** Las herramientas, los archivos y el estado de inicio de sesión persisten en el disco virtual. Las tareas en segundo plano pueden seguir ejecutándose cuando cierras la ventana.
+- **Gestione varias cuentas de Claude Code.** Asigne una cuenta a cada nuevo terminal de Claude y consulte las cuotas de 5 horas y 7 días. Los terminales en ejecución no cambian de cuenta automáticamente.
+- **Continúe desde el móvil.** El cliente móvil de desarrollo se conecta al ordenador para usar sesiones CLI estructuradas y aprobar herramientas; el navegador remoto requiere una autorización independiente. Hay que compilar el cliente móvil desde el código fuente y no permite controlar cualquier terminal normal.
+- **Ejecute Cage en la nube.** Conéctese por SSH a Cage desplegado en un VPS Linux x86_64 compatible, sin KVM. Los datos y la salida de red están en el servidor.
 
 ## Inicio rápido
 
@@ -62,7 +65,7 @@ Cage admite macOS, Windows y Linux: Apple Silicon con macOS 14+, Windows 10 22H2
 
 El instalador incluye el banco de trabajo y el núcleo del proxy de red. El uso diario no requiere instalar Go, Node.js, Docker o Clash. El primer lanzamiento aún requiere una conexión a Internet para descargar la imagen de Linux y las herramientas de desarrollo. Cage no proporciona un servicio de proxy de red ni una cuenta Claude.
 
-Versión actual: `0.1.1-alpha`. El código fuente, el sitio web y los lanzamientos son públicos. Consulte las notas de cada versión para conocer la firma del instalador, la certificación notarial de Apple y el alcance de la validación. La instalación en máquina limpia, la compatibilidad con Mac físicos que ejecutan macOS 14, la autorización de cuentas reales de Claude y las solicitudes de modelos aún requieren una validación completa.
+Consulte las [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) para conocer las versiones públicas. El código fuente, el sitio web y los lanzamientos son públicos. Consulte las notas de cada versión para conocer la firma del instalador, la certificación notarial de Apple y el alcance de la validación. La instalación en máquina limpia, la compatibilidad con Mac físicos que ejecutan macOS 14, la autorización de cuentas reales de Claude y las solicitudes de modelos aún requieren una validación completa.
 
 Las actualizaciones de macOS y Windows usan el proxy seleccionado, sin recurrir a una conexión directa. Guarda y detén las tareas antes de instalar. macOS requiere Developer ID del mismo editor y verificación de Apple; Windows requiere una firma Authenticode de confianza y la misma clave pública del editor. La versión preliminar de Windows sin firma y los paquetes Linux se actualizan manualmente. [Actualizar y desinstalar](docs/getting-started.md#升级与卸载).
 
@@ -129,3 +132,13 @@ Gracias a los siguientes proyectos por capacidades fundamentales y referencias d
 - [code-server](https://github.com/coder/code-server): el editor de código basado en navegador.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): referencias para el ambiente de trabajo y el diseño de interacción.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) y [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): referencias para comprobaciones de red y diagnósticos de seguridad.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

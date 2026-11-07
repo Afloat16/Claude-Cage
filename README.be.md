@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Сайт праекта](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Спампаваць праграму](https://lee-xeo.github.io/Claude-Cage/be/#download) · [Пачатак працы](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Унесці свой уклад](CONTRIBUTING.md)**
+**[Сайт праекта](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Спампаваць праграму](https://lee-xeo.github.io/Claude-Cage/be/#download) · [Пачатак працы](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Унесці свой уклад](CONTRIBUTING.md) · [Дапаможнік (па-кітайску)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage - гэта лёгкая віртуальная машына Linux, �
 - **Кантралюйце, чым вы дзеліцеся.** Абагульваюцца толькі працоўная вобласць па змаўчанні і адкрытыя папкі праекта. Стан уваходу Claude, профілі браўзера і ключы SSH не імпартуюцца аўтаматычна.
 - **Глядзіце стан вашай сеткі.** Убудаванае кіраванне сеткавым проксі-серверам дазваляе імпартаваць падпіскі, выбіраць канчатковыя кропкі і правяраць выхадны IP. Асяроддзе застаецца ў аўтаномным рэжыме, пакуль не пройдуць крытычныя праверкі. Калі сеткавы проксі-сервер недаступны, няма магчымасці вярнуцца да прамога злучэння.
 - **Працягнуць у наступны раз.** Інструменты, файлы і стан уваходу захоўваюцца на віртуальным дыску. Фонавыя задачы могуць працягваць працаваць, калі вы зачыніце акно.
+- **Кіруйце некалькімі акаўнтамі Claude Code.** Новым тэрміналам Claude аўтаматычна прызначаецца акаўнт; можна правяраць квоты за 5 гадзін і 7 дзён. У запушчаных тэрміналах акаўнт аўтаматычна не змяняецца.
+- **Працягвайце з тэлефона.** Мабільны кліент для распрацоўкі падключаецца да камп’ютара для структураваных CLI-сеансаў і пацвярджэння інструментаў; аддаленаму браўзеру патрэбны асобны дазвол. Кліент трэба сабраць з зыходнікаў; ён не перахоплівае адвольныя звычайныя тэрміналы.
+- **Запускайце Cage у воблаку.** Падключайцеся праз SSH да Cage на сумяшчальным VPS з Linux x86_64 без KVM. Даныя і выхад у сетку знаходзяцца на серверы.
 
 ## Хуткі старт
 
@@ -62,7 +65,7 @@ Cage падтрымлівае macOS, Windows і Linux: Apple Silicon з macOS 14
 
 Праграма ўстаноўкі ўключае варштат і ядро ​​сеткавага проксі. Штодзённае выкарыстанне не патрабуе ўстаноўкі Go, Node.js, Docker або Clash. Для першага запуску па-ранейшаму патрабуецца падключэнне да Інтэрнэту для загрузкі вобраза Linux і інструментаў распрацоўкі. Cage не забяспечвае ні паслугу сеткавага проксі, ні ўліковы запіс Claude.
 
-Актуальная версія: `0.1.1-alpha`. Зыходны код, вэб-сайт і выпускі з'яўляюцца агульнадаступнымі. Звярніцеся да заўваг да кожнага выпуску для подпісу ўсталёўшчыка, натарыяльнага засведчання Apple і аб'ёму праверкі. Усталяванне на чыстай машыне, сумяшчальнасць на фізічных Mac пад кіраваннем macOS 14, аўтарызацыя рэальнага ўліковага запісу Claude і запыты мадэляў па-ранейшаму патрабуюць поўнай праверкі.
+Актуальныя публічныя версіі глядзіце ў [Releases](https://github.com/Lee-xeo/Claude-Cage/releases). Зыходны код, вэб-сайт і выпускі з'яўляюцца агульнадаступнымі. Звярніцеся да заўваг да кожнага выпуску для подпісу ўсталёўшчыка, натарыяльнага засведчання Apple і аб'ёму праверкі. Усталяванне на чыстай машыне, сумяшчальнасць на фізічных Mac пад кіраваннем macOS 14, аўтарызацыя рэальнага ўліковага запісу Claude і запыты мадэляў па-ранейшаму патрабуюць поўнай праверкі.
 
 Абнаўленні macOS і Windows спампоўваюцца праз выбраны проксі без прамога злучэння. Захавайце працу і спыніце задачы перад усталяваннем. macOS патрабуе подпіс Developer ID таго ж выдаўца і праверку Apple; Windows — давераны подпіс Authenticode і той жа адкрыты ключ выдаўца. Непадпісаная папярэдняя версія Windows і пакеты Linux абнаўляюцца ўручную. [Абнаўленне і выдаленне](docs/getting-started.md#升级与卸载).
 
@@ -129,3 +132,13 @@ Cage з'яўляецца незалежным грамадскім праект�
 - [code-server](https://github.com/coder/code-server): рэдактар ​​кода на аснове браўзера.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): спасылкі на дызайн працоўнага асяроддзя і ўзаемадзеяння.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) і [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): спасылкі для праверкі сеткі і дыягностыкі бяспекі.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

@@ -24,10 +24,11 @@ function readCopy(language: typeof languages[number]) {
   const file = language.code === 'zh' ? 'README.md' : `README.${language.code}.md`;
   const source = readmes[`../../../${file}`];
   if (!source) throw new Error(`Missing website language source: ${file}`);
-  const headings = [...source.matchAll(/^## (.+)$/gm)];
+  const allHeadings = [...source.matchAll(/^## (.+)$/gm)];
+  const headings = allHeadings.filter(heading => !/^Star (?:History|增长曲线|成長曲線)$/.test(heading[1]));
   if (headings.length !== 9) throw new Error(`${file}: expected the nine shared README sections; update the website mapping when the document structure changes`);
-  const sections = headings.map((heading, i) => ({
-    title: heading[1], body: source.slice(heading.index! + heading[0].length, headings[i + 1]?.index ?? source.length),
+  const sections = headings.map(heading => ({
+    title: heading[1], body: source.slice(heading.index! + heading[0].length, allHeadings[allHeadings.indexOf(heading) + 1]?.index ?? source.length),
   }));
   const [reason, uses, quick, installation, steps, boundaries, contribution, license] = sections;
   const reasonParagraphs = paragraphs(reason.body);

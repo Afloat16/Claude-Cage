@@ -23,6 +23,14 @@ GitHub Actions 在网站文件或 README 的普通推送与 PR 中检查和构�
 
 GitHub Pages 是当前主页的发布目标，部署配置由仓库工作流维护。
 
+## 使用文档
+
+中文使用手册位于 `/docs/`，通过 `src/pages/docs/[...slug].astro` 为每篇文章生成静态页面。正文源为根目录 `docs/guide/*.md`，元数据包含标题、摘要、分组、顺序与搜索关键词。新增或修改正文只需编辑这些 Markdown，分类目录、前后章和搜索索引随构建生成，不需额外同步一份网页文案。文章中的同目录 `.md` 链接在网站中转为带 `BASE_URL` 的章节链接，仓库内仍能直接阅读。
+
+手册提供侧栏、手机内嵌目录、页内目录、全文搜索及无结果恢复；关闭 JavaScript 后仍可阅读和跳转。搜索只在当前浏览器中执行，不向服务器发送输入。主页所有语言入口可进入中文手册，手册未提供其他语言译文。
+
+完成构建后运行 `node scripts/check-site.mjs` 核对主页、文章、章节锚点和下载入口。交互验证使用 `node scripts/guide-smoke.mjs`，可用 `CAGE_PLAYWRIGHT_MODULE` 指定现有 Playwright；`CAGE_SITE_URL` 指向本地或线上站点，`CAGE_SITE_REPORT` 指定截图目录。
+
 维护者明确授权 Windows 未签名公开预览后，可手动运行 `platform-preview.yml`，提供已经成功的三平台 CI run ID 并启用 `unsigned_windows`。流程从该次 CI 获取安装包，核对源码版本、原始摘要、配套源码和上传后的 GitHub digest，补充到已存在的 `v<版本>` 预发行条目，合并校验清单并记录各平台源码提交，随后调用官网验收与部署。流程不创建新 Release 或标签，日常推送不触发发布，现有 macOS 安装包不被覆盖。
 
 `public/install.sh` 仍被上游 `release.sh` 与安装器测试使用，保留用于 agent-vm 兼容流程，不作为 Cage 安装入口。

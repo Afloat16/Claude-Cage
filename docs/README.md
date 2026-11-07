@@ -4,6 +4,8 @@
 
 ## 使用与反馈
 
+面向日常使用的[官网使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)提供分类目录、全文搜索和章节链接。内容源位于 [guide/](guide/index.md)，包括多账号、浏览器、手机、云端、设置与排障；下表保留安装、平台说明与维护资料的直接入口。
+
 | 你要做什么 | 从这里开始 |
 |---|---|
 | 选择 macOS、Windows、Linux 安装包，配置代理并打开第一个项目 | [开始使用](getting-started.md) |

@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Сайт проекта](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Скачать приложение](https://lee-xeo.github.io/Claude-Cage/ru/#download) · [Начало работы](docs/getting-started.md) · [Часто задаваемые вопросы](docs/troubleshooting.md) · [Внести свой вклад](CONTRIBUTING.md)**
+**[Сайт проекта](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Скачать приложение](https://lee-xeo.github.io/Claude-Cage/ru/#download) · [Начало работы](docs/getting-started.md) · [Часто задаваемые вопросы](docs/troubleshooting.md) · [Внести свой вклад](CONTRIBUTING.md) · [Руководство (на китайском)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage — это легкая виртуальная машина Linux, �
 - **Контролируйте то, чем вы делитесь.** Совместно используются только рабочее пространство по умолчанию и явно открытые папки проекта. Состояние входа в систему Claude хоста, профили браузера и ключи SSH не импортируются автоматически.
 - **Посмотрите состояние вашей сети.** Встроенное управление сетевыми прокси-серверами позволяет импортировать подписки, выбирать конечные точки и проверять выходной IP-адрес. Среда остается в автономном режиме до тех пор, пока не пройдут критические проверки. Если сетевой прокси-сервер недоступен, возврата к прямому соединению нет.
 - **Продолжайте в следующий раз.** Инструменты, файлы и состояние входа сохраняются на виртуальном диске. Фоновые задачи могут продолжать выполняться, когда вы закрываете окно.
+- **Управляйте несколькими аккаунтами Claude Code.** Новые терминалы Claude получают аккаунт автоматически; можно проверять квоты за 5 часов и 7 дней. В уже запущенных терминалах аккаунт автоматически не меняется.
+- **Продолжайте работу с телефона.** Мобильный клиент для разработки подключается к компьютеру для структурированных CLI-сеансов и подтверждения инструментов; удалённому браузеру требуется отдельное разрешение. Клиент нужно собрать из исходников; он не перехватывает произвольные обычные терминалы.
+- **Запускайте Cage в облаке.** Подключайтесь по SSH к Cage на совместимом VPS с Linux x86_64 без KVM. Данные и выход в сеть находятся на сервере.
 
 ## Быстрый старт
 
@@ -62,7 +65,7 @@ Cage поддерживает macOS, Windows и Linux: Apple Silicon с macOS 14
 
 Установщик включает в себя рабочую среду и ядро ​​сетевого прокси. Ежедневное использование не требует установки Go, Node.js, Docker или Clash. При первом запуске по-прежнему требуется подключение к Интернету для загрузки образа Linux и инструментов разработки. Cage не предоставляет ни услуги сетевого прокси, ни учетную запись Claude.
 
-Текущая версия: `0.1.1-alpha`. Исходный код, веб-сайт и релизы являются общедоступными. Подробную информацию о подписании установщика, нотариальном заверении Apple и объеме проверки см. в примечаниях к каждому выпуску. Установка на чистом компьютере, совместимость с физическими компьютерами Mac под управлением macOS 14, авторизация реальной учетной записи Claude и запросы моделей по-прежнему требуют полной проверки.
+Актуальные публичные версии указаны в [Releases](https://github.com/Lee-xeo/Claude-Cage/releases). Исходный код, веб-сайт и релизы являются общедоступными. Подробную информацию о подписании установщика, нотариальном заверении Apple и объеме проверки см. в примечаниях к каждому выпуску. Установка на чистом компьютере, совместимость с физическими компьютерами Mac под управлением macOS 14, авторизация реальной учетной записи Claude и запросы моделей по-прежнему требуют полной проверки.
 
 Обновления macOS и Windows загружаются через выбранный прокси без прямого подключения. Сохраните работу и остановите задачи перед установкой. macOS требует подпись Developer ID того же издателя и проверку Apple; Windows — доверенную подпись Authenticode и тот же открытый ключ издателя. Неподписанная предварительная версия Windows и Linux обновляются вручную. [Обновление и удаление](docs/getting-started.md#升级与卸载).
 
@@ -129,3 +132,13 @@ Cage — это независимый общественный проект, н
 - [code-server](https://github.com/coder/code-server): редактор кода на основе браузера.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): ссылки на рабочую среду и дизайн взаимодействия.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) и [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ссылки для проверки сети и диагностики безопасности.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

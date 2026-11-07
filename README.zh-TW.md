@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[專案主頁](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下載應用程式](https://lee-xeo.github.io/Claude-Cage/zh-TW/#download) · [開始使用](docs/getting-started.md) · [常見問題](docs/troubleshooting.md) · [參與開發](CONTRIBUTING.md)**
+**[專案主頁](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [下載應用程式](https://lee-xeo.github.io/Claude-Cage/zh-TW/#download) · [開始使用](docs/getting-started.md) · [常見問題](docs/troubleshooting.md) · [參與開發](CONTRIBUTING.md) · [使用文件（簡體中文）](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 - **控制共享範圍。** 只共享預設工作區和明確開啟的專案資料夾；主機的 Claude 登入、瀏覽器配置和 SSH 金鑰不會自動匯入。
 - **看清網路狀態。** 內建代理管理支援匯入訂閱、選擇節點和檢查出口。關鍵檢查未透過時，環境保持離線；代理不可用時沒有直連回退。
 - **下次繼續使用。** 工具、檔案和登入狀態儲存在虛擬磁碟裡，關閉視窗可以保留後臺任務。
+- **管理多個 Claude Code 帳號。** 為新建的 Claude 終端分配帳號，查看 5 小時／7 天額度；執行中的終端不會自動換號。
+- **用手機接續工作。** 手機開發客戶端連接電腦，使用結構化 CLI 會話及工具審批；遠端瀏覽器需單獨授權。手機端需自行建置開發版本，無法接管任意普通終端。
+- **在雲端執行環境。** 透過 SSH 連接部署在符合條件的 Linux x86_64 VPS 上的 Cage，無需 KVM；資料與網路出口位於伺服器。
 
 ## 快速開始
 
@@ -62,7 +65,7 @@ Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 安裝包隨附工作臺和代理核心，日常使用無需安裝 Go、Node.js、Docker 或 Clash。首次啟動仍需聯網下載 Linux 映象與開發工具；Cage 不提供代理服務或 Claude 賬戶。
 
-當前版本為 `0.1.1-alpha`。原始碼、主頁與發行物公開；安裝包的簽名、公證和驗收範圍以對應 Release 說明為準。乾淨機器安裝、macOS 14 實機相容性、真實 Claude 授權與模型請求仍需完整驗收。
+公開版本以 [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) 為準。原始碼、主頁與發行物公開；安裝包的簽名、公證和驗收範圍以對應 Release 說明為準。乾淨機器安裝、macOS 14 實機相容性、真實 Claude 授權與模型請求仍需完整驗收。
 
 支援應用程式內更新的 macOS 和 Windows 版本透過所選代理下載，無直連回退；安裝前請儲存並停止工作。macOS 要求相同發布者的 Developer ID 簽章並通過 Apple 驗證，Windows 要求可信 Authenticode 簽章及相同發布者公鑰。Windows 未簽章預覽版和 Linux 系統包需手動更新。詳見[升級與解除安裝](docs/getting-started.md#升级与卸载)。
 
@@ -129,3 +132,13 @@ Cage 是獨立社群專案，與 Anthropic 無隸屬關係。
 - [code-server](https://github.com/coder/code-server)：瀏覽器中的程式碼編輯器。
 - [AIO Sandbox](https://github.com/agent-infra/sandbox)：工作環境和互動體驗參考。
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) 和 [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian)：網路檢查和安全診斷方法參考。
+
+## Star 成長曲線
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage 的 GitHub Star 成長曲線" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

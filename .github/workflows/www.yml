@@ -2,9 +2,9 @@ name: Website and public releases
 on:
   push:
     branches: [main]
-    paths: ['www/**', 'assets/**', 'README*.md', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
+    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   pull_request:
-    paths: ['www/**', 'assets/**', 'README*.md', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
+    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   release:
     types: [published]
   workflow_dispatch:

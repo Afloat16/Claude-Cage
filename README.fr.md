@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Télécharger l’application](https://lee-xeo.github.io/Claude-Cage/fr/#download) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Contribuer](CONTRIBUTING.md)**
+**[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [Télécharger l’application](https://lee-xeo.github.io/Claude-Cage/fr/#download) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Contribuer](CONTRIBUTING.md) · [Guide d’utilisation (chinois)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage est une machine virtuelle Linux légère qui combine un terminal Lin
 - **Contrôlez ce que vous partagez.** Seuls l'espace de travail par défaut et les dossiers de projet explicitement ouverts sont partagés. L'état de connexion Claude de l'hôte, les profils de navigateur et les clés SSH ne sont pas importés automatiquement.
 - **Consultez l'état de votre réseau.** La gestion intégrée du proxy réseau vous permet d'importer des abonnements, de sélectionner des points de terminaison et de vérifier l'adresse IP de sortie. L'environnement reste hors ligne jusqu'à ce que les vérifications critiques soient réussies. Si le proxy réseau n'est pas disponible, il n'est pas possible de recourir à une connexion directe.
 - **Continuez la prochaine fois.** Les outils, les fichiers et l'état de connexion persistent sur le disque virtuel. Les tâches en arrière-plan peuvent continuer à s'exécuter lorsque vous fermez la fenêtre.
+- **Gérez plusieurs comptes Claude Code.** Attribuez un compte à chaque nouveau terminal Claude et consultez les quotas sur 5 heures et 7 jours. Les terminaux en cours ne changent pas automatiquement de compte.
+- **Continuez depuis votre téléphone.** Le client mobile de développement se connecte à l’ordinateur pour les sessions CLI structurées et les approbations d’outils ; le navigateur distant exige une autorisation distincte. Le client mobile doit être compilé depuis les sources et ne prend pas le contrôle de n’importe quel terminal ordinaire.
+- **Exécutez Cage dans le cloud.** Connectez-vous par SSH à Cage déployé sur un VPS Linux x86_64 compatible, sans KVM. Les données et la sortie réseau restent sur le serveur.
 
 ## Démarrage rapide
 
@@ -62,7 +65,7 @@ Cage prend en charge macOS, Windows et Linux : Apple Silicon avec macOS 14+, Win
 
 Le programme d'installation comprend le workbench et le noyau du proxy réseau. Une utilisation quotidienne ne nécessite pas l'installation de Go, Node.js, Docker ou Clash. Le premier lancement nécessite toujours une connexion Internet pour télécharger l’image Linux et les outils de développement. Cage ne fournit ni service proxy réseau ni compte Claude.
 
-Version actuelle : `0.1.1-alpha`. Le code source, le site Web et les versions sont publics. Reportez-vous aux notes de chaque version pour la signature du programme d'installation, la notarisation Apple et la portée de la validation. L'installation sur une machine propre, la compatibilité sur les Mac physiques exécutant macOS 14, l'autorisation réelle du compte Claude et les demandes de modèle nécessitent toujours une validation complète.
+Consultez les [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) pour les versions publiques. Le code source, le site Web et les versions sont publics. Reportez-vous aux notes de chaque version pour la signature du programme d'installation, la notarisation Apple et la portée de la validation. L'installation sur une machine propre, la compatibilité sur les Mac physiques exécutant macOS 14, l'autorisation réelle du compte Claude et les demandes de modèle nécessitent toujours une validation complète.
 
 Les mises à jour macOS et Windows passent par le proxy choisi, sans connexion directe de secours. Enregistrez et arrêtez les tâches avant l’installation. macOS exige une signature Developer ID du même éditeur et la vérification Apple ; Windows exige une signature Authenticode de confiance et la même clé publique de l’éditeur. La version préliminaire Windows non signée et Linux se mettent à jour manuellement. [Mise à jour et désinstallation](docs/getting-started.md#升级与卸载).
 
@@ -129,3 +132,13 @@ Merci aux projets suivants pour leurs capacités fondamentales et leurs référe
 - [code-server](https://github.com/coder/code-server): l'éditeur de code basé sur un navigateur.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): références pour l'environnement de travail et le design d'interaction.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) et [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): références pour les vérifications du réseau et les diagnostics de sécurité.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ပါဝင်ကူညီပါ။](CONTRIBUTING.md)**
+**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ပါဝင်ကူညီပါ။](CONTRIBUTING.md) · [အသုံးပြုမှုလမ်းညွှန် (တရုတ်ဘာသာ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@ Claude Cage သည် desktop အပလီကေးရှင်းတစ်ခ�
 - **သင်မျှဝေသောအရာကို ထိန်းချုပ်ပါ။** ပုံသေအလုပ်ခွင်နှင့် အတိအလင်းဖွင့်ထားသော ပရောဂျက်ဖိုင်တွဲများကိုသာ မျှဝေပါသည်။ လက်ခံသူ၏ Claude အကောင့်ဝင်ခြင်းအခြေအနေ၊ ဘရောက်ဆာပရိုဖိုင်များနှင့် SSH ကီးများကို အလိုအလျောက် ထည့်သွင်းမည်မဟုတ်ပါ။
 - **သင်၏ကွန်ရက်အခြေအနေကိုကြည့်ပါ။** Built-in ကွန်ရက် proxy စီမံခန့်ခွဲမှုသည် သင့်အား စာရင်းသွင်းမှုများကို တင်သွင်းရန်၊ အဆုံးမှတ်များကို ရွေးချယ်ကာ ထွက်ပေါက် IP ကို ​​စစ်ဆေးနိုင်စေပါသည်။ အရေးကြီးသောစစ်ဆေးမှုများမပြီးမချင်း ပတ်ဝန်းကျင်သည် အော့ဖ်လိုင်းဖြစ်နေသည်။ ကွန်ရက်ပရောက်စီကို မရရှိနိုင်ပါက၊ တိုက်ရိုက်ချိတ်ဆက်မှုသို့ ပြန်လှည့်စရာမရှိပါ။
 - **နောက်တစ်ကြိမ် ဆက်ရန်။** ကိရိယာများ၊ ဖိုင်များနှင့် အကောင့်ဝင်ခြင်းအခြေအနေသည် virtual disk ပေါ်တွင် ဆက်လက်ရှိနေပါသည်။ ဝင်းဒိုးကိုပိတ်သည့်အခါ နောက်ခံလုပ်ဆောင်စရာများကို ဆက်လက်လုပ်ဆောင်နိုင်သည်။
+- **Claude Code အကောင့်များစွာကို စီမံပါ။** Claude terminal အသစ်များအတွက် အကောင့်ခွဲဝေပေးပြီး ၅ နာရီနှင့် ၇ ရက် အသုံးပြုခွင့်ပမာဏကို ကြည့်နိုင်သည်။ လက်ရှိလည်ပတ်နေသော terminal ၏ အကောင့်ကို အလိုအလျောက် မပြောင်းပါ။
+- **ဖုန်းမှ အလုပ်ဆက်လုပ်ပါ။** ဖွံ့ဖြိုးရေးသုံး မိုဘိုင်း client သည် ကွန်ပျူတာနှင့် ချိတ်ဆက်ကာ ဖွဲ့စည်းထားသော CLI session များနှင့် tool ခွင့်ပြုချက်များကို ကိုင်တွယ်ပေးသည်။ အဝေးထိန်း browser အတွက် သီးခြားခွင့်ပြုချက်လိုသည်။ မိုဘိုင်း client ကို source code မှ development build ပြုလုပ်ရပြီး မည်သည့် ပုံမှန် terminal ကိုမဆို လွှဲယူထိန်းချုပ်ခြင်း မပြုပါ။
+- **Cage ကို cloud ပေါ်တွင် အသုံးပြုပါ။** လိုအပ်ချက်နှင့်ကိုက်ညီသော Linux x86_64 VPS တွင် Cage ကို တပ်ဆင်ပြီး SSH ဖြင့် ချိတ်ဆက်ပါ။ KVM မလိုအပ်ပါ။ ဒေတာနှင့် ကွန်ရက်ထွက်ပေါက်သည် server ပေါ်တွင် ရှိသည်။
 
 ## အမြန်စတင်ပါ။
 
@@ -62,7 +65,7 @@ Cage သည် macOS၊ Windows နှင့် Linux ကို ပံ့ပိ�
 
 ထည့်သွင်းသူတွင် workbench နှင့် network proxy core ပါဝင်သည်။ နေ့စဉ်အသုံးပြုမှုသည် Go၊ Node.js၊ Docker သို့မဟုတ် Clash ကို ထည့်သွင်းရန် မလိုအပ်ပါ။ Linux ရုပ်ပုံနှင့် ဖွံ့ဖြိုးတိုးတက်ရေးကိရိယာများကို ဒေါင်းလုဒ်လုပ်ရန် ပထမဦးစွာ လွှင့်တင်ရန် အင်တာနက်ချိတ်ဆက်မှု လိုအပ်နေသေးသည်။ Cage သည် ကွန်ရက် ပရောက်စီ ဝန်ဆောင်မှု သို့မဟုတ် Claude အကောင့်ကို မပေးပေ။
 
-လက်ရှိဗားရှင်း- `0.1.1-alpha`. အရင်းအမြစ်ကုဒ်၊ ဝဘ်ဆိုက်နှင့် ထုတ်ဝေမှုများကို အများသူငှာဖြစ်သည်။ တပ်ဆင်သူလက်မှတ်ထိုးခြင်းအတွက် ထုတ်ဝေမှုတစ်ခုစီ၏ မှတ်စုများ၊ Apple notarization နှင့် တရားဝင်မှုအတိုင်းအတာကို ကိုးကားပါ။ စက်သန့်ရှင်းမှု တပ်ဆင်မှု၊ macOS 14 အသုံးပြုသည့် ရုပ်ပိုင်းဆိုင်ရာ Mac များတွင် လိုက်ဖက်ညီမှု၊ အစစ်အမှန် Claude အကောင့်ခွင့်ပြုချက်နှင့် မော်ဒယ်တောင်းဆိုမှုများသည် အပြည့်အဝ တရားဝင်မှု လိုအပ်နေသေးသည်။
+အများပြည်သူသုံး ဗားရှင်းများကို [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) တွင် ကြည့်ပါ။ အရင်းအမြစ်ကုဒ်၊ ဝဘ်ဆိုက်နှင့် ထုတ်ဝေမှုများကို အများသူငှာဖြစ်သည်။ တပ်ဆင်သူလက်မှတ်ထိုးခြင်းအတွက် ထုတ်ဝေမှုတစ်ခုစီ၏ မှတ်စုများ၊ Apple notarization နှင့် တရားဝင်မှုအတိုင်းအတာကို ကိုးကားပါ။ စက်သန့်ရှင်းမှု တပ်ဆင်မှု၊ macOS 14 အသုံးပြုသည့် ရုပ်ပိုင်းဆိုင်ရာ Mac များတွင် လိုက်ဖက်ညီမှု၊ အစစ်အမှန် Claude အကောင့်ခွင့်ပြုချက်နှင့် မော်ဒယ်တောင်းဆိုမှုများသည် အပြည့်အဝ တရားဝင်မှု လိုအပ်နေသေးသည်။
 
 macOS နှင့် Windows အပ်ဒိတ်များသည် ရွေးထားသော proxy ကို သုံးပြီး တိုက်ရိုက်ချိတ်ဆက်မှုသို့ မပြောင်းပါ။ မတပ်ဆင်မီ အလုပ်ကို သိမ်းပြီး ရပ်ပါ။ macOS တွင် ထုတ်ဝေသူတူသော Developer ID လက်မှတ်နှင့် Apple အတည်ပြုချက် လိုအပ်သည်။ Windows တွင် ယုံကြည်ရသော Authenticode လက်မှတ်နှင့် ထုတ်ဝေသူ၏ တူညီသော public key လိုအပ်သည်။ လက်မှတ်မပါ Windows အစမ်းဗားရှင်းနှင့် Linux ကို ကိုယ်တိုင် အပ်ဒိတ်လုပ်ရသည်။ [အပ်ဒိတ်နှင့် ဖယ်ရှားခြင်း](docs/getting-started.md#升级与卸载)။
 
@@ -129,3 +132,13 @@ Cage သည် လွတ်လပ်သောအသိုင်းအဝို�
 - [code-server](https://github.com/coder/code-server) - ဘရောက်ဆာအခြေခံကုဒ်တည်းဖြတ်သူ။
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): လုပ်ငန်းခွင်ပတ်ဝန်းကျင်နှင့် အပြန်အလှန်အကျိုးပြုမှုဒီဇိုင်းအတွက် ကိုးကားချက်များ။
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) နှင့် [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): ကွန်ရက်စစ်ဆေးမှုများနှင့် လုံခြုံရေးဆိုင်ရာ စစ်ဆေးမှုများအတွက် ကိုးကားချက်များ။
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>

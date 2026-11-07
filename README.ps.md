@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[د پروژې ویب پاڼه](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [اپلیکیشن ډاونلوډ کړئ](https://lee-xeo.github.io/Claude-Cage/ps/#download) · [پیل کول](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [مرسته وکړي](CONTRIBUTING.md)**
+**[د پروژې ویب پاڼه](https://lee-xeo.github.io/Claude-Cage/) · [Français](https://lee-xeo.github.io/Claude-Cage/fr/) · [اپلیکیشن ډاونلوډ کړئ](https://lee-xeo.github.io/Claude-Cage/ps/#download) · [پیل کول](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [مرسته وکړي](CONTRIBUTING.md) · [د کارولو لارښود (په چینایي)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -41,6 +41,9 @@
 - **هغه څه چې تاسو یې شریک کړئ کنټرول کړئ.** یوازې ډیفالټ کاري ځای او په ښکاره ډول خلاص شوي پروژې فولډر شریک شوي. د کوربه کلاډ لاسلیک حالت، د براوزر پروفایلونه، او د SSH کیلي په اوتومات ډول نه واردیږي.
 - **ستاسو د شبکې حالت وګورئ.** د جوړ شوي شبکې پراکسي مدیریت تاسو ته اجازه درکوي ګډون وارد کړئ، پای ټکي وټاکئ، او د وتلو IP چیک کړئ. چاپېریال تر هغه وخته پورې آفلاین پاتې کیږي چې مهمې معاینات تېر شي. که چیرې د شبکې پراکسي شتون ونلري، نو مستقیم اتصال ته بدیل تګ نه کېږي.
 - **بل ځل دوام ورکړئ.** اوزار، فایلونه، او د ننوتلو حالت په مجازی ډیسک کې دوام لري. کله چې تاسو کړکۍ وتړئ د شاليد دندې دوام کولی شي.
+- **د Claude Code څو حسابونه اداره کړئ.** نوو Claude ټرمینلونو ته حسابونه وټاکئ او د ۵ ساعتونو او ۷ ورځو سهمیې وګورئ. د روانو ټرمینلونو حسابونه په اوتومات ډول نه بدلېږي.
+- **له موبایل څخه کار ته دوام ورکړئ.** د موبایل پراختیایي کلاینت له کمپیوټر سره نښلي، څو جوړښت لرونکې CLI ناستې او د وسیلو منظورۍ اداره کړئ؛ لرې براوزر جلا اجازه غواړي. د موبایل پراختیایي نسخه باید له سرچینې جوړه کړئ؛ دا د هر عادي موجود ټرمینل کنټرول نه کوي.
+- **Cage په کلاوډ کې وچلوئ.** د SSH له لارې په یوه مناسب Linux x86_64 VPS کې نصب شوي Cage سره وصل شئ؛ KVM ته اړتیا نشته. معلومات او د شبکې وتون په سرور کې وي.
 
 ## چټک پیل
 
@@ -62,7 +65,7 @@ Cage د macOS، Windows او Linux ملاتړ کوي: Apple Silicon له macOS 1
 
 انسټالر کې ورک بینچ او د شبکې پراکسي کور شامل دي. ورځنی استعمال د Go، Node.js، Docker، یا Clash نصبولو ته اړتیا نلري. لومړی لانچ لاهم د لینکس عکس او پراختیا وسیلو ډاونلوډ کولو لپاره انټرنیټ پیوستون ته اړتیا لري. Cage نه د شبکې پراکسي خدمت وړاندې کوي او نه د کلاډ حساب.
 
-اوسنۍ نسخه: `0.1.1-alpha`. د سرچینې کوډ، ویب پاڼه، او خپرونه عامه دي. د انسټالر لاسلیک کولو، د ایپل نوټاریزیشن، او د اعتبار ساحه لپاره د هرې خوشې کولو یادښتونو ته مراجعه وکړئ. د کلین ماشین نصب کول، د macOS 14 چلولو فزیکي ماکونو کې مطابقت، د ریښتیني کلاډ حساب واک، او د ماډل غوښتنې لاهم بشپړ تایید ته اړتیا لري.
+د شته عامه نسخو لپاره [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) وګورئ. د سرچینې کوډ، ویب پاڼه، او خپرونه عامه دي. د انسټالر لاسلیک کولو، د ایپل نوټاریزیشن، او د اعتبار ساحه لپاره د هرې خوشې کولو یادښتونو ته مراجعه وکړئ. د کلین ماشین نصب کول، د macOS 14 چلولو فزیکي ماکونو کې مطابقت، د ریښتیني کلاډ حساب واک، او د ماډل غوښتنې لاهم بشپړ تایید ته اړتیا لري.
 
 د macOS او Windows اوسمهالونه د ټاکل شوي پراکسي له لارې ښکته کېږي، مستقیم اتصال ته نه اوړي. تر نصب مخکې کار وساتئ او دندې ودروئ. macOS د هماغه خپروونکي Developer ID لاسلیک او د Apple تایید غواړي؛ Windows د باور وړ Authenticode لاسلیک او د خپروونکي هماغه عامه کیلي غواړي. د Windows بې لاسلیکه مخکتنه او Linux کڅوړې په لاسي ډول اوسمهالېږي. [اوسمهالول او لرې کول](docs/getting-started.md#升级与卸载).
 
@@ -129,3 +132,13 @@ Cage یوه خپلواکه ټولنه پروژه ده او د انتروپیک �
 - [code-server](https://github.com/coder/code-server): د براوزر پر بنسټ کوډ مدیر.
 - [AIO Sandbox](https://github.com/agent-infra/sandbox): د کاري چاپیریال او تعامل ډیزاین لپاره حوالې.
 - [claude-switcher](https://github.com/YOURSJEYO/claude-switcher) او [Claude-Guardian](https://github.com/DUNHKpcc/Claude-Guardian): د شبکې چکونو او امنیت تشخیص لپاره حوالې.
+
+## Star History
+
+<a href="https://www.star-history.com/?repos=Lee-xeo%2FClaude-Cage&amp;type=date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date&amp;theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" />
+    <img alt="Claude Cage GitHub Star History" src="https://api.star-history.com/svg?repos=Lee-xeo/Claude-Cage&amp;type=Date" width="800" />
+  </picture>
+</a>
