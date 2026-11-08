@@ -94,14 +94,14 @@ try {
     .getByRole("heading", { name: "Cage 环境已就绪", exact: true })
     .waitFor();
   await page
-    .getByRole("button", { name: "新建终端", exact: true })
-    .first()
+    .getByRole("button", { name: "在 design-lab 新建终端", exact: true })
     .click();
   await page.getByRole("menuitem", { name: "普通终端", exact: true }).click();
   await page.getByRole("tab", { name: "终端 1", exact: true }).waitFor();
   const terminalHeader = page.locator("header.chrome");
   assert.equal(await terminalHeader.locator(".navigation-row").count(), 0);
-  assert.equal(await terminalHeader.getByRole("button", { name: "新建终端", exact: true }).count(), 1);
+  assert.equal(await terminalHeader.getByRole("button", { name: "新建终端", exact: true }).count(), 0);
+  assert.equal(await terminalHeader.getByRole("button", { name: "打开文件", exact: true }).count(), 0);
   assert.equal(await terminalHeader.getByRole("button", { name: "design-lab", exact: true }).getAttribute("title"), state.chosenFolder);
   const terminalTab = page.getByRole("tab", { name: "终端 1", exact: true });
   const actions = page.getByRole("group", { name: "终端 1 的操作", exact: true });

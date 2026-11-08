@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowUpRight, ChevronRight, Copy, FileCode2, FolderOpen,
-  Globe2, Maximize2, MoreHorizontal, PanelLeftOpen, Plus, RefreshCw, TerminalSquare, X } from "lucide-react";
+  Globe2, Maximize2, MoreHorizontal, PanelLeftOpen, Plus, RefreshCw, X } from "lucide-react";
 import { BrowserVaultBar } from "./password-vault";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { BrowserFavorites } from "./browser-favorites";
@@ -19,7 +19,7 @@ export const ExpandPane = ({ onClick }) => <button className="icon-button expand
   aria-label="退出分屏" title="在整个工作区显示此页" onClick={onClick}><Maximize2 size={14} /></button>;
 
 export function TerminalHeader({ tab, contentWorkspace, project, metadata, terminalDetail, terminalDetailHint,
-  onHome, ready, running, busy, onEditor, onNew, onClose, sidebarButton, exitButton, location, triggerRef, menu }) {
+  onHome, busy, onClose, sidebarButton, exitButton, location, triggerRef, menu }) {
   return <header className="chrome terminal-chrome">
     <div className="content-heading">
       {sidebarButton}
@@ -27,6 +27,8 @@ export function TerminalHeader({ tab, contentWorkspace, project, metadata, termi
         <button
           onClick={onHome}
           title={contentWorkspace}
+          data-terminal-location={location}
+          ref={triggerRef}
         >
           <FolderOpen size={15} />
           <span>{project}</span>
@@ -42,27 +44,6 @@ export function TerminalHeader({ tab, contentWorkspace, project, metadata, termi
         )}
       </div>
       <div className="heading-actions">
-        <button
-          className="icon-button"
-          aria-label="打开文件"
-          title="打开文件"
-          onClick={onEditor}
-          disabled={!ready || busy}
-        >
-          <FileCode2 size={15} />
-        </button>
-        <button
-          className="icon-button"
-          aria-label="新建终端"
-          aria-haspopup="menu"
-          data-terminal-location={location}
-          ref={triggerRef}
-          title={shortcut("新建终端 ⌘⇧↵")}
-          onClick={onNew}
-          disabled={!running || busy}
-        >
-          <TerminalSquare size={17} />
-        </button>
         {tab && (
           <button
             className="icon-button"

@@ -20,9 +20,11 @@ import { projectName } from "./workspace-state.mjs";
 import { WorkspaceTabs } from "./workspace-tabs";
 import { AccountMenu } from "./account";
 import { useSSHNavigation } from "./remote-hosts";
+import { GuestSystemIcon } from "./guest-system-icon";
 
 export function WorkspaceSidebar({
   workspace,
+  guestSystem,
   defaultWorkspace,
   projects,
   tabs,
@@ -73,6 +75,7 @@ export function WorkspaceSidebar({
         <span className="sidebar-brand">
           <img className="brand-logo" src={logo} alt="" />
           Cage
+          <GuestSystemIcon system={guestSystem} />
         </span>
         <button
           className="icon-button"

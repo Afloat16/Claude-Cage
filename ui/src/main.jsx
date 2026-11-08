@@ -27,7 +27,7 @@ import { WorkspaceSidebar } from "./workspace-sidebar";
 import { TerminalMenu } from "./terminal-menu";
 import { ClaudeDesktop } from "./claude-desktop";
 import { useClaudeAccounts } from "./claude-accounts";
-import { AccountProvider, AccountGate } from "./account";
+import { AccountProvider, AccountGate, useAccount } from "./account";
 import { BrowserHeader, TerminalHeader, ExpandSidebar, ExpandPane } from "./pane-headers";
 import { BrowserDownloads, useDownloadNotifications, useDesktopFiles } from "./browser-downloads";
 import { BrowserUploads } from "./browser-uploads";
@@ -52,6 +52,7 @@ import "./appearance.css";
 import { stopAndExit } from "./quit";
 
 function App() {
+  const { account } = useAccount();
   const [, refreshClientPreferences] = useState(0);
   useEffect(() => {
     const refresh = () => refreshClientPreferences((value) => value + 1);
@@ -954,11 +955,10 @@ function App() {
     return <TerminalHeader tab={tab} project={projectName(path, status?.environment_directory)} metadata={metadata}
       contentWorkspace={path} terminalDetail={detail} terminalDetailHint={tab?.claude_account_source === "default"
         ? "此终端按启动时的普通终端登录标记。若普通终端已换号，请重新打开工作会话确认身份。" : detail}
-      ready={status.ready} running={running} busy={busy} onHome={() => setHome(true)}
+      busy={busy} onHome={() => setHome(true)}
       sidebarButton={sidebarButton(paneSide(tab?.id))} exitButton={expandButton(tab)}
       location={location} triggerRef={!tab || tab.id === active ? terminalTrigger : undefined}
-      menu={terminalMenuAt(location)} onClose={() => closeTab(tab)}
-      onEditor={() => openEditor(path)} onNew={event => newTerminal(path, event.currentTarget)} />;
+      menu={terminalMenuAt(location)} onClose={() => closeTab(tab)} />;
   };
   const recoverEditor = async tab => {
     if (!(await confirm({ title: "重启编辑器？", body: "请先保存文件。浏览器、终端和环境会继续运行。", confirm: "重启编辑器" }))) return;
@@ -1108,6 +1108,7 @@ function App() {
             downloadAction={<BrowserDownloads sidebar downloads={downloads} ready={status.ready && !busy} onStatus={notify} />}
             updateAction={<AppUpdateButton updates={appUpdates} />}
             workspace={selectedProject || status.workspace}
+            guestSystem={account?.guest_system || status.guest_system || "debian-13"}
             defaultWorkspace={status.environment_directory}
             projects={projects}
             tabs={displayTabs}
