@@ -51,17 +51,11 @@ try {
     Invoke-BuildTool 'node' @('--test', 'internal/cage/browser-clipboard.test.mjs', 'scripts/windows-native-bridge.test.mjs')
     $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell/v1.0/powershell.exe'
     & (Join-Path $PSScriptRoot 'test-windows-installation-files.ps1') -HelperShell $windowsPowerShell
-    & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
     if ($Release) {
-        $qemuSource = Join-Path $env:RUNNER_TEMP 'qemu-windows-full-source.tar.gz'
-        $savedMsystem, $savedChere = $env:MSYSTEM, $env:CHERE_INVOKING
-        try {
-            $env:MSYSTEM = 'UCRT64'; $env:CHERE_INVOKING = '1'
-            Invoke-BuildTool (Join-Path $env:CAGE_MSYS2_ROOT 'usr/bin/bash.exe') @('-l',
-                (Join-Path $PSScriptRoot 'bundle-qemu-sources.sh'), $repository,
-                (Join-Path $repository '_output/windows-deps/qemu-cage'), $qemuSource)
-        } finally { $env:MSYSTEM = $savedMsystem; $env:CHERE_INVOKING = $savedChere }
+        & (Join-Path $PSScriptRoot 'prepare-qemu-release.ps1')
+        $qemuSource = Join-Path $repository '_output/windows-qemu-sources/full-source.tar.gz'
     }
+    & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
     if (-not $Release) {
         $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell/v1.0/powershell.exe'
         foreach ($test in @('install-guest-powershell.tests.ps1', 'windows-evaluation.tests.ps1')) {
@@ -101,7 +95,7 @@ try {
             Remove-Item "Cert:\CurrentUser\My\$($imported.Thumbprint)" -Force -ErrorAction SilentlyContinue
         }
     }
-    if ($qemuSource) { Remove-Item -LiteralPath $qemuSource -Force -ErrorAction SilentlyContinue }
+    # Verified QEMU sources remain in the build cache; packaging copies them separately.
     $env:PATH = $savedPath
     $env:CAGE_WINDOWS_CERT_SHA1 = $savedCertificate
     Remove-Item Env:CAGE_ESIGNER_PASSWORD, Env:CAGE_ESIGNER_TOTP_SECRET -ErrorAction SilentlyContinue

@@ -197,5 +197,8 @@ try {
 } finally {
     Pop-Location
     $env:GOOS = $savedGoOS; $env:GOARCH = $savedGoArch; $env:CGO_ENABLED = $savedCGO
-    if (Test-Path -LiteralPath $stage) { Remove-Item -LiteralPath $stage -Recurse -Force }
+    if (Test-Path -LiteralPath $stage) {
+        try { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction Stop }
+        catch { Write-Warning "Temporary build files remain at $stage. Cleanup did not complete: $($_.Exception.Message)" }
+    }
 }

@@ -5,11 +5,33 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { assertWindowsExecutable, invokeJava, javaArgument, prepareVendorInput, redact, verifyTool } from './esigner.mjs';
+import { assertWindowsExecutable, invokeJava, invokeSigning, javaArgument, prepareVendorInput, redact, verifyTool } from './esigner.mjs';
 
 test('Java arguments reject line injection and redact overlapping secrets', () => {
   for (const value of ['line\nbreak', 'line\rbreak', 'a\0b']) assert.throws(() => javaArgument(value));
   assert.equal(redact('secret-long and secret', ['secret', 'secret-long']), '[redacted] and [redacted]');
+});
+
+test('signing retries only declared server errors without output and remains bounded', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'cage-sign-retry-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const outputPath = join(root, 'signed.exe'), delays = [];
+  const failure = () => new Error('CodeSignTool failed (exit 11). Error: {"error":"server_error"}');
+  let count = 0;
+  assert.equal(await invokeSigning({ outputPath, pause: async ms => delays.push(ms), invoke: async () => { if (++count < 3) throw failure(); return 'signed'; } }), 'signed');
+  assert.deepEqual(delays, [15000, 30000]);
+  count = 0;
+  await assert.rejects(invokeSigning({ outputPath, pause: async () => {}, invoke: async () => { count++; throw failure(); } }), /server_error/);
+  assert.equal(count, 3);
+  for (const message of ['OTP rejected', 'authentication failed', 'timeout', 'CodeSignTool failed (exit 1). server_error', `${failure().message}\nOTP rejected`, `${failure().message}\ntimeout`]) {
+    count = 0;
+    await assert.rejects(invokeSigning({ outputPath, pause: async () => assert.fail('must not wait'), invoke: async () => { count++; throw new Error(message); } }));
+    assert.equal(count, 1);
+  }
+  count = 0;
+  await invokeSigning({ outputPath, pause: async () => assert.fail('output requires trust verification, never another signature'), invoke: async () => { count++; await writeFile(outputPath, 'candidate output'); throw failure(); } });
+  assert.equal(count, 1);
+  assert.equal(await readFile(outputPath, 'utf8'), 'candidate output');
 });
 
 test('a real JVM receives quoted Unicode arguments, no secrets in process arguments, and OTP through stdin', async t => {

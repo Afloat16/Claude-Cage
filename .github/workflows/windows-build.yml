@@ -81,7 +81,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact_name }}-${{ matrix.os }}-reports
-          path: ${{ runner.temp }}/cage-smoke-*.json
+          path: |
+            ${{ runner.temp }}/cage-smoke-*.json
+            ${{ runner.temp }}/cage-build-ui-*/smoke.json
+            ${{ runner.temp }}/cage-build-ui-*/*.png
           if-no-files-found: ignore
           overwrite: true
           retention-days: 14
@@ -125,10 +128,42 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-pkgconf
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: qemu_cache
         with:
           path: _output/windows-deps
-          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*', 'scripts/bundle-qemu-sources.sh') }}
+      - name: Build and verify QEMU runtime and package identity
+        id: qemu_build
+        env:
+          CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          ./scripts/build-qemu-windows.ps1
+          $identity = Get-Content '_output/windows-deps/qemu-cage/cage-build.json' -Raw | ConvertFrom-Json
+          "fingerprint=$($identity.fingerprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $collectorHash = (Get-FileHash 'scripts/bundle-qemu-sources.sh' -Algorithm SHA256).Hash + (Get-FileHash 'scripts/prepare-qemu-release.ps1' -Algorithm SHA256).Hash
+          "collector=$collectorHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+      - name: Preserve only the completed verified runtime cache
+        if: steps.qemu_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _output/windows-deps
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*', 'scripts/bundle-qemu-sources.sh') }}
+      - uses: actions/cache/restore@v4
+        id: qemu_sources
+        with:
+          path: _output/windows-qemu-sources
+          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.collector }}
+      - name: Collect and verify corresponding sources before signing
+        env:
+          CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+        run: ./scripts/prepare-qemu-release.ps1
+      - name: Preserve only the completed verified source cache
+        if: steps.qemu_sources.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: _output/windows-qemu-sources
+          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.collector }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -158,5 +193,16 @@ jobs:
             _output/releases/*/windows/build-metadata.json
           if-no-files-found: error
           overwrite: true
+          retention-days: 14
+      - name: Preserve public release acceptance reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-reports
+          path: |
+            ${{ runner.temp }}/cage-smoke-*.json
+            ${{ runner.temp }}/cage-build-ui-*/smoke.json
+            ${{ runner.temp }}/cage-build-ui-*/*.png
+          if-no-files-found: ignore
           retention-days: 14
       # The caller owns publication. This workflow has no repository write access.

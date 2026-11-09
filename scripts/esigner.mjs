@@ -168,6 +168,23 @@ async function credentials() {
   return { username, password, credential, totp: process.env.CAGE_ESIGNER_TOTP_SECRET };
 }
 
+// A provider-declared server error is a definite failure. Timeouts, OTP and
+// authentication errors are not retried. Any output proceeds to the caller's
+// existing Authenticode verification; it must never trigger another signature.
+export async function invokeSigning({ invoke, outputPath, pause = ms => new Promise(done => setTimeout(done, ms)) }) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await invoke(); }
+    catch (error) {
+      try { await access(outputPath); return ''; }
+      catch (outputError) { if (outputError.code !== 'ENOENT') throw error; }
+      const uncertainOrRejected = /timeout|timed out|abort|cancel|invalid_grant|invalid_client|access_denied|unauthorized|(?:otp|totp|authentication|authorization|credential|password)[^\n]*(?:invalid|expired|failed|rejected)/i.test(error.message);
+      if (attempt === 2 || uncertainOrRejected || !/^CodeSignTool failed \(exit 11\)/.test(error.message) || !/"error"\s*:\s*"server_error"/.test(error.message)) throw error;
+      console.error(`Signing service returned server_error; retrying in ${(attempt + 1) * 15} seconds.`);
+      await pause((attempt + 1) * 15000);
+    }
+  }
+}
+
 async function main(argv) {
   const [command, input, flag, destination] = argv;
   if (command === 'install' && argv.length === 1) { console.log(`Verified CodeSignTool ${pin.version}: ${await installTool()}`); return; }
@@ -193,8 +210,9 @@ async function main(argv) {
       args.push(`-input_file_path=${vendor.path}`, `-output_dir_path=${vendor.output}`);
       if (auth.totp) args.push(`-totp_secret=${auth.totp}`);
     }
-    const result = await invokeJava({ jar: join(directory, pin.jar), config: join(directory, configPath), arguments: args,
+    const invoke = () => invokeJava({ jar: join(directory, pin.jar), config: join(directory, configPath), arguments: args,
       otp: signal => prompt('Current six-digit authenticator code', true, signal), secrets: [auth.password, auth.totp] });
+    const result = command === 'sign' ? await invokeSigning({ invoke, outputPath: join(vendor.output, basename(vendor.path)) }) : await invoke();
     if (command === 'sign') {
       const signed = join(vendor.output, basename(vendor.path));
       const bytes = await readFile(signed);

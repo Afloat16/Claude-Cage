@@ -27,11 +27,34 @@ function Assert-WindowsWorkbench {
         if (-not $window.WaitForExit(180000)) { throw "Cage workbench acceptance timed out. Diagnostics retained at $testRoot" }
         if ($window.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "Cage workbench acceptance failed. Diagnostics retained at $testRoot" }
         $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-        if ($result.success -ne $true -or $result.nativeBridgeReady -ne $true) { throw "Cage workbench/bridge acceptance failed. Diagnostics retained at $testRoot" }
+        if ($result.success -ne $true -or $result.nativeBridgeReady -ne $true) {
+            $detail = if ($result.PSObject.Properties.Name -contains 'nativeStatus') { $result.nativeStatus } else { 'No native status was recorded.' }
+            throw "Cage workbench/bridge acceptance failed: $detail Diagnostics retained at $testRoot"
+        }
         $passed = $true
     } finally {
         if (-not $window.HasExited) { $window.Kill($true); $window.WaitForExit() }
         $window.Dispose()
+        if (-not $passed) {
+            # Close only this test's authenticated controller. Killing every
+            # cage.exe could terminate another installed application or VM.
+            try {
+                $cleanup = [Diagnostics.ProcessStartInfo]::new((Join-Path $AppDirectory 'resources/cage.exe'))
+                $cleanup.UseShellExecute = $false
+                $cleanup.CreateNoWindow = $true
+                $cleanup.RedirectStandardOutput = $true
+                $cleanup.RedirectStandardError = $true
+                $cleanup.Environment['CLAUDE_CAGE_CONFIG'] = Join-Path $testRoot 'profile/config.json'
+                $cleanup.ArgumentList.Add('prepare-update'); $cleanup.ArgumentList.Add('--json')
+                $controller = [Diagnostics.Process]::Start($cleanup)
+                try {
+                    $stdout = $controller.StandardOutput.ReadToEndAsync()
+                    $stderr = $controller.StandardError.ReadToEndAsync()
+                    if (-not $controller.WaitForExit(20000)) { $controller.Kill($true); $controller.WaitForExit() }
+                    if ($controller.ExitCode -ne 0) { Write-Warning 'The isolated smoke controller did not confirm shutdown; its profile is retained.' }
+                } finally { $controller.Dispose() }
+            } catch { Write-Warning "Isolated smoke cleanup failed: $($_.Exception.Message)" }
+        }
         # A successful smoke report is written only after the isolated backend
         # confirms shutdown. Failed profiles remain available for diagnosis.
         if ($passed) { Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
