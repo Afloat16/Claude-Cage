@@ -65,9 +65,10 @@ func TestStorageRuntimeUsesVerifiedCopyAndRetainsOriginal(t *testing.T) {
 			t.Fatal("successful move rolled back")
 		}
 		assertStorageFile(t, filepath.Join(move.Backup, file), payload)
-		actual, err := filepath.EvalSymlinks(storageAnchor(profile))
-		if err != nil || actual != move.Destination {
-			t.Fatalf("runtime committed before directory: %s %v", actual, err)
+		actual, err := os.Stat(storageAnchor(profile))
+		destination, targetErr := os.Stat(move.Destination)
+		if err != nil || targetErr != nil || !os.SameFile(actual, destination) {
+			t.Fatalf("runtime committed before directory: anchor %v, destination %v", err, targetErr)
 		}
 		return nil
 	}
