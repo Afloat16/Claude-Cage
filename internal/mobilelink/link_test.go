@@ -486,11 +486,17 @@ func TestSavedClientRecoversReadAfterHostDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	lookup := strings.Repeat("A", 43)
-	start := func() func() {
+	start := func(reconnecting bool) func() {
 		t.Helper()
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		t.Cleanup(cancel)
 		room, err := mobilelink.CreateDiscoverableRoom(ctx, f.base, strings.Repeat("t", 64), lookup)
+		// Transport shutdown reaches the relay asynchronously. Match the saved
+		// host's retry policy while the previous room finishes retiring.
+		for reconnecting && err != nil && mobilelink.Retryable(err) && ctx.Err() == nil {
+			time.Sleep(10 * time.Millisecond)
+			room, err = mobilelink.CreateDiscoverableRoom(ctx, f.base, strings.Repeat("t", 64), lookup)
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -501,7 +507,7 @@ func TestSavedClientRecoversReadAfterHostDisconnect(t *testing.T) {
 		}()
 		return func() { cancel(); <-done }
 	}
-	drop := start()
+	drop := start(false)
 	c, err := nativeclient.OpenSaved(f.base, lookup, f.identity.Pin, d)
 	if err != nil {
 		t.Fatal(err)
@@ -511,7 +517,7 @@ func TestSavedClientRecoversReadAfterHostDisconnect(t *testing.T) {
 		t.Fatal(err)
 	}
 	drop()
-	stop := start()
+	stop := start(true)
 	defer stop()
 
 	calls := f.upstream.Load()
