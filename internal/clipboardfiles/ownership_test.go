@@ -1,10 +1,15 @@
 package clipboardfiles
 
 import (
+	"bufio"
+	"context"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func cacheFixture(t *testing.T) (CacheStore, CachedSelection) {
@@ -118,5 +123,63 @@ func TestCacheConcurrentPublishCannotRecreateAReleasedReceipt(t *testing.T) {
 		if _, err := store.load(selection.ID); !os.IsNotExist(err) {
 			t.Fatal("a concurrent publication recreated a retired receipt", err)
 		}
+	}
+}
+
+type producerInput struct{}
+
+func (producerInput) Read(buffer []byte) (int, error) {
+	fmt.Fprintln(os.Stdout, "copy-started")
+	return os.Stdin.Read(buffer)
+}
+
+func TestCacheProducerFixture(t *testing.T) {
+	directory := os.Getenv("CAGE_CLIPBOARD_PRODUCER_TEST")
+	if directory == "" {
+		t.Skip("subprocess fixture")
+	}
+	_, _ = (CacheStore{Directory: directory}).Read(producerInput{})
+}
+
+func TestCacheRecoversAProducerKilledDuringItsFirstRead(t *testing.T) {
+	root := t.TempDir()
+	store := CacheStore{Directory: filepath.Join(root, "records")}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestCacheProducerFixture$")
+	child.Env = append(os.Environ(), "CAGE_CLIPBOARD_PRODUCER_TEST="+store.Directory, "TMPDIR="+root, "TEMP="+root, "TMP="+root)
+	input, err := child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer input.Close()
+	output, err := child.StdoutPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := child.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer child.Process.Kill()
+	line, err := bufio.NewReader(output).ReadString('\n')
+	if err != nil || strings.TrimSpace(line) != "copy-started" {
+		t.Fatal("producer did not enter its blocking read", err)
+	}
+	if listed, err := store.List(); err != nil || len(listed) != 0 {
+		t.Fatal("the live producer lost ownership", err)
+	}
+	if err := child.Process.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	_ = child.Wait()
+	listed, err := store.List()
+	if err != nil || len(listed) != 1 {
+		t.Fatal("terminated producer had no creation receipt", err)
+	}
+	if err := store.Release(listed[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Dir(listed[0].Paths[0])); !os.IsNotExist(err) {
+		t.Fatal("terminated producer retained its partial directory")
 	}
 }

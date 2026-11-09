@@ -17,10 +17,16 @@ const SelectionLimit = 100
 // LinkCachedFiles groups already frozen guest-cache files for one native file
 // chooser without copying every attachment again. GUI callers validate ownership.
 func LinkCachedFiles(paths []string) (result []string, err error) {
+	return linkCachedFiles(paths, temporaryDirectory)
+}
+
+func temporaryDirectory() (string, error) { return os.MkdirTemp("", "cage-clipboard-") }
+
+func linkCachedFiles(paths []string, directory func() (string, error)) (result []string, err error) {
 	if len(paths) == 0 || len(paths) > SelectionLimit {
 		return nil, errors.New("请选择 1 至 100 个文件")
 	}
-	root, err := os.MkdirTemp("", "cage-clipboard-")
+	root, err := directory()
 	if err != nil {
 		return nil, err
 	}
@@ -51,10 +57,14 @@ func LinkCachedFiles(paths []string) (result []string, err error) {
 // Save receives one file into a newly owned cache directory. The caller can
 // publish the returned path only after the complete bounded write succeeds.
 func Save(input io.Reader, name string) (path string, err error) {
+	return save(input, name, temporaryDirectory)
+}
+
+func save(input io.Reader, name string, directory func() (string, error)) (path string, err error) {
 	if !validName(name) || strings.Contains(name, ":") {
 		return "", errors.New("剪贴板文件名称无效")
 	}
-	root, err := os.MkdirTemp("", "cage-clipboard-")
+	root, err := directory()
 	if err != nil {
 		return "", err
 	}
@@ -140,7 +150,11 @@ func Write(output io.Writer, paths []string) error {
 }
 
 func Read(input io.Reader) (paths []string, err error) {
-	root, err := os.MkdirTemp("", "cage-clipboard-")
+	return read(input, temporaryDirectory)
+}
+
+func read(input io.Reader, directory func() (string, error)) (paths []string, err error) {
+	root, err := directory()
 	if err != nil {
 		return nil, err
 	}
@@ -206,11 +220,15 @@ func Read(input io.Reader) (paths []string, err error) {
 }
 
 func Copy(paths []string) ([]string, error) {
+	return copyFiles(paths, temporaryDirectory)
+}
+
+func copyFiles(paths []string, directory func() (string, error)) ([]string, error) {
 	reader, writer := io.Pipe()
 	defer reader.Close()
 	done := make(chan error, 1)
 	go func() { err := Write(writer, paths); writer.CloseWithError(err); done <- err }()
-	copied, err := Read(reader)
+	copied, err := read(reader, directory)
 	reader.Close()
 	if writeErr := <-done; writeErr != nil {
 		if len(copied) > 0 {
