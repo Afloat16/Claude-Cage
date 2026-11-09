@@ -163,7 +163,7 @@ jobs:
           release="$PWD/_output/releases/$version"
           node scripts/release-version.mjs metadata macos "$release/build-metadata.json"
           mkdir -p _output/ci-macos-release
-          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
+          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/cage-macos-guest-$version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
           (cd _output/ci-macos-release && shasum -a 256 --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:
