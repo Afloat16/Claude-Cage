@@ -17,6 +17,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/agentcli"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/version"
 	"github.com/sylvinus/agent-vm/internal/workbench"
 )
@@ -179,6 +180,7 @@ func relay(config string) error {
 	defer out.Close()
 	defer stderr.Close()
 	cmd.Stdout, cmd.Stderr = out, stderr
+	host.HideCommandWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		return err
 	}

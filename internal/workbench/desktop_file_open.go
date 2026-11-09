@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 type desktopFileOpen struct {
@@ -270,7 +272,7 @@ func openHostFile(path, action string) error {
 	defer cancel()
 	command := hostFileCommand(runtime.GOOS, path, action, info.IsDir())
 	cmd := exec.CommandContext(ctx, command.Path, command.Args[1:]...)
-	hideCommand(cmd)
+	host.HideCommandWindow(cmd)
 	if err = cmd.Run(); err != nil {
 		if runtime.GOOS != "linux" || action != "reveal" {
 			return errors.New("无法打开本机文件或文件管理器，请检查默认应用和文件权限")

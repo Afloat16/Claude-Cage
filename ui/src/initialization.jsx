@@ -124,8 +124,8 @@ function Initialization({ initial, onComplete }) {
     pollNow.current = poll;
     poll();
     if (nativeAvailable()) native("workbenchReady").catch(() => {});
-    window.cageNativeAction = async action => { if (action === "quit") await native("quitNow"); };
-    return () => { alive.current = false; clearTimeout(timer); pollNow.current = null; delete window.cageNativeAction; };
+    window.cageWorkbenchAction = async action => { if (action === "quit") await native("quitNow"); };
+    return () => { alive.current = false; clearTimeout(timer); pollNow.current = null; delete window.cageWorkbenchAction; };
   }, [account?.guest_system]);
 
   async function run(operation) {

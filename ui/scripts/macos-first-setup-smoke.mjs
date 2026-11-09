@@ -72,6 +72,11 @@ for (const failure of ["http", "native"]) {
     assert.ok(await retry.isVisible(), "checking permissions hid the completion retry");
     await retry.click();
     await page.getByRole("heading",{name:"正在准备虚拟 Mac"}).waitFor({state:"hidden"});
+    await page.getByRole("complementary", { name: "项目与终端" }).waitFor();
+    await page.evaluate(() => window.cageNativeAction("settings"));
+    await page.getByRole("region", { name: "设置", exact: true }).waitFor();
+    await page.evaluate(() => window.cageNativeAction("quit"));
+    await page.getByRole("dialog", { name: "退出 Cage", exact: true }).getByRole("button", { name: "取消", exact: true }).click();
     assert.equal(calls.filter(c=>c==="finish").length,2);
     assert.equal(calls.filter(c=>c==="verify-projects").length,0);
     assert.deepEqual(errors, []);

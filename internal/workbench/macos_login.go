@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 // Only installer-created bindings carry this identity. A damaged binding stays
@@ -315,6 +316,6 @@ func (s *Server) macOSSetupAdminCommand(ctx context.Context) *exec.Cmd {
 	}
 	cmd := exec.CommandContext(ctx, sshExecutable(), append(args, "-T", "cage-macos", "--", "exec /usr/bin/sudo -S -p '' /usr/local/libexec/cage-finish-initial-setup < /Users/"+user+"/password")...)
 	cmd.Env = sshEnvironment()
-	hideCommand(cmd)
+	host.HideCommandWindow(cmd)
 	return cmd
 }

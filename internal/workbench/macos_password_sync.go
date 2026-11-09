@@ -15,6 +15,7 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 func (s *Server) syncMacGuestPassword(ctx context.Context) error {
@@ -50,7 +51,7 @@ func (s *Server) applyMacGuestPassword(ctx context.Context, id uuid.UUID, oldPas
 	command := func(ctx context.Context, script string) *exec.Cmd {
 		cmd := exec.CommandContext(ctx, sshExecutable(), append(append([]string{}, args...), "-T", "cage-macos", "--", "exec /bin/sh -ec "+shellescape.Quote(script))...)
 		cmd.Env = sshEnvironment()
-		hideCommand(cmd)
+		host.HideCommandWindow(cmd)
 		return cmd
 	}
 	// Use this build's helper so older managed guests can adopt the shared

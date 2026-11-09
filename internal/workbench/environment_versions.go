@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
+	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 )
 
@@ -102,7 +103,7 @@ CAGE_VERSIONS`)
 	if core, err := managedproxy.CorePath(); err == nil {
 		probeCtx, done := context.WithTimeout(ctx, 2*time.Second)
 		cmd := exec.CommandContext(probeCtx, core, "-v")
-		hideCommand(cmd)
+		host.HideCommandWindow(cmd)
 		b, e := cmd.Output()
 		done()
 		if e == nil {

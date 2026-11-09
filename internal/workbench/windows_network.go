@@ -20,6 +20,7 @@ import (
 	"github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/host"
 )
 
 type windowsHostNetwork struct {
@@ -52,7 +53,7 @@ func (s *Server) startWindowsNetwork() error {
 	cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+s.configPath)
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard
-	hideCommand(cmd)
+	host.HideCommandWindow(cmd)
 	if err := cmd.Start(); err != nil {
 		cancel()
 		close(process.done)

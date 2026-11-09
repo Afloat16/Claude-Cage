@@ -98,8 +98,13 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     rejectComplete = false;
     await page.getByRole("button", { name: "进入工作台", exact: true }).click();
     await page.getByRole("complementary", { name: "项目与终端" }).waitFor();
+    await page.evaluate(() => window.cageNativeAction("settings"));
+    await page.getByRole("region", { name: "设置", exact: true }).waitFor();
     await page.reload();
     await page.getByRole("complementary", { name: "项目与终端" }).waitFor();
+    await page.evaluate(() => window.cageNativeAction("quit"));
+    const quitDialog = page.getByRole("dialog", { name: "退出 Cage", exact: true });
+    await quitDialog.getByRole("button", { name: "取消", exact: true }).click();
     assert.equal(await page.getByRole("heading", { name: "为 Cage 准备独立环境" }).count(), 0);
     assert.deepEqual(errors, []);
     console.log(`PASS ${platform}: independent initialization, inline keyboard selection, back navigation, progress, refresh, retry, completion gate and reopen`);

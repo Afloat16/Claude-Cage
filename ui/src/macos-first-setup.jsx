@@ -55,13 +55,13 @@ export function MacOSFirstSetup() {
       if (active) timer = setTimeout(poll, 2000);
     }
     poll();
-    window.cageNativeAction = async command => {
+    window.cageWorkbenchAction = async command => {
       if (command === "closeTab") document.dispatchEvent(new Event("cage-close-modal"));
       if (command === "quit") await native("quitNow");
     };
     window.cageEditAction = () => false;
     if (nativeAvailable()) native("workbenchReady").catch(() => {});
-    return () => { active = false; clearTimeout(timer); delete window.cageNativeAction; delete window.cageEditAction; };
+    return () => { active = false; clearTimeout(timer); delete window.cageWorkbenchAction; delete window.cageEditAction; };
   }, []);
   async function act(action) {
     if (busy) return;
