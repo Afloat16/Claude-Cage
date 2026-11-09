@@ -33,6 +33,9 @@ for (const code of codes) {
   }
   assert.ok(!html.includes('/Users/'), `${code}: local developer path leaked`);
   assert.ok(html.includes(`href="${published.downloadURL}"`), `${code}: macOS download is missing`);
+  const downloadSection = html.match(/<section\b[^>]*id="download"[^>]*>([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(downloadSection?.includes(`CLAUDE CAGE · v${published.version}`), `${code}: download release label must follow published metadata`);
+  assert.ok(!downloadSection?.includes('CLAUDE CAGE · ALPHA'), `${code}: stale release channel label`);
   assert.equal([...html.matchAll(/<a\b[^>]*\bdata-download-open(?:\s|>)/g)].length, 3, `${code}: all download entries must open the platform chooser`);
   assert.ok(html.includes('aria-labelledby="platform-title"'), `${code}: platform dialog has no accessible title`);
   for (const platform of ['macOS', 'Windows', 'Linux']) {

@@ -52,7 +52,7 @@
   "qemuKeycodemap": {
     "version": "f5772a62ec52591ff6870b7e8ef32482371f22c6",
     "file": "keycodemapdb.tar.gz",
-    "url": "https://gitlab.com/qemu-project/keycodemapdb/-/archive/f5772a62ec52591ff6870b7e8ef32482371f22c6/keycodemapdb-f5772a62ec52591ff6870b7e8ef32482371f22c6.tar.gz",
+    "url": "https://github.com/qemu/keycodemapdb/archive/f5772a62ec52591ff6870b7e8ef32482371f22c6.tar.gz",
     "algorithm": "SHA256",
     "hash": "d014b53382dbb17b8196ad12f50de7f20d0ef1b9f7d54b0be51a6cbb14209195"
   }

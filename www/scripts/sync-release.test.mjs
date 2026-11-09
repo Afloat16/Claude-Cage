@@ -195,3 +195,34 @@ test('macOS verification checks both owned archives without requiring other-plat
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
+
+test('explicit RC manifest exposes signed Windows and all platforms with complete QEMU sources', async () => {
+  const tag = 'v0.1.7-rc.1', version = tag.slice(1);
+  const names = [`Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`, `Cage-${version}-linux-amd64.deb`, 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz'];
+  const manifest = names.map(name => `${hash}  ${name}\n`).join('');
+  const release = await publicManifestRelease(tag, async (url, options = {}) => {
+    assert.equal(options.headers?.Authorization, undefined);
+    if (url.endsWith('/SHA256SUMS')) return new Response(manifest);
+    assert.equal(options.method, 'HEAD');
+    return new Response('', { headers: { 'content-length': String(url.includes('full-source') ? 700 * 1024 * 1024 : 100) } });
+  });
+  assert.equal(release.prerelease, true);
+  const metadata = releaseMetadata(release, manifest);
+  assert.equal(metadata.version, version);
+  assert.equal(metadata.windowsDownloadURL, release.assets.find(asset => asset.name === names[1]).browser_download_url);
+  assert.equal(metadata.linuxDownloadURL, release.assets.find(asset => asset.name === names[2]).browser_download_url);
+  assert.ok(!metadata.windowsPreview);
+  assert.equal(metadata.releaseURL, `https://github.com/Lee-xeo/Claude-Cage/releases/tag/${tag}`);
+});
+
+test('manifest source allowance keeps installer and source size bounds separate and names constrained', async () => {
+  const names = ['Cage-0.1.7-rc.1-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz'];
+  for (const [oversized, size] of [[names[0], 512 * 1024 * 1024 + 1], [names[2], 2048 * 1024 * 1024 + 1]]) {
+    await assert.rejects(publicManifestRelease('v0.1.7-rc.1', async url => url.endsWith('/SHA256SUMS')
+      ? new Response(names.map(name => `${hash}  ${name}\n`).join(''))
+      : new Response('', { headers: { 'content-length': String(url.endsWith(oversized) ? size : 100) } })), /Missing or incomplete public asset/);
+  }
+  for (const invalid of ['qemu-11.1.0-windows-full-source.tar.gz.exe', 'qemu-latest-windows-full-source.tar.gz', 'qemu-11.1.0-windows-full-source/escape.tar.gz']) {
+    await assert.rejects(publicManifestRelease('v0.1.7-rc.1', async () => new Response([...names, invalid].map(name => `${hash}  ${name}\n`).join(''))));
+  }
+});

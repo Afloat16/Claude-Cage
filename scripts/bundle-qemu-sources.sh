@@ -15,7 +15,16 @@ git -c core.autocrlf=false -C "$stage/source/qemu" checkout -q --detach FETCH_HE
 [[ $(git -C "$stage/source/qemu" rev-parse HEAD) == "$commit" ]]
 # All shipped firmware comes from QEMU's pinned ROM submodules. Include nested
 # submodules (EDK2 libraries etc.), not only the superproject's empty gitlinks.
-git -c core.autocrlf=false -C "$stage/source/qemu" submodule update --init --recursive --depth=1 -- roms
+git_options=(-c core.autocrlf=false)
+for module in QemuMacDrivers edk2 ipxe opensbi qboot qemu-palcode seabios seabios-hppa skiboot u-boot vbootrom; do
+    git_options+=(-c "url.https://github.com/qemu/$module.insteadOf=https://gitlab.com/qemu-project/$module")
+done
+git_options+=(-c url.https://github.com/openbios/openbios.insteadOf=https://gitlab.com/qemu-project/openbios)
+git_options+=(-c url.https://github.com/zbalaton/u-boot-sam460ex.insteadOf=https://gitlab.com/qemu-project/u-boot-sam460ex)
+git_options+=(-c url.https://github.com/tianocore/edk2-cmocka.git.insteadOf=https://gitlab.com/cmocka/cmocka.git)
+# SLOF has no current official GitHub mirror. Its GitLab smart-Git endpoint
+# remains usable even when archive downloads receive an HTML challenge.
+git "${git_options[@]}" -C "$stage/source/qemu" submodule update --init --recursive --depth=1 -- roms
 git -C "$stage/source/qemu" submodule status --recursive -- roms > "$stage/source/firmware-revisions.txt"
 if grep -Eq '^[-+U]' "$stage/source/firmware-revisions.txt"; then echo 'Firmware source revisions are incomplete.' >&2; exit 1; fi
 cp "$runtime/build-source-packages.txt" "$runtime/build-packages.txt" "$runtime/cage-build.json" "$stage/source/cage/"
