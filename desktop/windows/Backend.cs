@@ -13,6 +13,36 @@ internal static class Backend
     public static string Root => Path.GetDirectoryName(ConfigPath)!;
     public static string Executable => Path.Combine(AppContext.BaseDirectory, "resources", "cage.exe");
 
+    public static List<Process> CaptureSmokeControllers()
+    {
+        var processes = new List<Process>();
+        try
+        {
+            foreach (var profile in new[] { Root, Path.Combine(Root, "desktop-entry") })
+            {
+                var record = Path.Combine(profile, "control.json");
+                if (!File.Exists(record)) continue;
+                using var data = JsonDocument.Parse(File.ReadAllText(record));
+                Process process;
+                try { process = Process.GetProcessById(data.RootElement.GetProperty("pid").GetInt32()); }
+                catch (ArgumentException) { continue; } // It already exited.
+                try
+                {
+                    // Pin the actual process handle before requesting shutdown.
+                    // A released profile lock alone does not release its image.
+                    _ = process.SafeHandle;
+                    if (process.HasExited) { process.Dispose(); continue; }
+                    if (!string.Equals(Path.GetFullPath(process.MainModule!.FileName), Path.GetFullPath(Executable), StringComparison.OrdinalIgnoreCase))
+                        throw new IOException("自检后台身份与当前应用不符，未等待其他程序");
+                    processes.Add(process);
+                }
+                catch { process.Dispose(); throw; }
+            }
+            return processes;
+        }
+        catch { foreach (var process in processes) process.Dispose(); throw; }
+    }
+
     public static ProcessStartInfo StartInfo(string executable, params string[] arguments)
     {
         var start = new ProcessStartInfo(executable) {

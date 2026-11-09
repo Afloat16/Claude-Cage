@@ -6,12 +6,16 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
 )
 
 func TestMacOSGuestDiagnosticCollectorBoundsAndFilters(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("macOS guest collector requires POSIX directory descriptors and file ownership")
+	}
 	if _, err := exec.LookPath("uv"); err != nil {
 		t.Skip("uv is required for the guest collector")
 	}

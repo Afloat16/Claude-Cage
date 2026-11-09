@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -28,6 +29,9 @@ func TestMacOSAttachmentPathRejectsOtherUsersAndEscapes(t *testing.T) {
 }
 
 func TestMacOSTerminalUsesSharedAttachmentReceiver(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shared macOS/Linux guest receiver requires POSIX UnixStreamServer")
+	}
 	if _, err := exec.LookPath("uv"); err != nil {
 		t.Skip("uv is required for the shared Python receiver")
 	}

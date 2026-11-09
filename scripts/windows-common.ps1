@@ -14,6 +14,22 @@ function Get-WindowsWorkbenchTestBase {
     return [IO.Path]::GetTempPath()
 }
 
+function Invoke-InIsolatedTestTemp {
+    param([Parameter(Mandatory)][scriptblock]$Checks)
+    # Windows' default temp is inside AppData, which must remain protected
+    # against project sharing. Put test projects in the runner's own temp.
+    $directory = Join-Path (Get-WindowsWorkbenchTestBase) ('cage-go-tests-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $directory | Out-Null
+    $savedTemp = $env:TEMP; $savedTmp = $env:TMP
+    try {
+        $env:TEMP = $directory; $env:TMP = $directory
+        & $Checks
+    } finally {
+        $env:TEMP = $savedTemp; $env:TMP = $savedTmp
+        Remove-Item -LiteralPath $directory -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function ConvertTo-SmokeSafeText {
     param($Value)
     if ($Value -isnot [string]) { return '' }

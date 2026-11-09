@@ -163,7 +163,7 @@ func TestAgentDesktopConfigurationUsesExplicitSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "control.json"), record, 0600); err != nil {
+	if err := writePrivate(filepath.Join(filepath.Dir(path), "control.json"), json.RawMessage(record)); err != nil {
 		t.Fatal(err)
 	}
 	lock, err := openControllerLock(filepath.Dir(path), os.O_CREATE|os.O_RDWR)

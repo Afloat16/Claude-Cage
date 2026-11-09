@@ -1,5 +1,12 @@
 using Cage.Windows;
 
+if (args is ["smoke-wait", var smokeRelease])
+{
+    using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+    while (!File.Exists(smokeRelease)) await Task.Delay(20, deadline.Token);
+    return;
+}
+
 if (args is ["app-update", "check" or "download"])
 {
     File.AppendAllText(Path.Combine(Backend.Root, "retry-invocations"), "x");
@@ -175,6 +182,36 @@ try
         var executable = Path.Combine(nativeResources, "cage.exe");
         File.Copy(Environment.ProcessPath!, executable, true);
         if (!OperatingSystem.IsWindows()) File.SetUnixFileMode(executable, File.GetUnixFileMode(Environment.ProcessPath!));
+        var release = Path.Combine(integration, "smoke-release");
+        using (var owned = System.Diagnostics.Process.Start(Backend.StartInfo(executable, "smoke-wait", release))!)
+        {
+            var record = Path.Combine(Backend.Root, "control.json");
+            Directory.CreateDirectory(Backend.Root);
+            var controllers = new List<System.Diagnostics.Process>();
+            try
+            {
+                File.WriteAllText(record, System.Text.Json.JsonSerializer.Serialize(new { pid = Environment.ProcessId }));
+                var foreignRejected = false;
+                try { Backend.CaptureSmokeControllers(); } catch (IOException) { foreignRejected = true; }
+                Check(foreignRejected, "smoke captured a controller outside its application executable");
+                File.WriteAllText(record, System.Text.Json.JsonSerializer.Serialize(new { pid = owned.Id }));
+                controllers = Backend.CaptureSmokeControllers();
+                Check(controllers.Count == 1 && !controllers[0].HasExited, "smoke did not pin its live controller");
+                var exit = controllers[0].WaitForExitAsync();
+                Check(!exit.IsCompleted, "smoke considered a still-running controller stopped");
+                File.WriteAllText(release, "release owned child");
+                await exit.WaitAsync(TimeSpan.FromSeconds(5));
+                Check(controllers[0].HasExited, "smoke did not observe actual controller exit");
+            }
+            finally
+            {
+                File.WriteAllText(release, "release owned child");
+                if (!owned.WaitForExit(5000)) { owned.Kill(); owned.WaitForExit(); }
+                foreach (var controller in controllers) controller.Dispose();
+                File.Delete(record);
+            }
+        }
+        Console.WriteLine("Windows smoke shutdown: actual controller handle pinned, foreign executable rejected, process exit observed.");
         var retryAt = DateTimeOffset.UtcNow.AddHours(1).ToString("yyyy-MM-dd'T'HH:mm:ss'Z'");
         Directory.CreateDirectory(Backend.Root);
         Environment.SetEnvironmentVariable("CAGE_UPDATE_RETRY_AT", retryAt);

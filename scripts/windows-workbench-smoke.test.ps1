@@ -7,6 +7,22 @@ function Assert-SmokeContract([bool]$Condition, [string]$Message) { if (-not $Co
 try {
     $env:RUNNER_TEMP = Join-Path $directory 'runner-temp'
     Assert-SmokeContract ((Get-WindowsWorkbenchTestBase) -eq [IO.Path]::GetFullPath($env:RUNNER_TEMP)) 'CI report directory ignores RUNNER_TEMP.'
+    $savedTemp = $env:TEMP; $savedTmp = $env:TMP
+    $envFile = Join-Path $directory 'child-env.json'
+    $envScript = Join-Path $directory 'child-env.ps1'
+    [IO.File]::WriteAllText($envScript, '@{temp=$env:TEMP;tmp=$env:TMP} | ConvertTo-Json | Set-Content -LiteralPath $args[0]')
+    $failed = $false
+    try {
+        Invoke-InIsolatedTestTemp {
+            Invoke-BuildTool (Get-Process -Id $PID).Path @('-NoProfile','-NonInteractive','-File',$envScript,$envFile)
+            throw 'injected test failure'
+        }
+    } catch { $failed = $_.Exception.Message -eq 'injected test failure' }
+    $childEnv = Get-Content -LiteralPath $envFile -Raw | ConvertFrom-Json
+    Assert-SmokeContract $failed 'Isolated test temp swallowed its test failure.'
+    Assert-SmokeContract ($childEnv.temp -eq $childEnv.tmp -and (Split-Path $childEnv.temp -Parent) -eq $env:RUNNER_TEMP) 'Child tests did not inherit the isolated runner temp.'
+    Assert-SmokeContract ($env:TEMP -eq $savedTemp -and $env:TMP -eq $savedTmp) 'Failed tests changed the caller temp environment.'
+    Assert-SmokeContract (-not (Test-Path -LiteralPath $childEnv.temp)) 'Owned test temp was not cleaned.'
     Remove-Item Env:RUNNER_TEMP -ErrorAction SilentlyContinue
     Assert-SmokeContract ((Get-WindowsWorkbenchTestBase) -eq [IO.Path]::GetTempPath()) 'Local report directory lost its OS temp fallback.'
     $report = Join-Path $directory 'smoke.json'

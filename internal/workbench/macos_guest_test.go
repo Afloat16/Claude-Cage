@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -36,7 +37,7 @@ func TestMacOSConnectionIgnoresSSHConfigOverrides(t *testing.T) {
 			t.Errorf("untrusted override %q used", value)
 		}
 	}
-	if !strings.Contains(strings.Join(cmd.Args, " "), filepath.Join(s.profile, "macos-known-hosts")) {
+	if !slices.Contains(cmd.Args, "UserKnownHostsFile="+strconv.Quote(filepath.Join(s.profile, "macos-known-hosts"))) {
 		t.Fatal("missing profile-scoped host key")
 	}
 	for _, bad := range []string{"", "Port 0", "Port 65536", "Port 22\nPort 23", "Port 22 -o Anything"} {
