@@ -31,6 +31,7 @@ try {
     [IO.File]::WriteAllText($childScript, '[IO.File]::Copy($args[0],$args[1],$true); exit 17')
     @{
         success = $false; nativeBridgeReady = $false; phase = 'loading_workbench'
+        prepareExit = 1; prepareStatus = 'stop_required'
         nativeStatus = 'failed http://localhost:1234/?token=private-token#private-fragment'
         entryJSON = 'private-entry'; pageURL = 'http://localhost:1234/#private-launch'
         page = @{ text = 'private-page-body'; errors = @(
@@ -52,7 +53,7 @@ try {
         } 6>&1
         $text = ($captured | ForEach-Object { $_.ToString() }) -join "`n"
         Assert-SmokeContract ($observedFailure -like '*loading_workbench*') 'Failure report was not parsed before rejecting its process exit.'
-        foreach ($expected in @('loading_workbench', 'module-load', '/missing.js', 'syntax error')) {
+        foreach ($expected in @('loading_workbench', 'module-load', '/missing.js', 'syntax error', '"prepareExit":1', '"prepareStatus":"stop_required"')) {
             Assert-SmokeContract ($text.Contains($expected)) "Missing safe smoke evidence: $expected"
         }
         foreach ($private in @('private-token','private-fragment','private-query','private-entry','private-launch','private-page-body')) {

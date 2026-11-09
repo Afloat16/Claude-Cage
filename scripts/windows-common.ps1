@@ -48,6 +48,8 @@ function Assert-WindowsWorkbenchReport {
     if ((Get-Item -LiteralPath $Report).Length -gt 65536) { throw 'Cage smoke report exceeds the bounded diagnostic size.' }
     $result = Get-Content -LiteralPath $Report -Raw | ConvertFrom-Json -AsHashtable
     $safe = @{ phase = ConvertTo-SmokeSafeText $result['phase']; nativeStatus = ConvertTo-SmokeSafeText $result['nativeStatus']; jsErrors = @() }
+    if ($result['prepareExit'] -is [int] -or $result['prepareExit'] -is [long]) { $safe.prepareExit = $result['prepareExit'] }
+    if ($result['prepareStatus'] -in @('prepared', 'stop_required', 'error', 'unexpected')) { $safe.prepareStatus = $result['prepareStatus'] }
     if ($result['page'] -is [System.Collections.IDictionary] -and $result['page']['errors']) {
         $safe.jsErrors = @($result['page']['errors'] | Select-Object -First 8 | ForEach-Object {
             if ($_ -isnot [System.Collections.IDictionary]) { return }
