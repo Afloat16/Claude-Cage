@@ -60,6 +60,8 @@ cp _output/bin/cage "$bundle/Contents/Resources/cage"
 if [[ "$(uname -m)" == arm64 ]]; then "$bundle/Contents/Resources/cage" verify-macos-guest; fi
 if [[ "$(uname -m)" == arm64 ]]; then
   bash scripts/guest-os/package-macos-guest.sh "$bundle/Contents/Resources/guest-os"
+  mkdir -p "$bundle/Contents/Resources/licenses/sshfs"
+  cp -R "$bundle/Contents/Resources/guest-os/licenses/sshfs/." "$bundle/Contents/Resources/licenses/sshfs/"
   # The kit signs all nested native code before this outer App is sealed.
   # Do not generate or reuse an unsigned component manifest here: installation
   # hashes the final signed kit, including each nested bundle's CodeResources.

@@ -198,7 +198,7 @@ test('macOS verification checks both owned archives without requiring other-plat
 
 test('explicit RC manifest exposes signed Windows and all platforms with complete QEMU sources', async () => {
   const tag = 'v0.1.7-rc.1', version = tag.slice(1);
-  const names = [`Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`, `Cage-${version}-linux-amd64.deb`, 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz', `qemu-${'a'.repeat(40)}-source.tar.gz`, `qemu-keycodemapdb-${'b'.repeat(40)}-source.tar.gz`, 'qemu-11.1.0-cage-changes-source.tar.gz'];
+  const names = [`Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`, `Cage-${version}-linux-amd64.deb`, `cage-macos-guest-${version}-source.tar.gz`, 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz', `qemu-${'a'.repeat(40)}-source.tar.gz`, `qemu-keycodemapdb-${'b'.repeat(40)}-source.tar.gz`, 'qemu-11.1.0-cage-changes-source.tar.gz'];
   const manifest = names.map(name => `${hash}  ${name}\n`).join('');
   const release = await publicManifestRelease(tag, async (url, options = {}) => {
     assert.equal(options.headers?.Authorization, undefined);

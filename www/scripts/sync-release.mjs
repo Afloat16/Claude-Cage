@@ -12,6 +12,7 @@ const repository = 'Lee-xeo/Claude-Cage';
 const repoURL = `https://github.com/${repository}`;
 const apiURL = `https://api.github.com/repos/${repository}/releases`;
 const sourceArchive = name => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(name) ||
+  /^cage-macos-guest-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-source\.tar\.gz$/.test(name) ||
   /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
   /^qemu-keycodemapdb-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
   /^qemu-\d+\.\d+\.\d+-cage-changes-source\.tar\.gz$/.test(name) ||

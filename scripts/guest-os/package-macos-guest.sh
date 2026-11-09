@@ -21,7 +21,7 @@ else
 fi
 bash "$src/macos-fuse-media.sh" "$fuse" "$work/fuse.pkg"
 pkgutil --expand-full "$work/fuse.pkg" "$work/sdk"
-bash "$src/build-macos-sshfs.sh" "$work/sdk/Core.pkg/Payload/usr/local" "$dest/project/cage-sshfs"
+bash "$src/build-macos-sshfs.sh" "$work/sdk/Core.pkg/Payload/usr/local" "$dest/project/cage-sshfs" "$work/sshfs-source"
 xcrun clang -arch arm64 -mmacosx-version-min=14.0 -O2 -fobjc-arc -framework Foundation -framework OpenDirectory \
     "$src/macos-setup-account.m" -o "$dest/cage-finish-initial-setup"
 xcrun clang -arch arm64 -O2 "$src/macos-ipv6-check.c" -o "$dest/cage-macos-ipv6-check"
@@ -36,3 +36,8 @@ cp "$src/configure-macos-session.sh" "$dest/"
 # Final signing runs after every helper has been built. Component manifests are
 # computed from these final bytes by RequiredNativeComponents at installation.
 bash "$src/sign-macos-guest.sh" "$dest" "${CAGE_SIGNING_IDENTITY:--}"
+# Bind the source distribution to the final Developer ID bytes, after the kit
+# has signed SSHFS. The outer host App signature does not change this helper.
+version=$(tr -d '\n\r' < "$src/../../VERSION")
+node "$src/collect-macos-sshfs-sources.mjs" finish "$work/sshfs-source" "$dest/project/cage-sshfs" \
+  "$dest/sources/cage-macos-guest-$version-source.tar.gz" "$dest/licenses/sshfs"

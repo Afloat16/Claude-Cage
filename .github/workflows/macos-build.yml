@@ -53,7 +53,9 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - uses: astral-sh/setup-uv@v10.3.3
       - name: Application version consistency
-        run: node scripts/check-version.mjs
+        run: |
+          node scripts/check-version.mjs
+          node --test scripts/macos-sshfs-sources.test.mjs
       - name: Build the macOS application without release credentials
         env:
           CAGE_SIGNING_IDENTITY: '-'
