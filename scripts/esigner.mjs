@@ -185,18 +185,29 @@ export async function invokeSigning({ invoke, outputPath, pause = ms => new Prom
   }
 }
 
+// Diagnostic output is an allowlist. Never return vendor JSON, identities,
+// certificate data, tokens or free-form error messages to CI logs.
+export function credentialDiagnostic(error) {
+  if (!error) return { operation: 'credential_info', success: true, stage: 'csc-credential-info', exitCode: 0, error: '' };
+  const match = /^CodeSignTool failed \(exit ([0-9]{1,3})\)/.exec(error.message);
+  const exitCode = match && Number(match[1]) <= 255 ? Number(match[1]) : null;
+  const code = /"error"\s*:\s*"([a-z_]+)"/.exec(error.message)?.[1];
+  const allowed = ['server_error', 'invalid_grant', 'invalid_client', 'access_denied', 'unauthorized', 'invalid_request'];
+  return { operation: 'credential_info', success: false, stage: exitCode === 1 ? 'oauth-token' : exitCode === 2 ? 'csc-credential-info' : 'client', exitCode, error: allowed.includes(code) ? code : 'unclassified' };
+}
+
 async function main(argv) {
   const [command, input, flag, destination] = argv;
   if (command === 'install' && argv.length === 1) { console.log(`Verified CodeSignTool ${pin.version}: ${await installTool()}`); return; }
-  if (!['info', 'sign'].includes(command) || (command === 'info' && argv.length !== 1) ||
+  if (!['info', 'diagnose', 'sign'].includes(command) || (['info', 'diagnose'].includes(command) && argv.length !== 1) ||
     (command === 'sign' && (argv.length !== 4 || flag !== '--output-dir'))) {
-    throw new Error('Usage: node scripts/esigner.mjs install | info | sign INPUT.exe --output-dir DIRECTORY');
+    throw new Error('Usage: node scripts/esigner.mjs install | info | diagnose | sign INPUT.exe --output-dir DIRECTORY');
   }
   if (command === 'sign') await assertWindowsExecutable(resolve(input));
   const directory = await installTool();
   const auth = await credentials();
   if (command === 'sign' && !auth.totp && !process.stdin.isTTY) throw new Error('Non-interactive signing requires CAGE_ESIGNER_TOTP_SECRET.');
-  const args = [command === 'info' ? 'credential_info' : 'sign', `-username=${auth.username}`, `-password=${auth.password}`, `-credential_id=${auth.credential}`];
+  const args = [command === 'sign' ? 'sign' : 'credential_info', `-username=${auth.username}`, `-password=${auth.password}`, `-credential_id=${auth.credential}`];
   let staged, output, vendor;
   try {
     if (command === 'sign') {
@@ -219,13 +230,15 @@ async function main(argv) {
       if (!bytes.length || hash(bytes) === hash(await readFile(resolve(input)))) throw new Error('CodeSignTool did not produce a changed signed file.');
       await copyFile(signed, output, (await import('node:fs')).constants.COPYFILE_EXCL);
       console.log(`Signed copy: ${output}\nWindows trust and publisher verification are still required.`);
-    } else console.log(result.trim());
+    } else if (command === 'diagnose') console.log(JSON.stringify(credentialDiagnostic()));
+    else console.log(result.trim());
   } finally { if (staged) await rm(staged, { recursive: true, force: true }); }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main(process.argv.slice(2)).catch(error => {
-    console.error(redact(error.message, secretNames.map(name => process.env[name])));
+    if (process.argv[2] === 'diagnose') console.error(JSON.stringify(credentialDiagnostic(error)));
+    else console.error(redact(error.message, secretNames.map(name => process.env[name])));
     process.exitCode = 1;
   });
 }

@@ -1,6 +1,12 @@
 name: Verify Windows cloud signing without a release
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Sign a disposable probe, or only read credential information without signing
+        type: choice
+        options: [sign, credential-info]
+        default: sign
 permissions:
   contents: read
 concurrency:
@@ -24,7 +30,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      - name: Sign one disposable executable and verify Windows trust
+      - name: Run the selected signing verification or read-only diagnosis
         shell: pwsh
         env:
           CAGE_WINDOWS_SIGNING_PROVIDER: ${{ vars.CAGE_WINDOWS_SIGNING_PROVIDER }}
@@ -33,7 +39,8 @@ jobs:
           CAGE_ESIGNER_CREDENTIAL_ID: ${{ secrets.CAGE_ESIGNER_CREDENTIAL_ID }}
           CAGE_ESIGNER_CERTIFICATE_SERIAL: ${{ vars.CAGE_ESIGNER_CERTIFICATE_SERIAL }}
           CAGE_ESIGNER_TOTP_SECRET: ${{ secrets.CAGE_ESIGNER_TOTP_SECRET }}
-        run: ./scripts/check-windows-signing.ps1
+          CAGE_SIGNING_CHECK_MODE: ${{ inputs.mode }}
+        run: ./scripts/check-windows-signing.ps1 -Mode $env:CAGE_SIGNING_CHECK_MODE
       - name: Preserve verification facts only
         if: always()
         uses: actions/upload-artifact@v4

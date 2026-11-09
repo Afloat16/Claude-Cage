@@ -60,7 +60,19 @@ jobs:
             mingw-w64-ucrt-x86_64-ninja
             mingw-w64-ucrt-x86_64-python
             mingw-w64-ucrt-x86_64-pkgconf
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: qemu_cache
+        with:
+          path: _output/windows-deps
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
+          restore-keys: cage-windows-deps-
+      - name: Build and verify QEMU runtime before application acceptance
+        env:
+          CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
+        run: ./scripts/build-qemu-windows.ps1
+      - name: Preserve only the completed verified runtime cache
+        if: steps.qemu_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
         with:
           path: _output/windows-deps
           key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
@@ -132,7 +144,8 @@ jobs:
         id: qemu_cache
         with:
           path: _output/windows-deps
-          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*', 'scripts/bundle-qemu-sources.sh') }}
+          restore-keys: cage-windows-deps-
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
       - name: Build and verify QEMU runtime and package identity
         id: qemu_build
         env:
@@ -148,7 +161,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _output/windows-deps
-          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*', 'scripts/bundle-qemu-sources.sh') }}
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
       - uses: actions/cache/restore@v4
         id: qemu_sources
         with:

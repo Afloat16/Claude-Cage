@@ -24,12 +24,13 @@ if ((Test-Path -LiteralPath $record) -and (Test-Path -LiteralPath $archive)) {
     return
 }
 New-Item -ItemType Directory -Path $directory -Force | Out-Null
-$savedMsystem, $savedChere = $env:MSYSTEM, $env:CHERE_INVOKING
+$savedMsystem, $savedChere, $savedNode = $env:MSYSTEM, $env:CHERE_INVOKING, $env:CAGE_NODE
 try {
     $env:MSYSTEM = 'UCRT64'; $env:CHERE_INVOKING = '1'
+    $env:CAGE_NODE = Get-BuildCommand @('node.exe', 'node')
     Invoke-BuildTool (Join-Path $MsysDirectory 'usr/bin/bash.exe') @('-l',
         (Join-Path $PSScriptRoot 'bundle-qemu-sources.sh'), $repository, $runtime, $archive)
-} finally { $env:MSYSTEM = $savedMsystem; $env:CHERE_INVOKING = $savedChere }
+} finally { $env:MSYSTEM = $savedMsystem; $env:CHERE_INVOKING = $savedChere; $env:CAGE_NODE = $savedNode }
 $identity = @{ schema = 1; fingerprint = $runtimeIdentity.fingerprint; collectorHash = $collectorHash; sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash }
 $identity | ConvertTo-Json | Set-Content -LiteralPath "$record.partial" -Encoding utf8
 Move-Item -LiteralPath "$record.partial" -Destination $record -Force

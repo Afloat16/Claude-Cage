@@ -5,11 +5,24 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
-import { assertWindowsExecutable, invokeJava, invokeSigning, javaArgument, prepareVendorInput, redact, verifyTool } from './esigner.mjs';
+import { assertWindowsExecutable, credentialDiagnostic, invokeJava, invokeSigning, javaArgument, prepareVendorInput, redact, verifyTool } from './esigner.mjs';
 
 test('Java arguments reject line injection and redact overlapping secrets', () => {
   for (const value of ['line\nbreak', 'line\rbreak', 'a\0b']) assert.throws(() => javaArgument(value));
   assert.equal(redact('secret-long and secret', ['secret', 'secret-long']), '[redacted] and [redacted]');
+});
+
+test('read-only credential diagnosis emits only fixed stage, exit and error classifications', () => {
+  assert.deepEqual(credentialDiagnostic(), { operation: 'credential_info', success: true, stage: 'csc-credential-info', exitCode: 0, error: '' });
+  for (const [code, stage] of [[1, 'oauth-token'], [2, 'csc-credential-info'], [3, 'client']]) {
+    const result = credentialDiagnostic(new Error(`CodeSignTool failed (exit ${code}). Error: {"error":"server_error","token":"private-token","username":"private-user","credential_id":"private-id"}`));
+    assert.deepEqual(result, { operation: 'credential_info', success: false, stage, exitCode: code, error: 'server_error' });
+    assert.ok(!JSON.stringify(result).includes('private'));
+  }
+  const unknown = credentialDiagnostic(new Error('private-user private-id private-token {"error":"private_password"}'));
+  assert.equal(unknown.error, 'unclassified');
+  assert.equal(unknown.exitCode, null);
+  assert.ok(!JSON.stringify(unknown).includes('private'));
 });
 
 test('signing retries only declared server errors without output and remains bounded', async t => {

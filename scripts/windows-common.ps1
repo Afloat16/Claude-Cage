@@ -9,10 +9,52 @@ function Invoke-BuildTool {
     if ($LASTEXITCODE -ne 0) { throw "$Tool failed with exit code $LASTEXITCODE" }
 }
 
+function Get-WindowsWorkbenchTestBase {
+    if ($env:RUNNER_TEMP) { return [IO.Path]::GetFullPath($env:RUNNER_TEMP) }
+    return [IO.Path]::GetTempPath()
+}
+
+function ConvertTo-SmokeSafeText {
+    param($Value)
+    if ($Value -isnot [string]) { return '' }
+    $text = [regex]::Replace($Value, 'https?://[^\s"''<>]+', {
+        param($match)
+        try { return ([Uri]$match.Value).GetLeftPart([UriPartial]::Path) }
+        catch { return '[URL omitted]' }
+    })
+    $text = $text -replace '[?#][^\s"''<>)]*', '[redacted]'
+    return $text.Substring(0, [Math]::Min(768, $text.Length))
+}
+
+function Assert-WindowsWorkbenchReport {
+    param([int]$ExitCode, [string]$Report)
+    if (-not (Test-Path -LiteralPath $Report -PathType Leaf)) { throw "Cage workbench acceptance failed ($ExitCode). No smoke report: $Report" }
+    if ((Get-Item -LiteralPath $Report).Length -gt 65536) { throw 'Cage smoke report exceeds the bounded diagnostic size.' }
+    $result = Get-Content -LiteralPath $Report -Raw | ConvertFrom-Json -AsHashtable
+    $safe = @{ phase = ConvertTo-SmokeSafeText $result['phase']; nativeStatus = ConvertTo-SmokeSafeText $result['nativeStatus']; jsErrors = @() }
+    if ($result['page'] -is [System.Collections.IDictionary] -and $result['page']['errors']) {
+        $safe.jsErrors = @($result['page']['errors'] | Select-Object -First 8 | ForEach-Object {
+            if ($_ -isnot [System.Collections.IDictionary]) { return }
+            @{
+                type = ConvertTo-SmokeSafeText $_['type']
+                source = if ($_['source'] -is [string] -and $_['source'].StartsWith('/')) { ConvertTo-SmokeSafeText $_['source'] } else { '' }
+                message = ConvertTo-SmokeSafeText $_['message']
+                stack = @($_['stack'] | Select-Object -First 6 | ForEach-Object { ConvertTo-SmokeSafeText $_ })
+            }
+        })
+    }
+    # Log only these already-bounded fields, even when the process failed. Do
+    # not print launch entries, page URLs, account data or the raw report.
+    Write-Host ('Cage smoke diagnostic: ' + ($safe | ConvertTo-Json -Depth 6 -Compress))
+    if ($ExitCode -ne 0 -or $result['success'] -ne $true -or $result['nativeBridgeReady'] -ne $true) {
+        throw "Cage workbench/bridge acceptance failed ($ExitCode), phase $($safe.phase): $($safe.nativeStatus). Diagnostics: $Report"
+    }
+}
+
 function Assert-WindowsWorkbench {
     param([Parameter(Mandatory)][string]$AppDirectory)
     if (-not $IsWindows) { throw 'Workbench acceptance requires Windows.' }
-    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('cage-build-ui-' + [guid]::NewGuid().ToString('N'))
+    $testRoot = Join-Path (Get-WindowsWorkbenchTestBase) ('cage-build-ui-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
     $report = Join-Path $testRoot 'smoke.json'
     $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $AppDirectory 'Cage.exe'))
@@ -25,12 +67,7 @@ function Assert-WindowsWorkbench {
     $passed = $false
     try {
         if (-not $window.WaitForExit(180000)) { throw "Cage workbench acceptance timed out. Diagnostics retained at $testRoot" }
-        if ($window.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "Cage workbench acceptance failed. Diagnostics retained at $testRoot" }
-        $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
-        if ($result.success -ne $true -or $result.nativeBridgeReady -ne $true) {
-            $detail = if ($result.PSObject.Properties.Name -contains 'nativeStatus') { $result.nativeStatus } else { 'No native status was recorded.' }
-            throw "Cage workbench/bridge acceptance failed: $detail Diagnostics retained at $testRoot"
-        }
+        Assert-WindowsWorkbenchReport -ExitCode $window.ExitCode -Report $report
         $passed = $true
     } finally {
         if (-not $window.HasExited) { $window.Kill($true); $window.WaitForExit() }

@@ -4,7 +4,9 @@ set -euo pipefail
 repository=$(cygpath -u "$1")
 runtime=$(cygpath -u "$2")
 archive=$(cygpath -u "$3")
-commit=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.commit" "$repository/packaging/windows/dependencies.json")
+node_command=${CAGE_NODE:-node}
+if [[ -n ${CAGE_NODE:-} ]]; then node_command=$(cygpath -u "$CAGE_NODE"); fi
+commit=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.commit" "$repository/packaging/windows/dependencies.json")
 [[ $commit =~ ^[a-f0-9]{40}$ && -s "$runtime/build-source-packages.txt" ]] || { echo 'QEMU source/package identity is missing.' >&2; exit 1; }
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
@@ -30,8 +32,8 @@ if grep -Eq '^[-+U]' "$stage/source/firmware-revisions.txt"; then echo 'Firmware
 cp "$runtime/build-source-packages.txt" "$runtime/build-packages.txt" "$runtime/cage-build.json" "$stage/source/cage/"
 cp "$repository/scripts/build-qemu-windows.sh" "$repository/scripts/build-qemu-windows.ps1" "$repository/scripts/bundle-qemu-sources.sh" "$stage/source/cage/"
 cp -R "$repository/patches/qemu" "$stage/source/cage/patches"
-keymap_url=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuKeycodemap.url" "$repository/packaging/windows/dependencies.json")
-keymap_hash=$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuKeycodemap.hash" "$repository/packaging/windows/dependencies.json")
+keymap_url=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuKeycodemap.url" "$repository/packaging/windows/dependencies.json")
+keymap_hash=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuKeycodemap.hash" "$repository/packaging/windows/dependencies.json")
 curl --fail --location --retry 3 -o "$stage/source/keycodemapdb.tar.gz" "$keymap_url"
 printf '%s  %s\n' "$keymap_hash" "$stage/source/keycodemapdb.tar.gz" | sha256sum -c -
 while read -r base version; do

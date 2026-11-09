@@ -18,13 +18,14 @@ test('source collector includes pinned firmware and authenticated package source
  await writeFile(join(repository,'patches/qemu/fixture.patch'),'fixture patch');
  const command=async(name,body)=>{const path=join(bin,name);await writeFile(path,'#!/bin/bash\nset -e\n'+body+'\n');await chmod(path,0o755)};
  await command('cygpath','printf "%s\\n" "$2"');
+ await command('node','echo "The collector must use the explicit CAGE_NODE path" >&2; exit 99');
  await command('git',`if [[ "$*" == *' init '* ]];then mkdir -p "\${@: -1}/.git";fi
  if [[ "$*" == *rev-parse* ]];then printf '${sha}\\n';fi
  if [[ "$*" == *'submodule update'* ]];then for ((i=1;i<=$#;i++));do if [[ "\${!i}" == -C ]];then j=$((i+1));q="\${!j}";fi;done;mkdir -p "$q/roms/seabios";echo 'firmware code' > "$q/roms/seabios/code.c";echo 'gitdir: private' > "$q/roms/seabios/.git";fi
  if [[ "$*" == *'submodule status'* ]];then printf ' ${sha} roms/seabios\\n';fi`);
  await command('curl',`while [[ $# -gt 0 ]];do if [[ "$1" == -o ]];then shift;destination=$1;fi;shift;done;printf '${content.replaceAll('\n','\\n')}' > "$destination"`);
  await command('pacman-key','printf "%s\\n" "$*" >> "$SOURCE_TEST_VERIFICATIONS"');
- execFileSync('bash',[collector,repository,runtime,artifact],{env:{...process.env,PATH:bin+':'+process.env.PATH,SOURCE_TEST_VERIFICATIONS:join(root,'verified')},stdio:'pipe'});
+ execFileSync('bash',[collector,repository,runtime,artifact],{env:{...process.env,PATH:bin+':'+process.env.PATH,CAGE_NODE:process.execPath,SOURCE_TEST_VERIFICATIONS:join(root,'verified')},stdio:'pipe'});
  const listing=execFileSync('tar',['-tzf',artifact],{encoding:'utf8'});
  for(const path of ['source/firmware-revisions.txt','source/qemu/roms/seabios/code.c','source/packages/mingw-w64-fixture-1.2.3-1.src.tar.zst','source/cage/patches/fixture.patch','source/SHA256SUMS'])assert.ok(listing.includes(path),path);
  assert.ok(!listing.includes('/.git'));
