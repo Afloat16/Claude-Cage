@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"path/filepath"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/remotehost"
 )
 
 const AgentProtocol = 1
@@ -28,9 +28,8 @@ type AgentOperation struct {
 	method, path string
 }
 
-// Schemas describe the accepted fields; business validation remains with each
-// production handler. No arbitrary HTTP paths, credential export or deletion
-// of environments are exposed through this adapter.
+// Named operations are discoverable shortcuts for the same production handlers.
+// AgentRequest also accepts UI endpoints so the shortcut list is not a permission boundary.
 func AgentOperations() []AgentOperation {
 	object := func(fields map[string]string) map[string]any {
 		properties := map[string]any{}
@@ -43,37 +42,8 @@ func AgentOperations() []AgentOperation {
 		}
 		return map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
 	}
-	from := func(value any) map[string]any {
-		fields := map[string]string{}
-		var walk func(reflect.Type)
-		walk = func(t reflect.Type) {
-			for i := 0; i < t.NumField(); i++ {
-				f := t.Field(i)
-				if f.Anonymous {
-					walk(f.Type)
-					continue
-				}
-				name := strings.Split(f.Tag.Get("json"), ",")[0]
-				if name == "" || name == "-" {
-					continue
-				}
-				kind := "string"
-				switch f.Type.Kind() {
-				case reflect.Bool:
-					kind = "boolean"
-				case reflect.Int:
-					kind = "integer"
-				case reflect.Slice:
-					kind = "array"
-				case reflect.Struct:
-					kind = "object"
-				}
-				fields[name] = kind
-			}
-		}
-		walk(reflect.TypeOf(value))
-		return object(fields)
-	}
+	from := func(value any) map[string]any { return agentSchema(reflect.TypeOf(value)) }
+
 	var ops []AgentOperation
 	add := func(name, description, method, path string, schema map[string]any) {
 		ops = append(ops, AgentOperation{Name: name, Description: description, Mutates: method != "GET", InputSchema: schema, method: method, path: path})
@@ -84,7 +54,7 @@ func AgentOperations() []AgentOperation {
 	}
 	get("status", "Environment readiness, network checks and current job", "/api/status")
 	get("account.status", "Account presence and lock state; no credentials", "/api/account")
-	post("account.create", "Create an account only on an empty profile; user chooses the password", "/api/account/create", object(map[string]string{"username": "string", "password": "string", "confirm_password": "string"}))
+	post("account.create", "Create an account only on an empty profile; user chooses the password", "/api/account/create", object(map[string]string{"username": "string", "password": "string", "confirm_password": "string", "avatar": "string"}))
 	post("account.unlock", "Unlock using a user-provided password via private input", "/api/account/unlock", object(map[string]string{"password": "string"}))
 	get("settings.get", "Read settings without proxy credentials", "/api/settings")
 	post("settings.patch", "Merge specified fields under the operation lock; dry_run validates without writing", "/api/agent/settings", object(map[string]string{"patch": "object", "dry_run": "boolean"}))
@@ -115,6 +85,64 @@ func AgentOperations() []AgentOperation {
 	post("network.check", "Run existing safety checks; may reopen networking when checks pass", "/api/safety/check", object(nil))
 	post("network.pause", "Close external networking and persist pause intent", "/api/safety/close", object(nil))
 	post("project.open", "Grant access only to a user-authorized directory; add=true remembers the grant", "/api/projects/open", object(map[string]string{"workspace": "string", "add": "boolean", "activate": "boolean"}))
+
+	for _, action := range []string{"profile", "password", "lock", "logout", "suspend"} {
+		schema := object(nil)
+		if action == "profile" {
+			schema = object(map[string]string{"username": "string", "avatar": "string"})
+		}
+		if action == "password" {
+			schema = object(map[string]string{"old_password": "string", "password": "string", "confirm_password": "string"})
+		}
+		post("account."+action, "Same account action and verification as the workbench", "/api/account/"+action, schema)
+	}
+	get("host.git", "Inspect the same host Git prerequisite as first setup", "/api/host/git")
+	post("host.git.enable", "Enable the workbench's host Git protection with the same confirm=true authorization", "/api/host/git", object(map[string]string{"confirm": "boolean"}))
+	get("appearance.get", "Read complete appearance and saved themes", "/api/appearance")
+	post("appearance.set", "Save complete appearance using the workbench validator", "/api/appearance", from(Appearance{}))
+	get("appearance.codex", "Read the same local Codex appearance import as the UI", "/api/appearance/codex")
+	post("settings.probe", "Probe actual exit location for a complete settings draft", "/api/settings/probe", from(Settings{}))
+	get("proxy.connections", "Inspect live proxy connections", "/api/proxy/connections")
+	get("proxy.logs", "Inspect proxy logs", "/api/proxy/logs")
+	post("proxy.delay", "Measure one proxy node", "/api/proxy/delay", object(map[string]string{"node_id": "string"}))
+	add("guest.reselect", "Clear only the same unstarted installation the UI can reselect", "DELETE", "/api/environment/guest-systems", object(map[string]string{"id": "string"}))
+	get("claude-accounts.get", "Read account roster, quotas and scheduling", "/api/claude-accounts")
+	post("claude-accounts.change", "Apply the same join, cancel, update, scheduling, refresh and removal actions as the UI", "/api/claude-accounts", from(claudeAccountInput{}))
+	get("vault.get", "List metadata; passwords remain hidden exactly as in the UI", "/api/vault")
+	post("vault.change", "Save/delete/unblock; reveal requires the same account_password reauthentication as the UI", "/api/vault", object(map[string]string{"action": "string", "entry": "object", "id": "string", "origin": "string", "account_password": "string"}))
+	ops[len(ops)-1].InputSchema["properties"].(map[string]any)["entry"] = from(vaultEntry{})
+	post("vault.browser", "Use the browser vault's existing save/fill/block actions", "/api/vault/browser", from(vaultBrowserInput{}))
+	get("mobile.get", "Inspect phone pairing", "/api/mobile-pair")
+	post("mobile.pair", "Generate the same phone pairing invitation", "/api/mobile-pair", object(map[string]string{"admin": "string", "relay": "string"}))
+	add("mobile.remove", "Remove the same paired device", "DELETE", "/api/mobile-pair", object(nil))
+	get("tailscale.get", "Read guest private-network state", "/api/tailscale")
+	for _, action := range []string{"install", "connect", "login", "disconnect", "logout", "add-key", "remove-key"} {
+		schema := object(nil)
+		if action == "add-key" || action == "remove-key" {
+			schema = object(map[string]string{"key": "string"})
+		}
+		post("tailscale."+action, "Run the same Tailscale action as the workbench", "/api/tailscale/"+action, schema)
+	}
+	get("browser.preferences.get", "Read the browser homepage", "/api/browser/preferences")
+	post("browser.preferences.set", "Apply and persist the browser homepage with the same rollback as the UI", "/api/browser/preferences", object(map[string]string{"browser_home_url": "string"}))
+	get("browser.tabs", "Read browser tabs and state", "/api/browser/tabs")
+	for _, action := range []string{"settings", "cookies", "extensions", "internal-page", "info", "new", "activate", "close", "navigate", "back", "forward", "reload", "editor", "editor-restart", "split"} {
+		post("browser."+action, "Use the browser's existing workbench action", "/api/browser/"+action, from(browserInput{}))
+	}
+	get("favorites.get", "Read bookmarks and folders", "/api/favorites")
+	post("favorites.change", "Save, move, reorder or delete using the same collection owner", "/api/favorites", from(favoriteChange{}))
+	get("terminals.get", "Read terminal sessions", "/api/terminals")
+	post("terminals.create", "Create the same shell/Claude terminal as the UI", "/api/terminals", from(terminalRequest{}))
+	get("client.context", "Read the desktop connection generation; use desktop scope", "/api/client/context")
+	get("client.hosts", "Read saved SSH hosts; use desktop scope", "/api/client/hosts")
+	post("client.hosts.create", "Save an SSH host through the desktop store", "/api/client/hosts", from(remotehost.HostProfile{}))
+	get("client.local-status", "Inspect local workload from the desktop chooser", "/api/client/local-status")
+	for _, action := range []string{"candidate", "commit", "cancel", "disconnect", "local-stop"} {
+		post("client."+action, "Use the desktop chooser's same explicit connection/candidate protocol", "/api/client/"+action, from(switchRequest{}))
+	}
+	post("client.trusted-login", "Use create/resume/enable/disable/protect through the desktop's native trusted-login owner", "/api/client/trusted-login", object(map[string]string{"action": "string", "password": "string", "connection_id": "string"}))
+	post("native.submit", "Queue an existing native bridge action or clientPreferences request for the desktop window; use desktop scope", "/api/agent/native", object(map[string]string{"request": "object", "connection_id": "string"}))
+
 	get("diagnostics.status", "Read log collection status", "/api/diagnostics")
 	return ops
 }
@@ -226,15 +254,7 @@ func agentConnect(ctx context.Context, configPath string) (*controllerClient, er
 }
 
 func AgentCall(ctx context.Context, configPath, operation string, input json.RawMessage) (json.RawMessage, error) {
-	for _, op := range AgentOperations() {
-		if op.Name == operation {
-			if err := agentValidateInput(input, op.InputSchema); err != nil {
-				return nil, err
-			}
-			return agentRequest(ctx, configPath, op.method, op.path, input)
-		}
-	}
-	return nil, &AgentError{Code: "unknown_operation", Message: "Unknown operation. Read capabilities for supported names.", NextAction: "capabilities"}
+	return AgentCallTarget(ctx, configPath, AgentTarget{}, operation, input)
 }
 
 func agentValidateInput(input json.RawMessage, schema map[string]any) error {
@@ -262,44 +282,11 @@ func AgentJob(ctx context.Context, configPath, id string) (json.RawMessage, erro
 }
 
 func agentRequest(ctx context.Context, configPath, method, path string, input json.RawMessage) (json.RawMessage, error) {
-	c, err := agentConnect(ctx, configPath)
-	if err != nil {
-		return nil, err
-	}
-	defer c.close()
-	request, err := http.NewRequestWithContext(ctx, method, c.origin+path, bytes.NewReader(input))
-	if err != nil {
-		return nil, err
-	}
-	request.Header.Set("Origin", c.origin)
-	request.Header.Set("Content-Type", "application/json")
-	// Pin the local workload even if an older combined workbench has selected
-	// a remote host. The gateway rejects a mismatched generation instead of
-	// forwarding this request to whatever host happens to be selected.
-	request.Header.Set(connectionHeader, "local")
-	response, err := c.client.Do(request)
-	if err != nil {
-		return nil, &AgentError{Code: "outcome_unknown", Message: "The request was interrupted. Inspect status before retrying a mutation.", NextAction: "status"}
-	}
-	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, (2<<20)+1))
-	if err != nil || len(data) > 2<<20 {
-		return nil, &AgentError{Code: "invalid_response", Message: "Could not read a bounded controller response. Inspect status before retrying.", NextAction: "status"}
-	}
-	if response.StatusCode != http.StatusOK {
-		e := agentHTTPError(response.StatusCode)
-		// Production handlers can include file paths or subscription failures;
-		// use the existing diagnostic scrubber before exposing their explanation.
-		e.Message += " " + agentRedact(strings.TrimSpace(string(data)))
-		return nil, e
-	}
-	if !json.Valid(data) {
-		return nil, &AgentError{Code: "invalid_response", Message: "Controller returned invalid JSON.", NextAction: "doctor"}
-	}
-	return json.RawMessage(agentRedact(string(data))), nil
+	response, err := AgentRequest(ctx, configPath, AgentTarget{}, method, path, strings.NewReader(string(input)), "application/json", "")
+	return response.Data, err
 }
 
-func (s *Server) agentRoutes(mux *http.ServeMux) {
+func (s *Server) agentRoutes(mux routeRegistrar) {
 	mux.HandleFunc("GET /api/agent/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		job := s.jobs.snapshot()
 		if job.ID == "" || job.ID != r.PathValue("id") {
@@ -346,6 +333,19 @@ func (s *Server) agentSettings(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &in) {
 		return
 	}
+	if home, ok := in.Patch["browser_home_url"]; ok && !in.DryRun {
+		if len(in.Patch) != 1 {
+			http.Error(w, "Change browser_home_url through browser.preferences.set separately from environment settings", 400)
+			return
+		}
+		var value string
+		if json.Unmarshal(home, &value) != nil {
+			http.Error(w, "Invalid browser_home_url", 400)
+			return
+		}
+		s.saveBrowserHome(w, r, value)
+		return
+	}
 	if len(in.Patch) == 0 {
 		http.Error(w, "patch must contain at least one setting", 400)
 		return
@@ -370,6 +370,9 @@ func (s *Server) agentSettings(w http.ResponseWriter, r *http.Request) {
 		d.DisallowUnknownFields()
 		if d.Decode(&input) != nil {
 			return savedProfile{}, errors.New("unknown setting or invalid value")
+		}
+		if _, err := validateBrowserHome(input.BrowserHomeURL); err != nil {
+			return savedProfile{}, err
 		}
 		c, p, err := proposedSettings(input, old, s.profile)
 		return savedProfile{Config: c, Preferences: p}, err
@@ -417,4 +420,43 @@ func mergeAgentSettings(current, patch map[string]json.RawMessage) error {
 		current[key] = value
 	}
 	return nil
+}
+
+func agentSchema(t reflect.Type) map[string]any {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	switch t.Kind() {
+	case reflect.Struct:
+		properties := map[string]any{}
+		for i := 0; i < t.NumField(); i++ {
+			f := t.Field(i)
+			if f.PkgPath != "" {
+				continue
+			}
+			if f.Anonymous {
+				for name, schema := range agentSchema(f.Type)["properties"].(map[string]any) {
+					properties[name] = schema
+				}
+				continue
+			}
+			name := strings.Split(f.Tag.Get("json"), ",")[0]
+			if name != "" && name != "-" {
+				properties[name] = agentSchema(f.Type)
+			}
+		}
+		return map[string]any{"type": "object", "properties": properties, "additionalProperties": false}
+	case reflect.Map:
+		return map[string]any{"type": "object", "additionalProperties": agentSchema(t.Elem())}
+	case reflect.Slice, reflect.Array:
+		return map[string]any{"type": "array", "items": agentSchema(t.Elem())}
+	case reflect.Bool:
+		return map[string]any{"type": "boolean"}
+	case reflect.Int, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint32, reflect.Uint64:
+		return map[string]any{"type": "integer"}
+	case reflect.Float32, reflect.Float64:
+		return map[string]any{"type": "number"}
+	default:
+		return map[string]any{"type": "string"}
+	}
 }

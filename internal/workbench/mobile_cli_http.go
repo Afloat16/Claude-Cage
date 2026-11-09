@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 )
 
-func (s *Server) mobileCLIRoutes(mux *http.ServeMux) {
+func (s *Server) mobileCLIRoutes(mux routeRegistrar) {
 	// Desktop history follows the selected local or SSH host. Mobile routes
 	// remain pinned to the paired computer by the remote gateway.
 	mux.HandleFunc("GET /api/cli/sessions", s.mobileSessions)

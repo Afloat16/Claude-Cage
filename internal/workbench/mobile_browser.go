@@ -50,7 +50,7 @@ func (p *mobilePairing) pairedRequestLocked(r *http.Request) bool {
 	return p.roomCtx != nil && p.roomCtx.Err() == nil && p.roomProof != "" && equalSecret(p.roomProof, r.Header.Get(mobilelink.PhoneRoomHeader))
 }
 
-func (s *Server) mobileSurfaceRoutes(mux *http.ServeMux) {
+func (s *Server) mobileSurfaceRoutes(mux routeRegistrar) {
 	mux.HandleFunc("GET /api/mobile/browser/favorites", s.serveFavorites)
 	mux.HandleFunc("POST /api/mobile/browser/favorites", s.serveFavorites)
 	for _, surface := range []phoneSurface{phoneBrowser, phoneDesktop} {

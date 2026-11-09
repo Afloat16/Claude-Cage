@@ -1,4 +1,4 @@
-package main
+package agentcli
 
 import (
 	"bytes"
@@ -16,7 +16,7 @@ func TestAgentCLIProtocolAndInit(t *testing.T) {
 	run := func(args ...string) (int, agentReply) {
 		t.Helper()
 		var output bytes.Buffer
-		code := runAgent(append(args, "--config", path), strings.NewReader(""), &output)
+		code := Main(append(args, "--config", path), strings.NewReader(""), &output)
 		var reply agentReply
 		if json.Unmarshal(output.Bytes(), &reply) != nil || reply.Protocol != 1 {
 			t.Fatalf("not one protocol reply: %s", output.String())
@@ -56,13 +56,13 @@ func TestAgentCLIProtocolAndInit(t *testing.T) {
 func TestAgentCLIRejectsSecretArgumentsAndMalformedJSON(t *testing.T) {
 	for _, input := range []string{`null`, `[]`, `{} {}`, `{"password":"secret"} trailing`} {
 		var output bytes.Buffer
-		code := runAgent([]string{"call", "account.unlock", "--input", "-", "--config", filepath.Join(t.TempDir(), "config.json")}, strings.NewReader(input), &output)
+		code := Main([]string{"call", "account.unlock", "--input", "-", "--config", filepath.Join(t.TempDir(), "config.json")}, strings.NewReader(input), &output)
 		if code != 2 || strings.Contains(output.String(), "secret") {
 			t.Fatal(code, output.String())
 		}
 	}
 	var output bytes.Buffer
-	code := runAgent([]string{"call", "account.unlock", "--password", "do-not-echo"}, strings.NewReader(""), &output)
+	code := Main([]string{"call", "account.unlock", "--password", "do-not-echo"}, strings.NewReader(""), &output)
 	if code != 2 || strings.Contains(output.String(), "do-not-echo") {
 		t.Fatal(output.String())
 	}

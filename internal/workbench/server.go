@@ -42,6 +42,7 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	agentNativeQueue                                 agentNativeQueue
 	macSetupProjectsChecked                          time.Time
 	macSetupProjectsAttempt                          time.Time
 	macosGuest                                       *guestos.MacOSProfile
@@ -311,8 +312,12 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	return err
 }
 func (s *Server) handler() http.Handler {
-	mux := http.NewServeMux()
+	mux := newDiscoverableMux()
+	mux.HandleFunc("GET /api/agent/routes", func(w http.ResponseWriter, r *http.Request) {
+		jsonReply(w, mux.routes())
+	})
 	s.agentRoutes(mux)
+	s.agentNativeRoutes(mux)
 	s.mobileCLIRoutes(mux)
 	s.mobileSurfaceRoutes(mux)
 	mux.HandleFunc("GET /api/mobile-pair", s.phoneStatus)
@@ -497,6 +502,10 @@ func (s *Server) handler() http.Handler {
 				http.Error(w, "请从 Cage 应用重新打开工作台", 401)
 				return
 			}
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/agent/native") || r.URL.Path == "/api/agent/routes" {
+			mux.ServeHTTP(w, r)
+			return
 		}
 		if s.windowsGuest != nil && !windowsWorkbenchRoute(r.URL.Path) {
 			s.windowsUnavailable(w)

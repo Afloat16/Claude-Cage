@@ -24,7 +24,7 @@ keywords: Agent CLI JSON 自动化 配置 接口 安装 诊断 修复 capabiliti
 
 `agent capabilities` 输出本构建的协议版本、操作清单、输入字段和退出码，不启动后台或创建配置。首次配置与每次升级后都先读取一次。机器阅读入口为 `/agent.md`、`/llms.txt`、`/llms-full.txt`，使用 Cage 的外部 Agent 从本页开始。
 
-所有 `agent` 命令自动输出 JSON，`--json` 可省略。示例把 `cage` 作为占位命令；执行时替换为上表路径。`--config /absolute/path/config.json` 明确选择配置；省略时使用 `CLAUDE_CAGE_CONFIG`，再省略则使用用户主目录下的 `.claude-cage/config.json`。每次输出中的 `config_path` 是实际目标。桌面配置的远端选择不会改变这个目标；管理服务器时，在经过用户授权的 SSH 通道内，在服务器上运行同一接口并明确路径。
+所有 `agent` 命令自动输出 JSON，`--json` 可省略。示例把 `cage` 作为占位命令；执行时替换为上表路径。`--config /absolute/path/config.json` 明确选择配置；省略时使用 `CLAUDE_CAGE_CONFIG`，再省略则使用用户主目录下的 `.claude-cage/config.json`。每次输出中的 `config_path` 是实际目标。桌面配置的远端选择不会改变这个目标；管理服务器时，也可通过下文的 desktop / selected 范围管理桌面连接，或在授权的 SSH 通道内运行服务器接口。
 
 ## 下载、校验与安装
 
@@ -124,7 +124,7 @@ cage agent call settings.get
 
 首次需要换存储位置时，在安装前用 `storage.set`，输入 `directory`、`previous`、`migrate`；后两项分别来自 `storage.get` 的 `directory` 和 `has_environment`。已有环境的迁移会停止任务并保留备份，应先保存工作。资源配置用 `resources.set` 的 `allocation` 对象；修改保存后再以 `{}` 调用应用资源，会重启环境。容器资源由服务器部署管理。
 
-只发送需要修改的设置，先预检再应用；未指定字段会保留，包括出口规则对象中未指定的 IP、国家和城市基准。`null` 不用于清空字段。
+只发送需要修改的设置，先预检再应用；browser_home_url 单独通过 browser.preferences.set 保存，环境设置分开提交；未指定字段会保留，包括出口规则对象中未指定的 IP、国家和城市基准。`null` 不用于清空字段。
 
 ```json
 {"patch":{"auto_timezone":true,"auto_language":true},"dry_run":true}
@@ -149,11 +149,11 @@ cage agent call network.check --wait 5m
 
 以 `status.ready`、`vm_running` 以及 `safety` 中当前配置对应的网络检查与授权共同判断可用性；`proxy.status.network_open` 可辅助检查外网是否已放行。网络暂停时保持用户的暂停意图，只有用户要求恢复联网才运行 `network.check`。完成首次引导使用 `initialization.set` 的 `{"action":"complete"}`，后台会再次核对环境与网络状态。
 
-打开项目使用 `project.open`：`{"workspace":"用户授权的绝对路径","add":true,"activate":true}`。它会让客机访问这个目录，改动会影响主机文件。返回 `approval` 表示仍需在本机 Cage 窗口完成系统授权。Claude 的服务登录仍在 Cage 内的官方工具中完成；本接口不会导入主机 Claude 凭据。
+打开项目使用 `project.open`：`{"workspace":"用户授权的绝对路径","add":true,"activate":true}`。它会让客机访问这个目录，改动会影响主机文件。返回 `approval` 表示等待系统授权；Agent 可以调用相同的 `/api/macos/project-approval` 查看、操作该窗口。Claude 的服务登录仍在 Cage 内的官方工具中完成；本接口不会导入主机 Claude 凭据。
 
 ## JSON 结果和异步任务
 
-每次命令的 stdout 只有一个 JSON 对象。格式示例：
+除流式 `socket` 外，每次命令的 stdout 只有一个 JSON 对象；`socket` 的 NDJSON 格式见下文。格式示例：
 
 ```json
 {"protocol":1,"version":"构建版本","config_path":"绝对配置路径","status":"accepted","data":{"id":"012345abcdef","kind":"start","running":true,"message":"正在准备…"}}
@@ -175,7 +175,7 @@ cage agent job 012345abcdef --wait 30m
 
 `--wait` 为有限等待，范围为 0 到 24 小时；不指定时立即返回。等待或客户端断开不会自动取消作业。后台只保留最近一个作业，后续作业会替换查询记录，重启也可能失去记录。`job_not_found`、`outcome_unknown` 或连接中断后，先读 `status` 和相应配置，核对副作用；不要把其他任务成功当成原任务成功。`job_canceled` 单独表示取消，不能视为完成。
 
-输入必须是单个 JSON 对象，最大 12 MiB。未知命令和字段会被拒绝。能力清单的 `input_schema` 描述允许字段；当前平台、系统状态和字段组合仍由后台验证。输出错误与任务日志会脱敏，正常字段中的项目路径、节点 ID、镜像计划和设置 URL 会保留以支持后续操作；这些结果仍属于用户私有数据。
+命名 call 的输入必须是单个 JSON 对象，最大 12 MiB；request 支持原始二进制文件流。未知命令和字段会被拒绝。能力清单的 `input_schema` 描述允许字段；当前平台、系统状态和字段组合仍由后台验证。错误说明经过脱敏，正常业务结果保持接口原值。用户可以查看的密码、Cookie、配对码等，在同样的再次验证和权限检查通过后也可由 Agent 读取，应通过私有管道处理，避免默认记录或回显。
 
 ## 定位问题与恢复
 
@@ -195,7 +195,7 @@ cage agent job 012345abcdef --wait 30m
 | `job_failed` | 保留 `data.error` 与脱敏的任务日志，检查当前配置、来源可用性、空间与主机条件。 |
 | `outcome_unknown`、`job_not_found` | 读取实际副作用；代理导入、安装和迁移都不能盲目重新提交。 |
 | 外网未放行或检查失败 | 检查所选代理、链路、出口规则、时间和位置；保持失败时关闭外网。用户授权后可切换节点或重检，不自动改为直连或降低规则。 |
-| `user_action_required`、项目 `approval`、首次系统设置未完成 | 告诉用户在哪个窗口完成哪项操作；完成后查询原状态继续。 |
+| `user_action_required`、项目 `approval`、首次系统设置未完成 | 使用同一原生桥或客机授权窗口接口继续；系统要求生物认证、管理员确认时，完成验证后查询原状态。 |
 
 ```sh
 cage agent diagnostics --output /absolute/path/new-cage-diagnostics.zip
@@ -210,3 +210,96 @@ cage agent diagnostics --output /absolute/path/new-cage-diagnostics.zip
 ## 交付给用户的结果
 
 完成后用几句话说明：实际安装的版本和路径、使用的配置与客机、代理是否应用、环境是否运行、网络检查是否通过、项目是否连接。列出需要用户完成的授权和登录，以及尚未验证的范围。仅完成下载、模拟请求或单平台编译时，分别报告，不写成完整安装或三平台实测成功。
+
+## 用户与 Agent 的操作空间
+
+命名操作是常用配置的快捷方式。通用 `request` 访问与界面相同的 HTTP API，`socket` 连接同一 WebSocket，原生操作交给实际桌面窗口的现有桥接执行。两种入口使用同一账户权限、密码重认证、项目授权、网络门槛和平台能力。用户授权 Agent 完成配置后，Cage 不因为调用者是 Agent 增加一轮产品确认。系统自身要求的 Touch ID、管理员认证等仍然有效。
+
+### 先选择目标
+
+| 范围 | 目标 |
+| --- | --- |
+| `local`，完整应用默认 | 明确 config_path 对应的本机工作负载，固定本机，不跟随 SSH 切换。 |
+| `desktop` | 完整应用的桌面连接配置、SSH 主机、本机信任和原生窗口队列。需要桌面连接服务运行。 |
+| `selected` | 完整应用桌面当前选择的环境，必须带 `--connection`，值取 client.context.connection_id。切换后旧代次被拒绝。 |
+| `client`，轻量客户端默认 | 轻量客户端的连接服务；业务请求必须带当前 `--connection`，连接管理请求可不带。 |
+
+完整应用的 `--config` 仍指原主配置；desktop 范围会定位对应的 desktop-entry 服务。轻量客户端使用自己安装包中的 CLI，默认配置为 `~/.claude-cage/client/config.json`。需要桌面窗口时，Agent 可以用正常系统启动方式打开 Cage，再继续接口操作；没有要求用户必须亲手打开窗口。
+
+```sh
+cage agent call client.context --scope desktop
+cage agent routes --scope desktop
+cage agent call settings.get --scope selected --connection 当前连接代次
+```
+
+`capabilities` 离线返回命名操作与实际输入类型。`routes` 在线读取当前监听器真正注册的路由，新增界面 API 会自动进入清单；平台与环境状态仍决定某路由当前是否可用。带 `{id}` / `{action}` 的模式需要替换为实际值。
+
+### 配置能力对照
+
+| 用户可操作内容 | Agent 的相同入口 |
+| --- | --- |
+| 名称、头像、密码、锁定、退出 | account.profile：username/avatar；account.password：old_password/password/confirm_password；account.lock/logout/suspend。 |
+| 本机信任、记住登录、设置密码保护 | desktop 范围 client.trusted-login：action 为 create/resume/enable/disable/protect，按同一规则提供 password、connection_id。 |
+| Touch ID 与快捷登录 | native.submit 提交 accountDevice，operation 为 status/enable/disable/unlock，kind 为 automatic/biometric；设备密钥由原生安全存储管理。Windows/Linux 不支持的操作与用户界面返回相同限制。 |
+| 首次启动的 Git 保护 | host.git 读取，host.git.enable 输入 confirm:true 启用；会修改主机全局 Git 保护配置，与界面动作相同。 |
+| 外观、字体、配色、自定义主题 | appearance.get/set 读写完整对象，appearance.codex 读取本机 Codex 外观导入；读取后保留未修改字段。 |
+| 出口位置检测、测速、连接和日志 | settings.probe 输入完整设置草稿；proxy.delay 输入 node_id；proxy.connections/logs。dry_run 仅静态校验。 |
+| 尚未开始安装时重选系统 | guest.reselect 输入 guest.options.pending.id，仍由原安装状态约束。 |
+| Claude 账号、额度、分组、启停、调度与排序 | claude-accounts.get/change，动作与字段类型由 capabilities 给出；业务 action 与界面相同。 |
+| 密码保险箱 | vault.get 列元数据；vault.change 的 action 为 save/delete/unblock/reveal；reveal 仍需 account_password，再次验证后返回真实密码；vault.browser 提供页面填充和保存。 |
+| 手机配对 | mobile.get/pair/remove；自建中继输入 admin/relay，配对结果是私密邀请码。 |
+| Tailscale 与 SSH 公钥 | tailscale.get，以及 install/connect/login/disconnect/logout/add-key/remove-key；公钥字段为 key。 |
+| 浏览器首页 | browser.preferences.get/set；set 立即更新浏览器，失败保留旧值，长度限制与界面一致。settings.patch 单独修改首页时复用同一保存流程。 |
+| Cookie、权限、扩展、收藏 | browser.cookies/settings/extensions；favorites.get/change。Cookie 的 mode、scope、id、cookieKey 与界面相同。 |
+| 客机首次设置、登录与授权窗口 | request 访问 /api/macos/first-setup、/api/macos/login、当前构建提供的 /api/macos/maintenance、/api/macos/project-approval；会话、截图和键鼠动作与界面一致。 |
+| SSH 主机与部署、指纹核对、连接与切换 | desktop 范围 client.hosts、client.hosts.create、client.candidate/commit/cancel/disconnect/local-stop；更新/删除主机使用 PUT/DELETE /api/client/hosts/主机ID。保留同一连接代次、候选、指纹和本机任务去留规则。 |
+| 已归档会话、名称、固定、账户切换 | request 访问 /api/cli/sessions 和 /api/cli/sessions/会话ID/{metadata,account,archive,restore,purge,open}。 |
+| 文件选择、主题导入导出、App 更新 | native.submit 调现有 chooseFolder、chooseGuestMedia、importTheme、exportTheme、appUpdate 等原生 action。系统选择器和签名检查照常执行。 |
+
+### 通用请求与文件
+
+```sh
+cage agent request GET /api/settings
+cage agent request POST /api/browser/extensions/upload \
+  --input /private/path/extension.zip --content-type application/octet-stream
+cage agent request GET /api/diagnostics/export --output /absolute/path/new-report.zip
+cage agent request DELETE /api/client/hosts/主机ID --scope desktop
+```
+
+JSON 请求通过私有文件或 `--input -` 传递；二进制请求使用文件流和正确的 Content-Type。输入大小由同一生产处理器约束。输出给出 http_status、content_type、必要的 recovery，以及 body 或保存文件的 path，合法的 202 会保留。输出文件排他创建，已有文件保留。同步请求期限为两分钟，长安装通过异步任务跟踪。
+
+request 返回的是实际业务响应；Agent 仍需检查错误字段、任务状态和可见副作用。接口清单中的集合路径可带相同查询参数。新功能没有命名快捷方式时，直接用 request；这种差异不限制用户或 Agent 的操作权限。
+
+WebSocket 用 `cage agent socket /api/terminals/终端ID/stream`。输入输出为 NDJSON，输入每行是 `{"type":"text","data":"原协议JSON字符串"}` 或 `{"type":"binary","data":"base64"}`。输出先发送 `{"protocol":1,"status":"connected"}`，随后为相同的帧对象，结束时输出标准命令结果。握手使用同一账户、Origin 和连接代次，可承载终端输入、尺寸调整和画面等已有消息。Ctrl+C 结束本地查看，断开不停止原终端；会话凭据由 CLI 持有。
+
+### 原生窗口与客户端偏好
+
+先从 client.context 取得实际连接代次，提交同一窗口的原生 action：
+
+```json
+{"connection_id":"当前代次","request":{"action":"accountDevice","operation":"status"}}
+```
+
+```sh
+cage agent call native.submit --scope desktop --input /private/path/native.json
+cage agent request GET /api/agent/native/返回的ID --scope desktop
+```
+
+原生队列属于当前窗口所在的监听器。认领与回执需要原生启动桥换取的窗口证明，普通网页会话无法抢占；证明只留在窗口闭包，不返回给 Agent。窗口只认领一次；pending/running 需要继续查询原 ID，completed 表示收到真实回执，failed 返回原生失败。连接切换、窗口关闭或丢失回执后不自动重放动作；两分钟内未被窗口认领的请求失败。记录过期或被后续记录替换后，先核对副作用。只有依赖原生窗口的操作需要打开窗口，普通配置可直接调用后台。
+
+客户端的布局、音量与缩放使用 WebView 的原有存储。提交 `request.action:"clientPreferences"`，operation 为 get/set；set 的 values 使用下表原始字符串，null 恢复默认。写入成功回执后刷新当前窗口，使实际界面应用；远端偏好按同一实例后缀隔离。
+
+| 逻辑键 | 原始字符串编码 |
+| --- | --- |
+| cage-sidebar-collapsed | `true` 或 `false` |
+| cage-browser-tab-layout | JSON 字符串，例如 `"vertical"`，在外层 JSON 中需要转义引号 |
+| cage-keyboard | `mac` / `native`，仅远端客户端；本机使用 settings.keyboard |
+| cage.audio | JSON 对象，例如 `{"muted":false,"volume":0.5}` |
+| cage-desktop-zoom | 0.75、0.9、1、1.1、1.25、1.5 |
+| cage-active | 当前标签 ID |
+| cage-tab-layout | get 返回的按项目保存名称、固定和顺序的对象 JSON |
+| cage-recent-environment | local 或主机 ID |
+
+外观走 appearance 持久接口，WebView 中的外观只是缓存；保存后可以通过原生 reconnect 刷新。原生动作继续交给三平台已有接收者，平台不支持时返回同样的不可用结果。已授权 Agent 可以操作产品内的授权窗口；系统要求的生物认证或管理员验证仍由系统执行。
+
+原生设备凭据和启动票据属于内部运输。通用 request 不直接导出 device-enroll/device-unlock 等包装密钥；这些操作通过 native.submit 的 accountDevice 调用原有安全存储与生物认证，保留用户的同一操作能力。

@@ -15,7 +15,7 @@ const macOSWindowSocketCommand = `exec /usr/bin/nc -U "$HOME/Library/Caches/dev.
 
 // The native trial has a dedicated standard-user SSH identity. The guest GUI
 // agent accepts only Claude operations on its protected per-user Unix socket.
-func (s *Server) registerMacOSClaudeRoutes(mux *http.ServeMux) {
+func (s *Server) registerMacOSClaudeRoutes(mux routeRegistrar) {
 	mux.HandleFunc("POST /api/macos/claude/window", s.macOSClaudeWindow)
 	mux.HandleFunc("GET /api/macos/claude/connection", s.macOSWindowConnection)
 	mux.HandleFunc("GET /api/macos/claude/frames", s.macOSWindowFrames)

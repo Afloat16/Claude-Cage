@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"github.com/sylvinus/agent-vm/internal/agentcli"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/version"
@@ -21,6 +22,9 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "agent" {
+		os.Exit(agentcli.ClientMain(os.Args[2:], os.Stdin, os.Stdout))
+	}
 	if err := run(os.Args[1:]); err != nil {
 		diagnostics.Log("error", "client", err.Error())
 		_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})

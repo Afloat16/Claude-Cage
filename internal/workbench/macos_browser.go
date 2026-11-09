@@ -63,7 +63,7 @@ func (s *Server) macBrowserExchange(ctx context.Context, request macBrowserReque
 	return client.request(ctx, "POST", "/"+action, request)
 }
 
-func (s *Server) registerMacOSBrowserRoutes(mux *http.ServeMux) {
+func (s *Server) registerMacOSBrowserRoutes(mux routeRegistrar) {
 	mux.HandleFunc("POST /api/macos-browser/action", func(w http.ResponseWriter, r *http.Request) {
 		if s.macosGuest == nil {
 			http.NotFound(w, r)

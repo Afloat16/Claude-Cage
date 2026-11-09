@@ -83,14 +83,8 @@ func TestAgentSettingsPatchPreservesOmittedFields(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.jobs.workers.Wait()
-	job := s.jobs.snapshot()
-	if job.Error != "" {
-		t.Fatal(job.Error)
-	}
-	data, err = AgentJob(context.Background(), s.configPath, job.ID)
-	if err != nil {
-		t.Fatal(err)
+	if !strings.Contains(string(data), "https://example.org/") {
+		t.Fatal("homepage was not confirmed", string(data))
 	}
 	if s.preferences.ClaudeTerminalCommand != "claude --verbose" || s.preferences.BrowserHomeURL != "https://example.org/" {
 		t.Fatalf("preferences lost: %+v", s.preferences)

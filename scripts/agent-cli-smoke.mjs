@@ -36,13 +36,15 @@ try {
   assert.equal(call(['call', 'settings.get'], undefined, 3).error.code, 'account_locked');
   call(['call', 'account.create', '--input', '-'], { username: 'Agent acceptance', password: 'Ephemeral-Test-Password-123!', confirm_password: 'Ephemeral-Test-Password-123!' });
   const before = call(['call', 'settings.get']).data;
-  const patch = { browser_home_url: 'https://example.org/' };
+  const patch = { balanced_display: !before.balanced_display };
   call(['call', 'settings.patch', '--input', '-'], { patch, dry_run: true });
   assert.deepEqual(call(['call', 'settings.get']).data, before);
   const applied = call(['call', 'settings.patch', '--input', '-', '--wait', '10s'], { patch });
   assert.equal(applied.status, 'completed'); assert.equal(applied.data.running, false);
   assert.equal(call(['job', applied.data.id]).data.id, applied.data.id);
-  assert.equal(call(['call', 'settings.get']).data.browser_home_url, patch.browser_home_url);
+  assert.equal(call(['call', 'settings.get']).data.balanced_display, patch.balanced_display);
+  call(['call','browser.preferences.set','--input','-'],{browser_home_url:'https://example.org/'});
+  assert.equal(call(['call','settings.get']).data.browser_home_url,'https://example.org/');
   const rejected = call(['call', 'settings.patch', '--input', '-'], { patch: { proxy_url: 'socks5://127.0.0.1:1' } }, 1);
   assert.equal(rejected.error.code, 'request_rejected');
   const proxy = call(['call', 'proxy.status']);

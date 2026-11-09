@@ -9,7 +9,7 @@ func nativeWorkbenchRoute(path string) bool {
 		return true
 	}
 	switch path {
-	case "/api/agent/settings":
+	case "/api/agent/settings", "/api/agent/routes":
 		return true
 	case "/api/account", "/api/session", "/api/launch", "/api/handoff", "/api/remote/manifest",
 		"/api/appearance", "/api/favorites", "/api/status", "/api/settings", "/api/settings/probe",

@@ -10,5 +10,6 @@
 
 Discover installed capabilities before changing anything: <installed CLI> agent capabilities
 Current source documentation may describe features absent from published releases.
-The CLI targets the local workload at config_path. For a remote server, run it through authorized SSH on that server.
+The full CLI defaults to the local workload at config_path. Use --scope desktop for client configuration and --scope selected --connection GENERATION for the chosen workload. The lightweight client defaults to --scope client. Remote SSH execution is also supported.
+Run agent routes against the live listener to discover its registered HTTP routes. agent request and agent socket use the same API and permissions as the UI; native.submit invokes the actual desktop bridge and clientPreferences accesses the same window storage.
 Preserve existing profile data, accounts, projects and VM disks. Never disable network isolation or system security checks to complete setup.

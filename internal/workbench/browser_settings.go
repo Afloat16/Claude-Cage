@@ -24,10 +24,22 @@ func (s *Server) browserPreferences(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &input) {
 		return
 	}
-	home := strings.TrimSpace(input.Home)
+	s.saveBrowserHome(w, r, input.Home)
+}
+
+func validateBrowserHome(value string) (string, error) {
+	home := strings.TrimSpace(value)
 	parsed, err := url.Parse(home)
 	if err != nil || len(home) > 8192 || parsed == nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Hostname() == "" || parsed.User != nil {
-		requestError(w, errors.New("新标签页地址必须是完整的 HTTP 或 HTTPS 网址，且不能包含用户名或密码"))
+		return "", errors.New("新标签页地址必须是完整的 HTTP 或 HTTPS 网址，且不能包含用户名或密码")
+	}
+	return home, nil
+}
+
+func (s *Server) saveBrowserHome(w http.ResponseWriter, r *http.Request, value string) {
+	home, err := validateBrowserHome(value)
+	if err != nil {
+		requestError(w, err)
 		return
 	}
 	if !s.op.TryLock() {

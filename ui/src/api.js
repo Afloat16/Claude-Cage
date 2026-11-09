@@ -1,6 +1,7 @@
 import { reportDiagnostic } from "./diagnostics.mjs";
 import { httpErrorMessage, connectionErrorMessage, operationName, nativeFailureMessage } from "./error-message.mjs";
 import { assertConnection, connectionHeaders, getClientContext, isProjectSharesPath } from "./client-context.mjs";
+import { installAgentNativeConsumer } from "./agent-native.js";
 let sessionRenewal;
 async function responseError(response, path, method = "GET") {
   const error = new Error(
@@ -30,11 +31,11 @@ async function renewSession() {
   }
   return sessionRenewal;
 }
-export async function api(path, body, method) {
+export async function api(path, body, method, headers = {}) {
   const connection = getClientContext().connection_id;
   const options = {
     method: method || (body === undefined ? "GET" : "POST"),
-    headers: { ...connectionHeaders(path), ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+    headers: { ...connectionHeaders(path), ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   };
   const send = async () => {
@@ -53,7 +54,7 @@ export async function api(path, body, method) {
   let value;
   try { value = await response.json(); }
   catch (error) { reportDiagnostic("frontend", error); throw new Error(`${operationName(path, options.method)}失败：后台返回的结果格式无效。请重新连接；仍出现时在设置中导出诊断包。`, { cause: error }); }
-  if (path !== "/session" && (!path.startsWith("/client/") || isProjectSharesPath(path))) assertConnection(connection);
+  if (path !== "/session" && !path.startsWith("/agent/native") && (!path.startsWith("/client/") || isProjectSharesPath(path))) assertConnection(connection);
   return value;
 }
 export async function uploadFile(path, file, { signal, onProgress } = {}) {
@@ -135,3 +136,5 @@ export function normalizeURL(text) {
     ).href;
   return "https://www.google.com/search?q=" + encodeURIComponent(value);
 }
+
+installAgentNativeConsumer({ api, native, nativeAvailable, getContext: getClientContext });
