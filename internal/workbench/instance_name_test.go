@@ -12,6 +12,7 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/cli"
+	"github.com/sylvinus/agent-vm/internal/paths"
 	"github.com/sylvinus/agent-vm/internal/vmname"
 )
 
@@ -80,8 +81,8 @@ func TestControllerNamesMatchCLIForIndependentProfiles(t *testing.T) {
 					t.Errorf("SSH target %s; CLI name %s", got, want)
 					return
 				}
-				if got := filepath.Base(s.instanceDir()); got != want {
-					t.Errorf("instance directory %s; CLI name %s", got, want)
+				if got, wantDir := s.instanceDir(), filepath.Join(s.profile, "state", "lima", want); !paths.Equal(paths.Host(filepath.Clean(got)), paths.Host(wantDir)) {
+					t.Errorf("instance directory %s; expected profile-owned directory %s", got, wantDir)
 					return
 				}
 			}
