@@ -1,17 +1,19 @@
 Unicode true
 RequestExecutionLevel user
-SetCompressor /SOLID lzma
+; Per-file decompression avoids a full payload copy in the system TEMP drive.
+SetCompressor lzma
 SetCompressorDictSize 32
 ManifestDPIAware true
 ManifestSupportedOS all
-Icon "Cage.ico"
-UninstallIcon "Cage.ico"
 
 !include MUI2.nsh
+!define MUI_ICON "Cage.ico"
+!define MUI_UNICON "Cage.ico"
 !include LogicLib.nsh
 !include FileFunc.nsh
 !include x64.nsh
 !include WinVer.nsh
+!include nsDialogs.nsh
 
 !ifndef APP_DIR
   !error "APP_DIR is required"
@@ -52,6 +54,7 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Cage contributors"
 !insertmacro MUI_PAGE_LICENSE "${APP_DIR}/LICENSE.txt"
 !define MUI_DIRECTORYPAGE_TEXT_TOP "$(CageDirectoryHelp)"
 !insertmacro MUI_PAGE_DIRECTORY
+Page custom ShortcutOptionsPage ShortcutOptionsLeave
 !insertmacro MUI_PAGE_INSTFILES
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
@@ -61,11 +64,143 @@ VIAddVersionKey /LANG=1033 "LegalCopyright" "Cage contributors"
 
 LangString CageDirectoryHelp ${LANG_ENGLISH} "Choose where to install the Cage application. On first launch, you can choose a separate drive for the Linux image, download cache, and virtual disks before starting the environment."
 LangString CageDirectoryHelp ${LANG_SIMPCHINESE} "请选择 Cage 程序的安装目录。首次打开 Cage 后，可以在启动环境前单独选择存放 Linux 镜像、下载缓存和虚拟磁盘的磁盘。"
+LangString CageShortcutsTitle ${LANG_ENGLISH} "Shortcuts"
+LangString CageShortcutsTitle ${LANG_SIMPCHINESE} "快捷方式"
+LangString CageShortcutsHelp ${LANG_ENGLISH} "Choose where to add Cage shortcuts for your Windows account."
+LangString CageShortcutsHelp ${LANG_SIMPCHINESE} "选择为当前 Windows 用户添加的 Cage 快捷方式。"
+LangString CageDesktopShortcut ${LANG_ENGLISH} "Add a desktop shortcut"
+LangString CageDesktopShortcut ${LANG_SIMPCHINESE} "添加桌面快捷方式"
+LangString CageStartMenuShortcuts ${LANG_ENGLISH} "Add to the Start menu"
+LangString CageStartMenuShortcuts ${LANG_SIMPCHINESE} "添加到开始菜单"
 
 Var UpdateMode
 Var StageDir
 Var BackupDir
 Var ExistingInstall
+Var DesktopShortcut
+Var StartMenuShortcuts
+Var DesktopShortcutControl
+Var StartMenuShortcutsControl
+Var InstallationMutex
+Var TransactionRecord
+
+!macro AcquireInstallationMutex
+  ; NSIS and UpdateInstaller both reject an existing named object and keep
+  ; their handle until the transaction ends. No caller waits for ownership.
+  System::Call 'kernel32::CreateMutexW(p 0, i 0, w "Global\Cage.Installation") p.r0 ?e'
+  Pop $1
+  ${If} $0 == 0
+    SetErrorLevel 2
+    Abort "无法锁定 Cage 安装操作，请核对系统权限后重试。"
+  ${EndIf}
+  StrCpy $InstallationMutex $0
+  ${If} $1 == 183
+    SetErrorLevel 2
+    Abort "另一个 Cage 安装或卸载仍在进行，请等待完成后重试。"
+  ${EndIf}
+!macroend
+
+Function .onGUIEnd
+  ${If} $InstallationMutex != ""
+    System::Call 'kernel32::CloseHandle(p $InstallationMutex)'
+  ${EndIf}
+FunctionEnd
+
+Function un.onGUIEnd
+  ${If} $InstallationMutex != ""
+    System::Call 'kernel32::CloseHandle(p $InstallationMutex)'
+  ${EndIf}
+FunctionEnd
+
+Function LoadShortcutOptions
+  ; Fresh installs enable both entries. Older installs inherit actual shortcuts.
+  StrCpy $DesktopShortcut 1
+  StrCpy $StartMenuShortcuts 1
+  ReadRegStr $0 HKCU "${UNINSTALL_KEY}" "InstallLocation"
+  ${If} $0 != ""
+    StrCpy $DesktopShortcut 0
+    StrCpy $StartMenuShortcuts 0
+    ${If} ${FileExists} "$DESKTOP\Cage.lnk"
+      StrCpy $DesktopShortcut 1
+    ${EndIf}
+    ${If} ${FileExists} "$SMPROGRAMS\Cage\Cage.lnk"
+      StrCpy $StartMenuShortcuts 1
+    ${EndIf}
+  ${EndIf}
+  ClearErrors
+  ReadRegDWORD $0 HKCU "${UNINSTALL_KEY}" "DesktopShortcut"
+  ${IfNot} ${Errors}
+    StrCpy $DesktopShortcut $0
+  ${EndIf}
+  ClearErrors
+  ReadRegDWORD $0 HKCU "${UNINSTALL_KEY}" "StartMenuShortcuts"
+  ${IfNot} ${Errors}
+    StrCpy $StartMenuShortcuts $0
+  ${EndIf}
+  ${GetParameters} $0
+  ClearErrors
+  ${GetOptions} $0 "/DESKTOPSHORTCUT=" $1
+  ${IfNot} ${Errors}
+    ${If} $1 != "0"
+    ${AndIf} $1 != "1"
+      SetErrorLevel 2
+      Abort "DESKTOPSHORTCUT must be 0 or 1."
+    ${EndIf}
+    StrCpy $DesktopShortcut $1
+  ${EndIf}
+  ClearErrors
+  ${GetOptions} $0 "/STARTMENUSHORTCUT=" $1
+  ${IfNot} ${Errors}
+    ${If} $1 != "0"
+    ${AndIf} $1 != "1"
+      SetErrorLevel 2
+      Abort "STARTMENUSHORTCUT must be 0 or 1."
+    ${EndIf}
+    StrCpy $StartMenuShortcuts $1
+  ${EndIf}
+FunctionEnd
+
+Function ShortcutOptionsPage
+  !insertmacro MUI_HEADER_TEXT "$(CageShortcutsTitle)" "$(CageShortcutsHelp)"
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+  ${NSD_CreateCheckbox} 0 8u 100% 16u "$(CageDesktopShortcut)"
+  Pop $DesktopShortcutControl
+  ${NSD_SetState} $DesktopShortcutControl $DesktopShortcut
+  ${NSD_CreateCheckbox} 0 36u 100% 16u "$(CageStartMenuShortcuts)"
+  Pop $StartMenuShortcutsControl
+  ${NSD_SetState} $StartMenuShortcutsControl $StartMenuShortcuts
+  ${NSD_OnBack} ShortcutOptionsLeave
+  nsDialogs::Show
+FunctionEnd
+
+Function ShortcutOptionsLeave
+  ${NSD_GetState} $DesktopShortcutControl $DesktopShortcut
+  ${NSD_GetState} $StartMenuShortcutsControl $StartMenuShortcuts
+FunctionEnd
+
+Function SetDefaultInstallDirectory
+  ; NSIS removes /D= from $CMDLINE, so inspect the original command line.
+  System::Call 'kernel32::GetCommandLineW() w .r0'
+  ClearErrors
+  ${GetOptions} $0 "/D=" $1
+  ${IfNot} ${Errors}
+    Return
+  ${EndIf}
+  ; Keep upgrades in the registered location, including installations on C:.
+  ReadRegStr $0 HKCU "${UNINSTALL_KEY}" "InstallLocation"
+  ${If} $0 != ""
+    StrCpy $INSTDIR $0
+    Return
+  ${EndIf}
+  System::Call 'kernel32::GetDriveTypeW(w "D:\") i .r0'
+  ${If} $0 == 3
+    StrCpy $INSTDIR "D:\Cage"
+  ${EndIf}
+FunctionEnd
 
 !macro CheckStopped FILE
   ${If} ${FileExists} "$INSTDIR\${FILE}"
@@ -93,6 +228,8 @@ Function .onInit
     SetErrorLevel 1633
     Quit
   ${EndIf}
+  Call SetDefaultInstallDirectory
+  Call LoadShortcutOptions
   StrCpy $UpdateMode "0"
   ${GetParameters} $0
   ClearErrors
@@ -113,7 +250,9 @@ Function CheckDestination
   ${EndIf}
   StrCpy $ExistingInstall "0"
   IfFileExists "$INSTDIR\Cage.install-id" existing
-  IfFileExists "$INSTDIR\*.*" foreign done
+  ; IfFileExists with a wildcard also matches an empty directory.
+  ${DirState} "$INSTDIR" $0
+  StrCmp $0 1 foreign done
   existing:
     FileOpen $0 "$INSTDIR\Cage.install-id" r
     FileRead $0 $1
@@ -132,9 +271,40 @@ Function CheckDestination
     SetErrorLevel 2
     Abort "The destination contains files from another installation. Choose an empty folder."
   done:
+    ClearErrors
+FunctionEnd
+
+Function RestorePreservedFiles
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation restore -Target "$BackupDir" -Source "$StageDir" -Receipt "$TransactionRecord"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "$1"
+    SetErrorLevel 2
+    Abort "安装恢复尚未完成。文件分别保留在 $BackupDir 和 $StageDir，请保留这两个目录后重试。"
+  ${EndIf}
+  ClearErrors
+  Rename "$BackupDir" "$INSTDIR"
+  ${If} ${Errors}
+    SetErrorLevel 2
+    Abort "原安装目录未能恢复。文件保留在 $BackupDir，新程序保留在 $StageDir。"
+  ${EndIf}
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation complete -Target "$INSTDIR" -Receipt "$TransactionRecord"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    SetErrorLevel 2
+    Abort "仍有文件需要核对，安装回执保留在 $TransactionRecord。请保留相关目录后处理。"
+  ${EndIf}
 FunctionEnd
 
 Section "Cage" Main
+  !insertmacro AcquireInstallationMutex
+  StrCpy $TransactionRecord "$INSTDIR.cage-installation.json"
+  ${If} ${FileExists} "$TransactionRecord"
+    SetErrorLevel 2
+    Abort "存在未处理的安装事务记录：$TransactionRecord。请先按记录恢复保留的目录，再重试。"
+  ${EndIf}
   Call CheckDestination
   ${GetParent} "$INSTDIR" $0
   CreateDirectory "$0"
@@ -182,12 +352,44 @@ Section "Cage" Main
     ${GetParent} "$INSTDIR" $0
     GetTempFileName $BackupDir "$0"
     Delete "$BackupDir"
+  ${EndIf}
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=installation-files.ps1 "installation-files.ps1"
+  File /oname=verified-file-deletion.cs "verified-file-deletion.cs"
+  DetailPrint "正在检查并保留已有项目和修改文件…"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation prepare -Target "$StageDir" -Source "$INSTDIR" -Backup "$BackupDir" -Receipt "$TransactionRecord"'
+  Pop $0
+  Pop $1
+  DetailPrint "$1"
+  ${If} $0 != 0
+    SetOutPath "$TEMP"
+    RMDir /r "$StageDir"
+    SetErrorLevel 2
+    Abort "无法安全保留现有文件，安装已停止。原安装目录已保留，请检查磁盘空间、文件占用和安装日志。"
+  ${EndIf}
+  SetOutPath "$TEMP"
+  ${If} $ExistingInstall == "1"
     ClearErrors
     Rename "$INSTDIR" "$BackupDir"
     ${If} ${Errors}
+      nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation complete -Target "$INSTDIR" -Receipt "$TransactionRecord"'
+      Pop $0
+      Pop $1
       RMDir /r "$StageDir"
       SetErrorLevel 2
       Abort "Could not move the installed application. Quit Cage and retry."
+    ${EndIf}
+    DetailPrint "正在迁入个人文件并保留原有链接…"
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation move -Target "$StageDir" -Source "$BackupDir" -Receipt "$TransactionRecord"'
+    Pop $0
+    Pop $1
+    DetailPrint "$1"
+    ${If} $0 != 0
+      Call RestorePreservedFiles
+      RMDir /r "$StageDir"
+      SetErrorLevel 2
+      Abort "个人文件未能迁入新程序目录，原安装已恢复。请关闭占用文件的程序后重试。"
     ${EndIf}
   ${Else}
     RMDir "$INSTDIR"
@@ -196,21 +398,31 @@ Section "Cage" Main
   Rename "$StageDir" "$INSTDIR"
   ${If} ${Errors}
     ${If} $BackupDir != ""
-      ClearErrors
-      Rename "$BackupDir" "$INSTDIR"
-      ${If} ${Errors}
-        RMDir /r "$StageDir"
-        SetErrorLevel 2
-        Abort "Installation failed. The previous application is preserved at $BackupDir; restore that folder before retrying."
-      ${EndIf}
+      Call RestorePreservedFiles
     ${EndIf}
     RMDir /r "$StageDir"
     SetErrorLevel 2
     Abort "Could not install Cage. The previous installation has been restored."
   ${EndIf}
   ${If} $BackupDir != ""
-    ; BackupDir came from the verified Cage installation above. User data lives elsewhere.
-    RMDir /r "$BackupDir"
+    DetailPrint "正在清理已核对的旧程序文件…"
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation cleanup -Target "$INSTDIR" -Source "$BackupDir" -Receipt "$TransactionRecord"'
+    Pop $0
+    Pop $1
+    DetailPrint "$1"
+    ${If} $0 != 0
+      DetailPrint "旧目录中仍有需要保留的文件：$BackupDir"
+      SetErrorLevel 2
+      Abort "安装仍有待恢复的文件。请保留 $TransactionRecord 及其中记录的目录，再处理恢复。"
+    ${EndIf}
+  ${Else}
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation complete -Target "$INSTDIR" -Receipt "$TransactionRecord"'
+    Pop $0
+    Pop $1
+    ${If} $0 != 0
+      SetErrorLevel 2
+      Abort "安装回执未能完成，记录保留在 $TransactionRecord。"
+    ${EndIf}
   ${EndIf}
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayName" "Cage"
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayVersion" "${VERSION}"
@@ -221,9 +433,23 @@ Section "Cage" Main
   WriteRegStr HKCU "${UNINSTALL_KEY}" "DisplayIcon" "$INSTDIR\Cage.exe,0"
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoModify" 1
   WriteRegDWORD HKCU "${UNINSTALL_KEY}" "NoRepair" 1
-  CreateDirectory "$SMPROGRAMS\Cage"
-  CreateShortcut "$SMPROGRAMS\Cage\Cage.lnk" "$INSTDIR\Cage.exe"
-  CreateShortcut "$SMPROGRAMS\Cage\Uninstall Cage.lnk" "$INSTDIR\Uninstall.exe"
+  SetOutPath "$INSTDIR"
+  ${If} $DesktopShortcut == 1
+    CreateShortcut "$DESKTOP\Cage.lnk" "$INSTDIR\Cage.exe"
+  ${Else}
+    Delete "$DESKTOP\Cage.lnk"
+  ${EndIf}
+  ${If} $StartMenuShortcuts == 1
+    CreateDirectory "$SMPROGRAMS\Cage"
+    CreateShortcut "$SMPROGRAMS\Cage\Cage.lnk" "$INSTDIR\Cage.exe"
+    CreateShortcut "$SMPROGRAMS\Cage\Uninstall Cage.lnk" "$INSTDIR\Uninstall.exe"
+  ${Else}
+    Delete "$SMPROGRAMS\Cage\Cage.lnk"
+    Delete "$SMPROGRAMS\Cage\Uninstall Cage.lnk"
+    RMDir "$SMPROGRAMS\Cage"
+  ${EndIf}
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "DesktopShortcut" $DesktopShortcut
+  WriteRegDWORD HKCU "${UNINSTALL_KEY}" "StartMenuShortcuts" $StartMenuShortcuts
   SetErrorLevel 0
 SectionEnd
 
@@ -244,12 +470,28 @@ Function un.onInit
 FunctionEnd
 
 Section "Uninstall"
+  !insertmacro AcquireInstallationMutex
+  ${If} ${FileExists} "$INSTDIR.cage-installation.json"
+    SetErrorLevel 2
+    Abort "存在待恢复的安装事务，请先处理 $INSTDIR.cage-installation.json 中记录的目录。"
+  ${EndIf}
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=installation-files.ps1 "installation-files.ps1"
+  File /oname=verified-file-deletion.cs "verified-file-deletion.cs"
+  File /oname=install-files.json "${FILE_MANIFEST}"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation uninstall -Target "$INSTDIR" -Manifest "$PLUGINSDIR\install-files.json"'
+  Pop $0
+  Pop $1
+  DetailPrint "$1"
+  ${If} $0 != 0
+    SetErrorLevel 2
+    Abort "部分程序文件正在使用或无法读取，卸载未完成。个人文件已保留，请关闭占用程序后重试。"
+  ${EndIf}
+  Delete "$DESKTOP\Cage.lnk"
   Delete "$SMPROGRAMS\Cage\Cage.lnk"
   Delete "$SMPROGRAMS\Cage\Uninstall Cage.lnk"
   RMDir "$SMPROGRAMS\Cage"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
-  ; Delete only files shipped in this build. Preserve user-created files and all external data.
-  !include "${UNINSTALL_MANIFEST}"
-  Delete "$INSTDIR\Uninstall.exe"
   RMDir "$INSTDIR"
 SectionEnd
