@@ -404,6 +404,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/tailscale/{action}", s.tailnet)
 	mux.HandleFunc("GET /api/browser/tabs", s.browser)
 	mux.HandleFunc("GET /api/browser/events", s.browserEvents)
+	mux.HandleFunc("POST /api/browser/clipboard", s.browserClipboard)
 	mux.HandleFunc("GET /api/browser/preferences", s.browserPreferences)
 	mux.HandleFunc("POST /api/browser/preferences", s.browserPreferences)
 	mux.HandleFunc("POST /api/browser/extensions/upload", s.browserExtensionUpload)

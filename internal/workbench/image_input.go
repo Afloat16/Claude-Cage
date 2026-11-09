@@ -148,6 +148,13 @@ func decodeInputImage(encoded string) ([]byte, error) {
 	if err != nil || len(data) == 0 || len(data) > maxImageBytes {
 		return nil, errors.New("图片数据无效")
 	}
+	return validateInputImage(data)
+}
+
+func validateInputImage(data []byte) ([]byte, error) {
+	if len(data) == 0 || len(data) > maxImageBytes {
+		return nil, errors.New("图片数据无效")
+	}
 	config, err := png.DecodeConfig(bytes.NewReader(data))
 	if err != nil || config.Width <= 0 || config.Height <= 0 || int64(config.Width)*int64(config.Height) > 40_000_000 {
 		return nil, errors.New("需要有效的 PNG 图片，且不能超过 4000 万像素")

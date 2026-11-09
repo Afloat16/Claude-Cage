@@ -99,3 +99,24 @@ func TestCacheRejectsForeignOrMalformedIdentifiers(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCacheConcurrentPublishCannotRecreateAReleasedReceipt(t *testing.T) {
+	for range 20 {
+		store, selection := cacheFixture(t)
+		start := make(chan struct{})
+		published := make(chan error, 1)
+		released := make(chan error, 1)
+		go func() { <-start; published <- store.Publish(selection.ID) }()
+		go func() { <-start; released <- store.Release(selection.ID) }()
+		close(start)
+		if err := <-published; err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		if err := <-released; err != nil {
+			t.Fatal(err)
+		}
+		if _, err := store.load(selection.ID); !os.IsNotExist(err) {
+			t.Fatal("a concurrent publication recreated a retired receipt", err)
+		}
+	}
+}

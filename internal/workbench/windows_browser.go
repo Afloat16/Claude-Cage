@@ -2,6 +2,7 @@ package workbench
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,7 @@ import (
 	"net/url"
 	"os/exec"
 	"time"
+	"unicode/utf8"
 
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 )
@@ -63,6 +65,69 @@ func (s *Server) nativeBrowserAPI(ctx context.Context, method, path string, body
 		return nil, browserInputError{errors.New("浏览器请求无效")}
 	}
 	return s.nativeBrowserClient().request(ctx, method, path, input)
+}
+
+type browserClipboardInput struct {
+	ID       string `json:"id"`
+	Tab      string `json:"tab"`
+	Context  string `json:"context"`
+	Document string `json:"document"`
+}
+
+func (s *Server) browserClipboard(w http.ResponseWriter, r *http.Request) {
+	var input browserClipboardInput
+	if !readJSON(w, r, &input) {
+		return
+	}
+	if !browserFileID.MatchString(input.ID) || !validInputToken(input.Tab) || !validInputToken(input.Context) || !validInputToken(input.Document) {
+		http.Error(w, "复制内容或网页上下文无效", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	ready := s.ready
+	s.mu.Unlock()
+	if !ready {
+		http.Error(w, "环境尚未就绪", http.StatusConflict)
+		return
+	}
+	if s.macosGuest == nil {
+		http.Error(w, "当前客机使用系统共享剪贴板", http.StatusNotImplemented)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	reader, size, mime, err := s.nativeBrowserClient().downloadClipboard(ctx, input)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	defer reader.Close()
+	limit := int64(maxImageBytes)
+	if mime == "text/plain" {
+		limit = 2 << 20
+	}
+	if (mime != "image/png" && mime != "text/plain") || size > limit {
+		http.Error(w, "客机复制内容的类型或大小无效", http.StatusBadGateway)
+		return
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, limit+1))
+	if err != nil || int64(len(data)) != size {
+		http.Error(w, "复制内容未完整收到，请重新复制", http.StatusBadGateway)
+		return
+	}
+	if mime == "text/plain" {
+		if !utf8.Valid(data) {
+			http.Error(w, "复制文字的编码无效", http.StatusBadGateway)
+			return
+		}
+		jsonReply(w, map[string]string{"text": string(data)})
+		return
+	}
+	if _, err := validateInputImage(data); err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	jsonReply(w, map[string]string{"png": base64.StdEncoding.EncodeToString(data)})
 }
 
 func (s *Server) subscribeNativeBrowser(parent context.Context) io.ReadCloser {

@@ -260,6 +260,10 @@ func (c *windowsBrowserClient) request(ctx context.Context, method, path string,
 			"project_grant_unavailable":   "此项目授权已断开，请重新连接后再操作",
 			"extensions_unavailable":      "客机浏览器扩展管理未就绪，请核对浏览器版本和安装组件",
 			"clipboard_copy_not_observed": "尚未确认客机剪贴板发生复制，请重新选择内容后复制",
+			"copy_unavailable":            "未收到新的复制内容，请重新选择后复制",
+			"copy_changed":                "复制来源已切换，请重新复制",
+			"copy_limit":                  "复制内容超过大小限制",
+			"copy_image_invalid":          "复制的 PNG 图片无效",
 			"action_unavailable":          "客机浏览器尚未支持这项操作",
 			"target_changed":              "接收操作的网页已经切换，请回到原网页重试",
 			"browser_target_changed":      "客机浏览器窗口已变化，请在新画面中重试",
@@ -387,6 +391,24 @@ type windowsBrowserDownload struct {
 
 func (c *windowsBrowserClient) download(ctx context.Context, id string) (io.ReadCloser, int64, string, error) {
 	return openNativeFileDownload(ctx, id, c.request)
+}
+
+func (c *windowsBrowserClient) downloadClipboard(ctx context.Context, input browserClipboardInput) (io.ReadCloser, int64, string, error) {
+	var metadata struct {
+		Mime string `json:"mime"`
+	}
+	request := func(ctx context.Context, method, path string, value any) ([]byte, error) {
+		if path == "/file-open" {
+			value = map[string]any{"direction": "download", "id": input.ID, "tab": input.Tab, "context": input.Context, "document": input.Document}
+		}
+		data, err := c.request(ctx, method, path, value)
+		if err == nil && path == "/file-open" {
+			_ = json.Unmarshal(data, &metadata)
+		}
+		return data, err
+	}
+	reader, size, _, err := openNativeFileDownload(ctx, input.ID, request)
+	return reader, size, metadata.Mime, err
 }
 
 func openNativeFileDownload(ctx context.Context, id string, request func(context.Context, string, string, any) ([]byte, error)) (io.ReadCloser, int64, string, error) {

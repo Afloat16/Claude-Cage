@@ -90,6 +90,41 @@ func TestNativeBrowserTextHTTPPreservesTwoMiBAndRequiresPreparation(t *testing.T
 	}
 }
 
+func TestNativeBrowserClipboardHTTPReadsBoundPNGAndLargeText(t *testing.T) {
+	s := testServer(t)
+	s.macosGuest, s.ready = &guestos.MacOSProfile{}, true
+	s.windowsBrowserControl = fixtureWindowsBrowserClient(t)
+	for _, id := range []string{"11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222"} {
+		input := browserClipboardInput{ID: id, Tab: strings.Repeat("a", 32), Context: strings.Repeat("b", 32), Document: strings.Repeat("c", 32)}
+		body, _ := json.Marshal(input)
+		response := windowsBrowserRequestForTest(s, http.MethodPost, "/api/browser/clipboard", body)
+		var result map[string]string
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &result) != nil {
+			t.Fatalf("clipboard reference failed: %d %s", response.Code, response.Body.String())
+		}
+		if strings.HasPrefix(id, "11111111") {
+			if result["png"] != testPNG(t) {
+				t.Fatal("PNG reference changed its bytes")
+			}
+		} else if result["text"] != strings.Repeat("中", (2<<20)/3)+"ab" {
+			t.Fatal("large UTF-8 clipboard text changed")
+		}
+		input.Context = strings.Repeat("d", 32)
+		body, _ = json.Marshal(input)
+		if response := windowsBrowserRequestForTest(s, http.MethodPost, "/api/browser/clipboard", body); response.Code == http.StatusOK {
+			t.Fatal("superseded copy context was accepted")
+		}
+		input.Context = ""
+		body, _ = json.Marshal(input)
+		if response := windowsBrowserRequestForTest(s, http.MethodPost, "/api/browser/clipboard", body); response.Code != http.StatusBadRequest {
+			t.Fatal("unbound copy reference was accepted")
+		}
+	}
+	if s.browserControl != nil {
+		t.Fatal("private clipboard used Linux transport")
+	}
+}
+
 func TestWindowsBrowserExtensionHTTPUsesNativeChunkedPreview(t *testing.T) {
 	s := testServer(t)
 	s.windowsGuest, s.ready = &guestos.WindowsProfile{}, true
