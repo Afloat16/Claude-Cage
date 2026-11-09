@@ -230,6 +230,13 @@ export async function createWorkbench({
       result = state.settings;
     else if (path === "/status")
       result = { ...state.status, workspace: state.settings.workspace };
+    else if (path === "/projects/remove") {
+      if (!body.workspace || body.workspace === state.status.environment_directory) return route.fulfill({ status: 400, body: "默认工作区保留" });
+      if (state.failRemove || state.terminals.some(terminal => terminal.workspace === body.workspace && !terminal.closed) || state.tabs.some(tab => tab.kind === "editor" && tab.workspace === body.workspace)) return route.fulfill({ status: 409, contentType: "text/plain; charset=utf-8", body: "请先关闭此项目的终端和编辑器，再移除项目" });
+      state.status.projects = state.status.projects.filter(path => path !== body.workspace);
+      if (state.settings.workspace === body.workspace) state.settings.workspace = state.status.environment_directory;
+      result = { workspace: state.settings.workspace };
+    }
     else if (path === "/projects/open") {
       if (state.failJob) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "项目文件夹连接失败，原项目保持不变" });
       if (!body.add && !state.status.projects.includes(body.workspace)) return route.fulfill({ status: 400, body: "请选择已授权的项目" });

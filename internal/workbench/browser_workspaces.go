@@ -85,7 +85,9 @@ func (s *Server) browserStateForHost(body []byte) ([]byte, error) {
 	byGuest := make(map[string]string, len(authorized))
 	for _, hostPath := range authorized {
 		if s.macosGuest != nil {
-			byGuest[macOSProjectPath(s.macosGuest.User, hostPath)] = hostPath
+			guestPath := macOSProjectPath(s.macosGuest.User, hostPath)
+			byGuest[guestPath] = hostPath
+			byGuest[filepath.Base(guestPath)] = hostPath
 		} else {
 			byGuest[guestPath(hostPath)] = hostPath
 		}

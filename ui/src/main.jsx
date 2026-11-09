@@ -1819,6 +1819,11 @@ function App() {
           onClose={() => setProjectDialog(null)}
           onSettings={() => { setProjectDialog(null); openSettings("project"); }}
           onOpened={openedProject}
+          onRemoved={async (removed, workspace) => {
+            await refreshSettings();
+            await refreshStatus.current?.();
+            if (selectedProject === removed) setSelectedProject(workspace);
+          }}
         />
       )}
       {rename && (
