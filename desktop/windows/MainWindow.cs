@@ -223,6 +223,8 @@ internal sealed class MainWindow : Form
         using var shutdown = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
         shutdown.CancelAfter(TimeSpan.FromSeconds(20));
         var errors = new List<string>();
+        int? prepareExit = null;
+        string? prepareStatus = null;
         if (failure != null) errors.Add(failure);
         try
         {
@@ -242,6 +244,8 @@ internal sealed class MainWindow : Form
             {
                 if (nativeBridgeReady) smokePhase = "stopping_backend";
                 var (exit, data) = await Backend.Json(["prepare-update", "--json"], shutdown.Token, TimeSpan.FromSeconds(20));
+                prepareExit = exit;
+                prepareStatus = data.Text("status") is "prepared" or "stop_required" or "error" ? data.Text("status") : "unexpected";
                 if (exit != 0 || data.Text("status") != "prepared") throw new IOException("自检结束时无法确认后台已停止");
                 await Task.WhenAll(controllers.Select(process => process.WaitForExitAsync(shutdown.Token)));
             }
@@ -257,7 +261,7 @@ internal sealed class MainWindow : Form
             environment.BrowserProcessExited += BrowserExited;
             try
             {
-                if (nativeBridgeReady) smokePhase = "stopping_browser";
+                if (nativeBridgeReady && errors.Count == 0) smokePhase = "stopping_browser";
                 web.Dispose();
                 await exited.Task.WaitAsync(shutdown.Token);
             }
@@ -269,7 +273,7 @@ internal sealed class MainWindow : Form
             if (nativeBridgeReady && errors.Count == 0) smokePhase = "completed";
             File.WriteAllText(Program.SmokeOutput, JsonSerializer.Serialize(new {
                 success = nativeBridgeReady && errors.Count == 0, nativeBridgeReady, version = AppUpdater.Version,
-                phase = smokePhase, nativeStatus = message.Text, errors, page,
+                phase = smokePhase, nativeStatus = message.Text, prepareExit, prepareStatus, errors, page,
                 pageURL, webviewVersion,
                 windowBounds = Bounds, workingArea = Screen.FromHandle(Handle).WorkingArea, deviceDpi = DeviceDpi,
                 nativeMenuBar = MainMenuStrip != null,
