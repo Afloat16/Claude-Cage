@@ -10,12 +10,13 @@ for tool in "$node_command" git curl tar sha256sum find sort xargs pacman-key mk
     command -v "$tool" >/dev/null 2>&1 || { echo "Missing source-collection tool: $tool" >&2; exit 1; }
 done
 commit=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.commit" "$repository/packaging/windows/dependencies.json")
+source_repository=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.repository" "$repository/packaging/windows/dependencies.json")
 [[ $commit =~ ^[a-f0-9]{40}$ && -s "$runtime/build-source-packages.txt" ]] || { echo 'QEMU source/package identity is missing.' >&2; exit 1; }
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/source/packages" "$stage/source/cage"
 git -c core.autocrlf=false init -q "$stage/source/qemu"
-git -C "$stage/source/qemu" fetch --depth=1 https://github.com/stweil/qemu.git "$commit"
+git -C "$stage/source/qemu" fetch --depth=1 "$source_repository" "$commit"
 git -c core.autocrlf=false -C "$stage/source/qemu" checkout -q --detach FETCH_HEAD
 [[ $(git -C "$stage/source/qemu" rev-parse HEAD) == "$commit" ]]
 # All shipped firmware comes from QEMU's pinned ROM submodules. Include nested

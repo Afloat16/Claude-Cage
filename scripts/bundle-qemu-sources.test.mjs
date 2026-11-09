@@ -12,7 +12,7 @@ test('source collector includes pinned firmware and authenticated package source
  const repository=join(root,'repository'),runtime=join(root,'runtime'),bin=join(root,'bin'),artifact=join(root,'bundle.tar.gz');
  for(const path of [bin,runtime,join(repository,'packaging/windows'),join(repository,'scripts'),join(repository,'patches/qemu')])await mkdir(path,{recursive:true});
  const sha='a'.repeat(40),content='fixture source archive\n';
- await writeFile(join(repository,'packaging/windows/dependencies.json'),JSON.stringify({qemuSource:{commit:sha},qemuKeycodemap:{url:'https://source.invalid/keymap.tar.gz',hash:createHash('sha256').update(content).digest('hex')}}));
+ await writeFile(join(repository,'packaging/windows/dependencies.json'),JSON.stringify({qemuSource:{repository:'https://source.invalid/locked-qemu.git',commit:sha},qemuKeycodemap:{url:'https://source.invalid/keymap.tar.gz',hash:createHash('sha256').update(content).digest('hex')}}));
  for(const name of ['build-source-packages.txt','build-packages.txt','cage-build.json'])await writeFile(join(runtime,name),name==='build-source-packages.txt'?'mingw-w64-fixture 1.2.3-1\n':'fixture');
  for(const name of ['build-qemu-windows.sh','build-qemu-windows.ps1','bundle-qemu-sources.sh'])await writeFile(join(repository,'scripts',name),'fixture build input');
  await writeFile(join(repository,'patches/qemu/fixture.patch'),'fixture patch');
@@ -20,6 +20,7 @@ test('source collector includes pinned firmware and authenticated package source
  await command('cygpath','printf "%s\\n" "$2"');
  await command('node','echo "The collector must use the explicit CAGE_NODE path" >&2; exit 99');
  await command('git',`if [[ "$*" == *' init '* ]];then mkdir -p "\${@: -1}/.git";fi
+ if [[ "$*" == *' fetch '* ]];then [[ "$*" == *'fetch --depth=1 https://source.invalid/locked-qemu.git ${sha}' ]] || exit 98;fi
  if [[ "$*" == *rev-parse* ]];then printf '${sha}\\n';fi
  if [[ "$*" == *'submodule update'* ]];then for ((i=1;i<=$#;i++));do if [[ "\${!i}" == -C ]];then j=$((i+1));q="\${!j}";fi;done;mkdir -p "$q/roms/seabios";echo 'firmware code' > "$q/roms/seabios/code.c";echo 'gitdir: private' > "$q/roms/seabios/.git";fi
  if [[ "$*" == *'submodule status'* ]];then printf ' ${sha} roms/seabios\\n';fi`);
