@@ -44,10 +44,21 @@ function App([string]$Path, [string]$Version) {
     })
     @{version = 1; files = $files} | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $Path 'Cage.install-files.json')
 }
-function Invoke-Helper([string[]]$Arguments, [int]$Expected = 0) {
+function Invoke-Helper([string[]]$Arguments, [int]$Expected = 0, [switch]$WithoutFileHash) {
+    $entry = $helper
+    if ($WithoutFileHash) {
+        $entry = Join-Path $root 'helper-without-filehash.ps1'
+        Write-File $entry @'
+$ErrorActionPreference = 'Stop'
+function global:Get-FileHash { throw [Management.Automation.CommandNotFoundException]::new('Get-FileHash is intentionally unavailable in this native helper fixture.') }
+$remaining = @($args | Select-Object -Skip 1)
+& $args[0] @remaining
+'@
+        $Arguments = @($helper) + $Arguments
+    }
     try {
         $ErrorActionPreference = 'Continue'
-        $output = & $HelperShell -NoProfile -File $helper @Arguments 2>&1 | Out-String
+        $output = & $HelperShell -NoProfile -File $entry @Arguments 2>&1 | Out-String
     } finally { $ErrorActionPreference = 'Stop' }
     if ($LASTEXITCODE -ne $Expected) { throw "Helper returned $LASTEXITCODE, expected $Expected. $output" }
 }
@@ -126,7 +137,7 @@ try {
     $transfer = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
     Check (!$transfer.backupPath -and @($transfer.moves).Count -eq 0) 'First install invented a backup or personal file transfer.'
     [IO.Directory]::Delete($old); [IO.Directory]::Move($stage, $old)
-    Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt)
+    Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt) -WithoutFileHash
     Check (!(Test-Path -LiteralPath $receipt)) 'First install did not finish its transaction.'
 
     $diagnostic = Join-Path $scenario 'diagnostic.json'

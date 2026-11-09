@@ -150,7 +150,8 @@ function Complete-Transfer {
         $relative = if ($entry.state -eq 'moved') { $entry.destination } else { $entry.path }
         if (!(Get-Item -LiteralPath (Join-Path $Target $relative) -Force -ErrorAction SilentlyContinue)) { throw ('个人文件尚未恢复，事务回执已保留：' + $relative) }
     }
-    $hash = (Get-FileHash -LiteralPath $Receipt -Algorithm SHA256).Hash
+    $receiptStream = Open-ReadLocked $Receipt
+    try { $hash = Stream-Hash $receiptStream } finally { $receiptStream.Dispose() }
     Remove-MatchingFile (Split-Path $Receipt -Parent) (Split-Path $Receipt -Leaf) $hash
     if (Test-Path -LiteralPath $Receipt) { throw '安装回执在完成期间发生变化，已保留待核对。' }
 }
