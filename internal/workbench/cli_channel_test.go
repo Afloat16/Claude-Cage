@@ -137,7 +137,20 @@ func TestImportedCLIUUIDIsIndependentOfPublicSessionID(t *testing.T) {
 func TestArchivedCLIHistoryIsNotRediscovered(t *testing.T) {
 	s, id, project := metadataFixture(t)
 	home, _ := filepath.EvalSymlinks(t.TempDir())
-	mobileTestSSH(t, s, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/local/bin", "CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude")})
+	bin := filepath.Join(home, "bin")
+	if err := os.Mkdir(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Discovery queries the CLI through the guest login shell. Keep that
+	// command local to the fixture while exercising the real discovery path.
+	const cli = "#!/bin/sh\n[ \"$#\" -eq 2 ] && [ \"$1\" = agents ] && [ \"$2\" = --json ] || exit 2\nprintf '[]\\n'\n"
+	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(cli), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".bash_profile"), []byte("export PATH="+shellescape.Quote(bin)+":/usr/bin:/bin\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mobileTestSSH(t, s, home, []string{"HOME=" + home, "PATH=" + bin + ":/usr/bin:/bin", "CLAUDE_CONFIG_DIR=" + filepath.Join(home, ".claude")})
 	record, err := s.mobileCLI.record(s.profile, id)
 	if err != nil {
 		t.Fatal(err)
