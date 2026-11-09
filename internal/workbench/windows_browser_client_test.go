@@ -6,10 +6,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -50,6 +52,13 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 			result = map[string]any{"active": "tab", "tabs": []any{}}
 		case "/events":
 			result = map[string]any{"sequence": 2, "events": []any{}}
+			if request.Input.After == 2 {
+				if acknowledgement := os.Getenv("CAGE_BROWSER_EVENT_ACK"); acknowledgement != "" {
+					if err := os.WriteFile(acknowledgement, []byte("2"), 0600); err != nil {
+						os.Exit(5)
+					}
+				}
+			}
 			if request.Input.After < 2 {
 				result = map[string]any{"sequence": 2, "state": map[string]any{"active": "tab", "tabs": []any{}}, "events": []any{
 					map[string]any{"sequence": 2, "type": "clipboard", "value": map[string]any{"id": "tab", "text": "复制🙂", "context": "0123456789abcdef0123456789abcdef", "document": "current-document"}},
@@ -201,13 +210,51 @@ func TestWindowsBrowserCanceledFrameCannotBecomeNextViewerReply(t *testing.T) {
 
 func TestNativeBrowserEventsPreserveCopyContextAndSequence(t *testing.T) {
 	client := fixtureWindowsBrowserClient(t)
+	acknowledgement := filepath.Join(t.TempDir(), "event-cursor")
+	start := client.start
+	client.start = func(ctx context.Context) (*exec.Cmd, error) {
+		command, err := start(ctx)
+		if err == nil {
+			command.Env = append(command.Env, "CAGE_BROWSER_EVENT_ACK="+acknowledgement)
+		}
+		return command, err
+	}
 	server := &Server{windowsBrowserControl: client}
-	ctx, cancel := context.WithTimeout(t.Context(), 650*time.Millisecond)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	stream := server.subscribeNativeBrowser(ctx)
 	defer stream.Close()
-	data, err := io.ReadAll(stream)
-	if err != nil {
+	type readResult struct {
+		data []byte
+		err  error
+	}
+	finished := make(chan readResult, 1)
+	go func() { data, err := io.ReadAll(stream); finished <- readResult{data, err} }()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if data, err := os.ReadFile(acknowledgement); err == nil && string(data) == "2" {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			t.Fatal("subscriber did not advance the acknowledged event cursor", ctx.Err())
+		case result := <-finished:
+			t.Fatal("event stream ended before cursor acknowledgement", result.err)
+		case <-ticker.C:
+		}
+	}
+	// End only after a second poll has proved the previous sequence was retained.
+	// Cancellation may race that poll's reply; either EOF or Canceled is normal.
+	cancel()
+	var result readResult
+	select {
+	case result = <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("event stream did not stop after cancellation")
+	}
+	data, err := result.data, result.err
+	if err != nil && !errors.Is(err, context.Canceled) {
 		t.Fatal(err)
 	}
 	wanted := "id: 2\nevent: clipboard\ndata: "
