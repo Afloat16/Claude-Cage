@@ -35,8 +35,14 @@ func macOSWorkbenchRoute(path string) bool {
 
 func macOSInstanceRunning(instanceDir string) bool {
 	data, err := os.ReadFile(filepath.Join(instanceDir, "cage-running.json"))
-	var record struct{ PID int }
-	return err == nil && json.Unmarshal(data, &record) == nil && processExists(record.PID)
+	var record struct {
+		PID     int    `json:"pid"`
+		Started string `json:"started"`
+	}
+	if err != nil || json.Unmarshal(data, &record) != nil || record.PID < 1 {
+		return false
+	}
+	return processExists(record.PID) && cage.ProcessStartMatches(record.PID, record.Started)
 }
 
 func (s *Server) macOSSSHCommand(ctx context.Context, args ...string) *exec.Cmd {
