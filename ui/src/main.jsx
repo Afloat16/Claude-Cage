@@ -1754,7 +1754,7 @@ function App() {
           if (nativeGuest && !await confirm({ title: "更新环境组件？", body: "更新会重新连接浏览器和显示组件，请先保存工作。设备身份、公钥和个人数据保留。", confirm: "更新组件" })) return;
           await action(nativeGuest ? "/environment/update" : "/tailscale/install", {});
         }}
-        onOpenBrowser={async url => { const result = await openBrowserPage(url, false); if (result) setTailscaleOpen(false); }} />}
+        onOpenBrowser={async url => { const result = await openBrowserPage(url, false); if (result) setTailscaleOpen(false); return Boolean(result); }} />}
       {projectDialog && (
         <ProjectDialog
           current={settings}

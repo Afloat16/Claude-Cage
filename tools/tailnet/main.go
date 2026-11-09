@@ -24,6 +24,7 @@ import (
 	gossh "golang.org/x/crypto/ssh"
 	"tailscale.com/client/local"
 	"tailscale.com/ipn"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
 )
 
@@ -36,25 +37,38 @@ type settings struct {
 type request struct {
 	Action string `json:"action"`
 	Key    string `json:"key,omitempty"`
+	Host   string `json:"host,omitempty"`
+	Port   int    `json:"port,omitempty"`
 }
 type peer struct {
-	Name   string `json:"name"`
-	IP     string `json:"ip"`
-	Online bool   `json:"online"`
+	ID       string     `json:"id,omitempty"`
+	Name     string     `json:"name"`
+	Hostname string     `json:"hostname,omitempty"`
+	OS       string     `json:"os,omitempty"`
+	IP       string     `json:"ip"`
+	Online   bool       `json:"online"`
+	LastSeen *time.Time `json:"last_seen,omitempty"`
 }
 type state struct {
-	Installed bool     `json:"installed"`
-	Version   string   `json:"version"`
-	Enabled   bool     `json:"enabled"`
-	Backend   string   `json:"backend"`
-	URL       string   `json:"auth_url,omitempty"`
-	Name      string   `json:"name,omitempty"`
-	IPs       []string `json:"ips"`
-	Peers     []peer   `json:"peers"`
-	Keys      []string `json:"keys"`
-	User      string   `json:"user"`
-	SSHPort   int      `json:"ssh_port"`
-	Error     string   `json:"error,omitempty"`
+	Installed bool           `json:"installed"`
+	Version   string         `json:"version"`
+	Enabled   bool           `json:"enabled"`
+	Backend   string         `json:"backend"`
+	URL       string         `json:"auth_url,omitempty"`
+	Name      string         `json:"name,omitempty"`
+	Hostname  string         `json:"hostname,omitempty"`
+	OS        string         `json:"os,omitempty"`
+	Tailnet   string         `json:"tailnet,omitempty"`
+	Account   string         `json:"account,omitempty"`
+	Health    []string       `json:"health,omitempty"`
+	IPs       []string       `json:"ips"`
+	Peers     []peer         `json:"peers"`
+	Keys      []string       `json:"keys"`
+	User      string         `json:"user"`
+	SSHPort   int            `json:"ssh_port"`
+	Error     string         `json:"error,omitempty"`
+	ProxyURL  string         `json:"proxy_url,omitempty"`
+	Forwards  []forwardState `json:"forwards"`
 }
 type node struct {
 	mu          sync.Mutex
@@ -65,6 +79,7 @@ type node struct {
 	ssh         *gliderssh.Server
 	listener    net.Listener
 	connections map[net.Conn]bool
+	forwards    map[string]*tailnetForward
 }
 
 func dataDir() string {
@@ -139,6 +154,7 @@ func (n *node) startServer(s *tsnet.Server) error {
 	return nil
 }
 func (n *node) stop() {
+	n.closeForwards()
 	if n.ssh != nil {
 		_ = n.ssh.Close()
 		n.ssh = nil
@@ -169,12 +185,31 @@ func (n *node) snapshot(ctx context.Context) (state, error) {
 	if err != nil {
 		return out, err
 	}
-	out.Backend, out.URL = status.BackendState, status.AuthURL
+	applyStatus(&out, status)
+	out.Forwards = n.forwardsSnapshot()
+	if out.Backend == "Running" {
+		out.ProxyURL = n.proxyURL()
+	}
+	if err := n.writeSSHConfig(out.Peers); err != nil {
+		out.Health = append(out.Health, "SSH 自动配置未完成，私网仍可使用："+err.Error())
+	}
+	return out, nil
+}
+
+func applyStatus(out *state, status *ipnstate.Status) {
+	out.Backend, out.URL, out.Health = status.BackendState, status.AuthURL, append([]string(nil), status.Health...)
+	if status.CurrentTailnet != nil {
+		out.Tailnet = status.CurrentTailnet.Name
+	}
 	for _, ip := range status.TailscaleIPs {
 		out.IPs = append(out.IPs, ip.String())
 	}
 	if status.Self != nil {
 		out.Name = strings.TrimSuffix(status.Self.DNSName, ".")
+		out.Hostname, out.OS = status.Self.HostName, status.Self.OS
+		if user, ok := status.User[status.Self.UserID]; ok {
+			out.Account = user.LoginName
+		}
 	}
 	for _, p := range status.Peer {
 		for _, ip := range p.TailscaleIPs {
@@ -183,16 +218,25 @@ func (n *node) snapshot(ctx context.Context) (state, error) {
 				if name == "" {
 					name = p.HostName
 				}
-				out.Peers = append(out.Peers, peer{Name: name, IP: ip.String(), Online: p.Online})
+				entry := peer{ID: string(p.ID), Name: name, Hostname: p.HostName, OS: p.OS, IP: ip.String(), Online: p.Online}
+				if !p.LastSeen.IsZero() {
+					seen := p.LastSeen
+					entry.LastSeen = &seen
+				}
+				out.Peers = append(out.Peers, entry)
 				break
 			}
 		}
 	}
-	slices.SortFunc(out.Peers, func(a, b peer) int { return strings.Compare(a.Name, b.Name) })
-	if err := n.writeSSHConfig(out.Peers); err != nil {
-		return out, err
-	}
-	return out, nil
+	slices.SortFunc(out.Peers, func(a, b peer) int {
+		if a.Online != b.Online {
+			if a.Online {
+				return -1
+			}
+			return 1
+		}
+		return strings.Compare(a.Name, b.Name)
+	})
 }
 func currentUser() string {
 	u, err := user.Current()
@@ -206,6 +250,10 @@ func (n *node) run(ctx context.Context, r request) (state, error) {
 	defer n.mu.Unlock()
 	switch r.Action {
 	case "status":
+	case "open-service":
+		if _, err := n.openForward(ctx, r.Host, r.Port); err != nil {
+			return state{}, err
+		}
 	case "connect", "login":
 		if err := n.start(); err != nil {
 			return state{}, err
@@ -215,7 +263,11 @@ func (n *node) run(ctx context.Context, r request) (state, error) {
 			n.stop()
 			return state{}, err
 		}
-		if r.Action == "login" {
+		status, err := n.client.Status(ctx)
+		if err != nil {
+			return state{}, err
+		}
+		if r.Action == "login" || !status.HaveNodeKey || status.BackendState == "NeedsLogin" {
 			if err := n.client.StartLoginInteractive(ctx); err != nil {
 				return state{}, err
 			}

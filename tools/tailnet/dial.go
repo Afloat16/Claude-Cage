@@ -2,10 +2,10 @@ package main
 
 import (
 	"bufio"
-	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
@@ -17,7 +17,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -51,8 +50,18 @@ func (n *node) serveDial(listener net.Listener) error {
 	}
 	server := &http.Server{ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 5 * time.Second, MaxHeaderBytes: 4096}
 	server.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != "CONNECT" || r.Header.Get("Origin") != "" || subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+record.Token)) != 1 {
-			http.Error(w, "Forbidden", 403)
+		// The existing SSH transport uses Bearer authentication. Standard proxy
+		// clients use Proxy-Authorization so credentials never reach the peer.
+		proxyAuth := "Basic " + base64.StdEncoding.EncodeToString([]byte("cage:"+record.Token))
+		standardProxy := subtle.ConstantTimeCompare([]byte(r.Header.Get("Proxy-Authorization")), []byte(proxyAuth)) == 1
+		controlClient := r.Method == "CONNECT" && r.Header.Get("Origin") == "" && subtle.ConstantTimeCompare([]byte(r.Header.Get("Authorization")), []byte("Bearer "+record.Token)) == 1
+		if !standardProxy && !controlClient {
+			w.Header().Set("Proxy-Authenticate", `Basic realm="Cage Tailscale"`)
+			http.Error(w, "Proxy authentication required", http.StatusProxyAuthRequired)
+			return
+		}
+		if r.Method != "CONNECT" {
+			n.proxyHTTP(w, r)
 			return
 		}
 		host, port, err := net.SplitHostPort(r.Host)
@@ -61,29 +70,7 @@ func (n *node) serveDial(listener net.Listener) error {
 			http.Error(w, "Invalid target", 400)
 			return
 		}
-		n.mu.Lock()
-		out, err := n.snapshot(r.Context())
-		ts := n.server
-		allowed := false
-		target := ""
-		if err == nil && ts != nil && out.Backend == "Running" {
-			for _, p := range out.Peers {
-				short, _, _ := strings.Cut(p.Name, ".")
-				if host == p.IP || host == p.Name || host == short {
-					allowed = true
-					target = net.JoinHostPort(p.IP, port)
-					break
-				}
-			}
-		}
-		n.mu.Unlock()
-		if !allowed {
-			http.Error(w, "Unknown tailnet device", 403)
-			return
-		}
-		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
-		remote, err := ts.Dial(ctx, "tcp", target)
-		cancel()
+		remote, err := n.dialPeer(r.Context(), host, port)
 		if err != nil {
 			http.Error(w, "Tailnet connection failed", 502)
 			return
@@ -94,33 +81,27 @@ func (n *node) serveDial(listener net.Listener) error {
 			return
 		}
 		n.mu.Lock()
-		if n.server != ts {
+		peer := remote.(*peerConnection)
+		if n.server != peer.server || !n.connections[peer.Conn] {
 			n.mu.Unlock()
 			local.Close()
 			remote.Close()
 			return
 		}
 		n.connections[local] = true
-		n.connections[remote] = true
 		n.mu.Unlock()
 		defer func() {
 			local.Close()
 			remote.Close()
 			n.mu.Lock()
 			delete(n.connections, local)
-			delete(n.connections, remote)
 			n.mu.Unlock()
 		}()
 		_, _ = buffer.WriteString("HTTP/1.1 200 Connection Established\r\n\r\n")
 		if buffer.Flush() != nil {
 			return
 		}
-		done := make(chan struct{})
-		go func() { _, _ = io.Copy(remote, buffer); remote.Close(); close(done) }()
-		_, _ = io.Copy(local, remote)
-		local.Close()
-		remote.Close()
-		<-done
+		relayConnection(local, remote, buffer)
 	})
 	go func() { _ = server.Serve(listener) }()
 	return nil

@@ -28,19 +28,25 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch action {
-	case "status", "connect", "login", "disconnect", "logout", "add-key", "remove-key":
+	case "status", "connect", "login", "disconnect", "logout", "add-key", "remove-key", "open-service":
 	default:
 		http.NotFound(w, r)
 		return
 	}
 	var input struct {
-		Key string `json:"key"`
+		Key  string `json:"key"`
+		Host string `json:"host,omitempty"`
+		Port int    `json:"port,omitempty"`
 	}
 	if r.Method != http.MethodGet && !readJSON(w, r, &input) {
 		return
 	}
 	if len(input.Key) > 8192 {
 		http.Error(w, "SSH 公钥过长", 400)
+		return
+	}
+	if action == "open-service" && (len(input.Host) == 0 || len(input.Host) > 253 || input.Port < 1 || input.Port > 65535) {
+		http.Error(w, "请选择私网设备并填写 1–65535 之间的端口", 400)
 		return
 	}
 	s.mu.Lock()
@@ -53,7 +59,12 @@ func (s *Server) tailnet(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
 	defer cancel()
-	body, _ := json.Marshal(map[string]string{"action": action, "key": input.Key})
+	body, _ := json.Marshal(struct {
+		Action string `json:"action"`
+		Key    string `json:"key,omitempty"`
+		Host   string `json:"host,omitempty"`
+		Port   int    `json:"port,omitempty"`
+	}{action, input.Key, input.Host, input.Port})
 	data, err := s.guestAPI(ctx, token, http.MethodPost, "/tailnet", body)
 	if err != nil {
 		http.Error(w, "Tailscale 操作未完成。请更新环境组件后重试；原设备身份和 SSH 公钥会保留。", 502)

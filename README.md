@@ -45,7 +45,7 @@ Claude Cage 让你在熟悉的系统里与 Claude 一起工作：Mac 上用 macO
 - **管理多个 Claude Code 订阅。** 查看额度、为新会话分配账号，并在明确授权后切换账号接续历史。 [Claude Code](docs/guide/accounts.md)
 - **从手机继续处理任务。** Android / iPhone 配对电脑，接续 Claude Code 对话与工具审批，或操作远程浏览器和 Claude Desktop。[手机连接](docs/guide/mobile.md)
 - **把环境放到自己的服务器。** 通过 SSH 部署或连接 Linux VPS，工具、任务和数据留在服务器，无需 KVM。[云端部署与 SSH](docs/guide/cloud.md)
-- **通过私网连接。** 在 Cage 内登录 Tailscale，让本机与环境通过 SSH 双向连接。 [Tailscale / SSH](docs/guide/tailscale.md)
+- **通过私网连接设备。** 在 Cage 内登录 Tailscale，查看网络中的设备，使用 SSH、Web 与其他 TCP 服务。 [Tailscale 私网](docs/guide/tailscale.md)
 
 浏览器收藏、无痕会话、Cookie、扩展、密码保险箱，以及外观、资源、存储和工具更新，见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。
 

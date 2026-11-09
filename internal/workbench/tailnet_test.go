@@ -68,3 +68,36 @@ func TestTailnetGuestContract(t *testing.T) {
 		t.Fatalf("key error: %d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestTailnetServicePortContract(t *testing.T) {
+	s := testServer(t)
+	s.ready = true
+	s.credentials.Token = "test-tailnet-token"
+	guest := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var input struct {
+			Action string `json:"action"`
+			Host   string `json:"host"`
+			Port   int    `json:"port"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+			t.Error(err)
+		}
+		if input.Action != "open-service" || input.Host != "100.88.2.4" || input.Port != 8080 {
+			t.Errorf("wrong service input: %+v", input)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"installed": true, "backend": "Running", "forwards": []map[string]any{{"host": input.Host, "port": input.Port, "address": "127.0.0.1:32123"}}})
+	}))
+	defer guest.Close()
+	s.browserControl = localBrowserClient(t, s.lifetimeContext(), guest)
+	if w := request(s, "POST", "/api/tailscale/open-service", s.origin, `{"host":"100.88.2.4","port":8080}`, true); w.Code != 200 || !strings.Contains(w.Body.String(), "127.0.0.1:32123") {
+		t.Fatalf("service: %d %s", w.Code, w.Body.String())
+	}
+	for _, body := range []string{`{"host":"100.88.2.4","port":0}`, `{"host":"100.88.2.4","port":65536}`, `{"host":"100.88.2.4","port":"80"}`, `{"port":80}`} {
+		if w := request(s, "POST", "/api/tailscale/open-service", s.origin, body, true); w.Code != 400 {
+			t.Fatalf("bad input accepted: %d %s", w.Code, body)
+		}
+	}
+	if !macOSWorkbenchRoute("/api/tailscale/open-service") || !windowsWorkbenchRoute("/api/tailscale/open-service") {
+		t.Fatal("native hosts must expose the same service route")
+	}
+}

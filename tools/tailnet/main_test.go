@@ -309,7 +309,7 @@ func TestInteractiveAuthorizationFlow(t *testing.T) {
 	defer n.stop()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if _, err = n.run(ctx, request{Action: "login"}); err != nil {
+	if _, err = n.run(ctx, request{Action: "connect"}); err != nil {
 		t.Fatal(err)
 	}
 	var value state
@@ -332,6 +332,18 @@ func TestInteractiveAuthorizationFlow(t *testing.T) {
 	value, err = n.run(ctx, request{Action: "status"})
 	if err != nil || value.Backend != "Running" {
 		t.Fatalf("login not running: %+v %v", value, err)
+	}
+	// A broken optional SSH configuration must not hide a healthy private network.
+	sshConfig := filepath.Join(os.Getenv("HOME"), ".ssh", "config")
+	if err := os.Remove(sshConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(sshConfig, 0700); err != nil {
+		t.Fatal(err)
+	}
+	value, err = n.run(ctx, request{Action: "status"})
+	if err != nil || value.Backend != "Running" || !strings.Contains(strings.Join(value.Health, "\n"), "SSH 自动配置未完成") {
+		t.Fatalf("SSH configuration failure hid network status: %+v %v", value, err)
 	}
 }
 
