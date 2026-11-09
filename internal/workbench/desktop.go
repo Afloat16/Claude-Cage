@@ -243,7 +243,12 @@ func desktopLaunch(profile string, gateway bool, options DesktopOptions, start f
 // PrepareUpdate is shared by the explicit migration button and the installer.
 // It returns only after the old service has released its profile lock.
 func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
-	c, err := connectController(filepath.Dir(configPath))
+	// A closing controller stops accepting requests before releasing its lock.
+	// Use the same bounded retirement wait as desktop startup; the lock and VM
+	// checks below still decide whether replacing the application is safe.
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	c, err := waitControllerReady(ctx, filepath.Dir(configPath))
 	if errors.Is(err, errControllerUnavailable) {
 		lock, lockErr := openControllerLock(filepath.Dir(configPath), os.O_RDWR)
 		if lockErr == nil {

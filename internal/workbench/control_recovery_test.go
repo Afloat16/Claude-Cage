@@ -211,3 +211,26 @@ func TestDesktopWaitsForRetiringController(t *testing.T) {
 		t.Fatalf("did not resume after shutdown: %v", err)
 	}
 }
+
+func TestPrepareUpdateWaitsForRetiringController(t *testing.T) {
+	profile := t.TempDir()
+	lock, err := openControllerLock(profile, os.O_CREATE|os.O_RDWR)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	if err := lockController(lock); err != nil {
+		t.Fatal(err)
+	}
+	// Shutdown has removed control.json but has not released the profile yet.
+	released := make(chan struct{})
+	go func() { time.Sleep(100 * time.Millisecond); _ = unlockController(lock); close(released) }()
+	defer func() { <-released }()
+	result, err := PrepareUpdate(filepath.Join(profile, "config.json"), false)
+	if err != nil || result.Status != "prepared" {
+		t.Fatalf("retiring controller prevented update: %+v %v", result, err)
+	}
+	if !controllerLockFree(profile) {
+		t.Fatal("update accepted before the controller released its lock")
+	}
+}
