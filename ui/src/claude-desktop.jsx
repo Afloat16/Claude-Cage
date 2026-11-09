@@ -10,10 +10,83 @@ import {
 import { BrowserUploads } from "./browser-uploads";
 import { ProjectDialog } from "./project-dialog";
 import { api } from "./api";
+import { SafetyMessage } from "./safety-message";
 import { RemoteView } from "./views";
 import "./claude-desktop.css";
 
 const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
+
+export function useDesktopZoom() {
+  const [zoom, setZoom] = useState(() => {
+    try {
+      const value = Number(localStorage.getItem("cage-desktop-zoom"));
+      return desktopZooms.includes(value) ? value : 1;
+    } catch { return 1; }
+  });
+  return [zoom, setZoom];
+}
+
+export function DesktopToolbar({ desktop, platform, zoom, setZoom, onConfirm, onStop, busy, refresh, sidebarCollapsed, onExpand, children }) {
+  return (
+      <header className="claude-desktop-toolbar">
+        {sidebarCollapsed && (
+          <button
+            className="icon-button"
+            aria-label="展开侧栏"
+            onClick={onExpand}
+          >
+            <PanelLeftOpen size={17} />
+          </button>
+        )}
+        <Monitor size={18} />
+        <strong>Claude Desktop</strong>
+        <span className="desktop-version">
+          {desktop?.version ? `v${desktop.version}` : platform}
+        </span>
+        <span className="desktop-toolbar-spacer" />
+        {children}
+        {desktop?.running && (
+          <label className="desktop-display-size">
+            显示大小
+            <InlineSelect aria-label="Desktop 显示大小" value={zoom} onValueChange={(next) => {
+              const value = Number(next);
+              setZoom(value);
+              try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
+            }}>
+              {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? "（默认）" : ""}</option>)}
+            </InlineSelect>
+          </label>
+        )}
+        {desktop?.running && (
+          <button
+            className="quiet-button"
+            disabled={busy}
+            onClick={async () => {
+              if (
+                await onConfirm({
+                  title: "关闭 Claude Desktop？",
+                  body: "请先保存应用内的工作。浏览器和 Cage 终端会继续运行。",
+                  confirm: "关闭应用",
+                })
+              )
+                onStop();
+            }}
+          >
+            <Power size={15} />
+            关闭应用
+          </button>
+        )}
+        <button
+          className="icon-button"
+          aria-label="刷新 Claude Desktop 状态"
+          disabled={busy}
+          onClick={refresh}
+        >
+          <RefreshCw size={15} />
+        </button>
+      </header>
+  );
+}
 
 export function ClaudeDesktop({
   uploads = [],
@@ -30,12 +103,7 @@ export function ClaudeDesktop({
 }) {
   const [closedChooser, setClosedChooser] = useState("");
   const directoryRequest = uploads.find((item) => item.directory && item.id !== closedChooser);
-  const [zoom, setZoom] = useState(() => {
-    try {
-      const value = Number(localStorage.getItem("cage-desktop-zoom"));
-      return desktopZooms.includes(value) ? value : 1;
-    } catch { return 1; }
-  });
+  const [zoom, setZoom] = useDesktopZoom();
   const [desktop, setDesktop] = useState(null);
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
@@ -113,71 +181,17 @@ export function ClaudeDesktop({
           await onProjectOpened(workspace);
         }}
       />}
-      <header className="claude-desktop-toolbar">
-        {sidebarCollapsed && (
-          <button
-            className="icon-button"
-            aria-label="展开侧栏"
-            onClick={onExpand}
-          >
-            <PanelLeftOpen size={17} />
-          </button>
-        )}
-        <Monitor size={18} />
-        <strong>Claude Desktop</strong>
-        <span className="desktop-version">
-          {desktop?.version ? `v${desktop.version}` : "Linux"}
-        </span>
-        <span className="desktop-toolbar-spacer" />
-        {desktop?.running && (
-          <label className="desktop-display-size">
-            显示大小
-            <InlineSelect aria-label="Desktop 显示大小" value={zoom} onValueChange={(next) => {
-              const value = Number(next);
-              setZoom(value);
-              try { localStorage.setItem("cage-desktop-zoom", String(value)); } catch { /* Session-only preference. */ }
-            }}>
-              {desktopZooms.map((value) => <option key={value} value={value}>{Math.round(value * 100)}%{value === 1 ? "（默认）" : ""}</option>)}
-            </InlineSelect>
-          </label>
-        )}
-        {desktop?.running && (
-          <button
-            className="quiet-button"
-            disabled={busy}
-            onClick={async () => {
-              if (
-                await onConfirm({
-                  title: "关闭 Claude Desktop？",
-                  body: "请先保存应用内的工作。浏览器和 Cage 终端会继续运行。",
-                  confirm: "关闭应用",
-                })
-              )
-                run("stop");
-            }}
-          >
-            <Power size={15} />
-            关闭应用
-          </button>
-        )}
-        <button
-          className="icon-button"
-          aria-label="刷新 Claude Desktop 状态"
-          disabled={busy}
-          onClick={refresh}
-        >
-          <RefreshCw size={15} />
-        </button>
-      </header>
+      <DesktopToolbar desktop={desktop} platform={status.guest_system === "windows-11" ? "Windows" : "Linux"} zoom={zoom} setZoom={setZoom}
+        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy} refresh={refresh} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand} />
       {(error || statusError || desktop?.failed) && (
         <div className="connection-banner" role="alert">
-          {error || statusError || (desktop?.failure_reason === "oom-kill"
+          <SafetyMessage message={error || statusError || (desktop?.failure_reason === "oom-kill"
             ? "环境内存不足，Claude Desktop 已被系统关闭。请在设置中检查计算资源后重新打开。"
-            : "Claude Desktop 未能启动，可重试打开或修复安装。")}
+            : "Claude Desktop 未能启动，可重试打开或修复安装。")} />
           <button onClick={onDetails}>操作详情</button>
         </div>
       )}
-      {desktop?.running && desktop.managed === false && <div className="connection-banner" role="status">当前应用尚未接入 Cage 账户解锁。请先保存并关闭应用，再重新打开。</div>}
+      {desktop?.running && desktop.managed === false && !desktop.native_user_session && <div className="connection-banner" role="status">当前应用尚未接入 Cage 账户解锁。请先保存并关闭应用，再重新打开。</div>}
       {busy && ownJob && (
         <div className="desktop-progress" role="status">
           <RefreshCw size={16} className="spin" />

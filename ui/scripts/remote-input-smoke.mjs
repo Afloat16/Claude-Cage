@@ -83,7 +83,14 @@ try {
       onStatus() {},
       onFallback() {},
     };
-    const install = () => installRemoteInput(rfb, container, options);
+    const install = () => installRemoteInput({
+      events: rfb,
+      setKeyboardTarget: target => rfb.cageSetKeyboardTarget(target),
+      sendKey: (...key) => rfb.sendKey(...key),
+      focus: () => rfb.focus(),
+      pasteText: text => rfb.cagePasteText(text),
+      runKeyAction: action => rfb._cageQueueInput(() => action((...key) => rfb._cageSendKey(...key))),
+    }, container, options);
     window.probe = {
       rfb,
       packets,

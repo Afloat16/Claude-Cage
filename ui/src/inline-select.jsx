@@ -9,6 +9,7 @@ export function InlineSelect({
   onValueChange,
   disabled,
   editable = false,
+  displayLabel,
   ...props
 }) {
   const id = useId();
@@ -148,7 +149,7 @@ export function InlineSelect({
             open ? setOpen(false) : show();
           }}
         >
-          <span>{selected?.label || value}</span>
+          <span>{displayLabel ?? selected?.label ?? value}</span>
           <ChevronDown size={14} aria-hidden="true" />
         </button>
       )}

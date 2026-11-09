@@ -1,0 +1,88 @@
+import assert from "node:assert/strict";
+import fs from "node:fs/promises";
+import { createWorkbench } from "./workbench-fixture.mjs";
+
+const evidence = process.env.CAGE_INITIALIZATION_EVIDENCE;
+if (evidence) await fs.mkdir(evidence, { recursive: true });
+
+for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"], ["linux", "ubuntu-22.04"]]) {
+  let starts = 0, rejectComplete = true;
+  const fixture = await createWorkbench({
+    initialization: { required: true, tracked: true, started: false },
+    clientContext: { mode: "local", connection_id: "local", client_platform: platform, server_platform: platform },
+    beforeNavigate: async (page, state) => {
+      state.status.local_vm_storage = true;
+      await page.route("**/api/environment/storage", route => route.fulfill({ json: { directory: "/preview/cage-state", has_environment: false } }));
+      await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system } }));
+      await page.route("**/api/environment/guest-systems/clone", route => route.fulfill({ json: { key: "matched-image", enough_space: true, minimum_free_gib: 51, free_gib: 120, download_bytes: 19769944180, plan: { host: { system, version: system === "windows-11" ? "25H2" : "26.5", build: "123", edition: "Professional", language: "zh-CN" }, version: "26.5", build: "456", bytes: 19769944180 } } }));
+      await page.route("**/api/start", route => {
+        starts++;
+        const submitted = route.request().postDataJSON();
+        assert.equal(submitted.guest_system, system);
+        if (starts === 1) assert.equal(submitted.clone_key, "matched-image");
+        state.status.job = { id: "install-" + starts, running: true, kind: "guest-install", setup_progress: { system, phase: "image", operation: "download", label: "正在下载系统镜像", received: 25 * 1048576, total: 100 * 1048576, bytes_per_second: 1048576 }, log: "镜像下载已开始" };
+        return route.fulfill({ json: state.status.job });
+      });
+      await page.route("**/api/environment/initialization", route => {
+        const action = route.request().method() === "POST" ? route.request().postDataJSON()?.action : "";
+        if (action === "complete" && rejectComplete) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "环境网络检查尚未通过，请重新检查" });
+        if (action === "install") state.initialization.started = true;
+        if (action === "complete") state.initialization.required = false;
+        return route.fulfill({ json: state.initialization });
+      });
+    },
+  });
+  const { page, state, errors, browser } = fixture;
+  try {
+    assert.equal(await page.getByRole("complementary", { name: "项目与终端" }).count(), 0);
+    const picker = page.getByRole("combobox", { name: "客户机系统" });
+    const storage = page.getByRole("region", { name: "本机环境存储" });
+    await storage.getByText("/preview/cage-state").waitFor();
+    const before = await storage.boundingBox();
+    await picker.click();
+    const option = page.getByRole("option", { name: "自动匹配本机系统版本", exact: true });
+    await option.waitFor();
+    const expanded = await storage.boundingBox();
+    assert.ok(expanded.y > before.y);
+    await picker.press("Home"); await picker.press("Enter");
+    await page.getByText("Cage 会检测本机系统版本。配置代理后匹配官方镜像，并显示下载量与空间要求。").waitFor();
+    if (system === "windows-11") await page.getByRole("checkbox").check();
+    if (evidence) await page.screenshot({ path: `${evidence}/${platform}-system.png`, fullPage: true });
+    await page.getByRole("button", { name: "下一步：配置代理" }).click();
+    await page.getByRole("heading", { name: "连接你的网络代理" }).waitFor();
+    await page.getByText("根据本机系统版本匹配官方镜像，安装到独立客机中。").waitFor();
+    await page.getByRole("button", { name: "上一步", exact: true }).click();
+    await page.getByRole("combobox", { name: "客户机系统" }).getByText("自动匹配本机系统版本").waitFor();
+    await page.getByRole("button", { name: "下一步：配置代理" }).click();
+    await page.getByRole("button", { name: "开始安装", exact: true }).click();
+    const progress = page.getByRole("region", { name: "环境安装进度" });
+    await progress.getByText("25 MiB / 100 MiB", { exact: true }).waitFor();
+    assert.equal(await progress.getByRole("progressbar").getAttribute("aria-valuenow"), "25");
+    assert.equal(await page.getByRole("complementary", { name: "项目与终端" }).count(), 0);
+    await page.reload();
+    await progress.getByText("25 MiB / 100 MiB", { exact: true }).waitFor();
+    assert.equal(starts, 1, "refresh must not restart the accepted installation");
+    state.status.job = { ...state.status.job, running: false, error: "下载中断，已保存部分文件" };
+    await progress.getByRole("alert").waitFor();
+    if (evidence) await page.screenshot({ path: `${evidence}/${platform}-failed.png`, fullPage: true });
+    await progress.getByRole("button", { name: "继续安装", exact: true }).click();
+    await progress.getByRole("progressbar").waitFor();
+    assert.equal(starts, 2);
+    await page.setViewportSize({ width: 600, height: 650 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    if (evidence) await page.screenshot({ path: `${evidence}/${platform}-progress-compact.png`, fullPage: true });
+    state.status.job = { id: "install-2", kind: "start", running: false };
+    Object.assign(state.status, { ready: true, vm_running: true, safety: { gate: { mode: "open", until: new Date(Date.now() + 3600000).toISOString() } } });
+    await page.getByRole("button", { name: "进入工作台", exact: true }).click();
+    await page.getByRole("alert").filter({ hasText: "网络检查" }).waitFor();
+    assert.equal(await page.getByRole("complementary", { name: "项目与终端" }).count(), 0, "server completion rejection must keep initialization visible");
+    rejectComplete = false;
+    await page.getByRole("button", { name: "进入工作台", exact: true }).click();
+    await page.getByRole("complementary", { name: "项目与终端" }).waitFor();
+    await page.reload();
+    await page.getByRole("complementary", { name: "项目与终端" }).waitFor();
+    assert.equal(await page.getByRole("heading", { name: "为 Cage 准备独立环境" }).count(), 0);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${platform}: independent initialization, inline keyboard selection, back navigation, progress, refresh, retry, completion gate and reopen`);
+  } finally { await browser.close(); }
+}

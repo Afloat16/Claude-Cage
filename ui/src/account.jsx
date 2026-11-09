@@ -15,7 +15,7 @@ import {
   Fingerprint,
   LockKeyhole,
   LogOut,
-  Settings2,
+  Settings,
 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
@@ -179,7 +179,7 @@ export function AccountGate({ children }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [rememberLogin, setRememberLogin] = useState(true);
+  const [rememberLogin, setRememberLogin] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const automaticAttempt = useRef("");
@@ -193,11 +193,13 @@ export function AccountGate({ children }) {
     finally { setBusy(false); }
   };
   useEffect(() => {
-    if (account?.unlocked) { trustedAttempt.current = false; return; }
-    if (!(account?.trusted_local || account?.trusted_login) || !localDesktop() || trustedAttempt.current || account.require_authentication) return;
+    if (account?.unlocked) { trustedAttempt.current = false; setRememberLogin(null); return; }
+    if (!account || !localDesktop() || trustedAttempt.current || account.require_authentication) return;
+    const firstMacGuest = account.guest_system === "macos" && !account.exists;
+    if (!firstMacGuest && !(account.trusted_local || account.trusted_login)) return;
     trustedAttempt.current = true;
-    void enterTrusted("resume");
-  }, [account?.unlocked, account?.trusted_local, account?.trusted_login, account?.require_authentication]);
+    void enterTrusted(firstMacGuest ? "create" : "resume");
+  }, [account?.unlocked, account?.exists, account?.guest_system, account?.trusted_local, account?.trusted_login, account?.require_authentication]);
   useEffect(() => {
     if (!account || account.unlocked || connectionError || gateAcknowledged.current || !nativeAvailable()) return;
     // A working lock/setup screen is a valid upgraded UI. Waiting for the
@@ -224,6 +226,7 @@ export function AccountGate({ children }) {
   }, [account?.unlocked]);
   if (account?.unlocked) return children;
   const creating = account && !account.exists;
+  const rememberThisDevice = rememberLogin ?? Boolean(creating || account?.trusted_login || account?.devices?.automatic);
   const submit = async (event) => {
     event.preventDefault();
     if (busy) return;
@@ -240,12 +243,19 @@ export function AccountGate({ children }) {
           ? { username, password, confirm_password: confirmation }
           : { password },
       );
-      setPassword("");
-      setConfirmation("");
-      if (creating && rememberLogin && deviceSupport?.supported && deviceSupport.device_status) {
+      if (localDesktop()) {
+        try {
+          await trustedLogin(rememberThisDevice ? "enable" : "disable", password);
+          await refresh();
+        } catch (e) {
+          setDeviceNotice(`已登录，${rememberThisDevice ? "记住我未能开启" : "记住我未能关闭"}：${e.message}。可在「设置 → 账户」中重试。`);
+        }
+      } else if (creating && rememberThisDevice && deviceSupport?.supported && deviceSupport.device_status) {
         try { await deviceAction("enable", "automatic"); }
         catch (e) { setDeviceNotice(`账户已创建，记住登录未能开启：${e.message}。可在「设置 → 账户」中重试。`); }
       }
+      setPassword("");
+      setConfirmation("");
     } catch (e) {
       setError(e.message);
     } finally {
@@ -348,10 +358,10 @@ export function AccountGate({ children }) {
               {deviceSupport?.supported && !deviceSupport.device_status && (
                 <p className="field-help" role="status">当前应用启动器需要更新，暂时无法检查快捷登录状态。请先用密码进入，并重新安装完整的 Cage 应用。</p>
               )}
-              {creating && deviceSupport?.supported && deviceSupport.device_status && (
+              {(localDesktop() || (creating && deviceSupport?.supported && deviceSupport.device_status)) && (
                 <label className="account-device-option check-line">
-                  <input type="checkbox" checked={rememberLogin} onChange={(e) => setRememberLogin(e.target.checked)} />
-                  <span><strong>记住登录</strong><small>下次打开直接进入。手动锁定后仍需验证。</small></span>
+                  <input type="checkbox" checked={rememberThisDevice} onChange={(e) => setRememberLogin(e.target.checked)} />
+                  <span><strong>{localDesktop() ? "记住我" : "记住登录"}</strong><small>{localDesktop() ? "信任此电脑，下次用当前系统用户打开时直接进入。手动锁定仍需验证。" : "下次打开直接进入。手动锁定后仍需验证。"}</small></span>
                 </label>
               )}
               {!creating && deviceSupport?.supported && credentialPresent(deviceSupport.device_status?.biometric) && account.devices?.biometric && (
@@ -367,7 +377,7 @@ export function AccountGate({ children }) {
               )}
               <button
                 className="primary account-submit"
-                disabled={busy || !password || (creating && (!username.trim() || (nativeAvailable() && deviceSupport === null)))}
+                disabled={busy || !password || (creating && (!username.trim() || (!localDesktop() && nativeAvailable() && deviceSupport === null)))}
               >
                 {busy ? "正在解锁…" : creating ? isRemoteClient() ? "创建云端账户" : "创建本地账户" : "解锁 Cage"}
               </button>
@@ -481,7 +491,7 @@ export function AccountMenu({ onSettings, onConfirm, onStatus, busy }) {
               onSettings("account");
             }}
           >
-            <Settings2 size={16} />
+            <Settings size={16} />
             设置
           </button>
           {account.trusted_local ? <button role="menuitem" onClick={() => { setOpen(false); onSettings("account"); }}>
@@ -711,6 +721,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
 
 function TrustedDeviceSettings() {
   const { account, refresh } = useAccount();
+  const enabled = Boolean(account.trusted_login || account.devices?.automatic);
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
@@ -718,7 +729,7 @@ function TrustedDeviceSettings() {
     event.preventDefault();
     setBusy(true); setMessage("");
     try {
-      await trustedLogin(account.trusted_login ? "disable" : "enable", password);
+      await trustedLogin(enabled ? "disable" : "enable", password);
       setPassword("");
       await refresh();
     } catch (error) { setMessage(error.message); }
@@ -726,10 +737,10 @@ function TrustedDeviceSettings() {
   };
   return <form onSubmit={update}>
     <fieldset disabled={busy}>
-      <h4>信任此电脑</h4>
-      <p className="field-help">{account.trusted_login ? "已开启本机自动登录。手动锁定仍需验证，退出账户会撤销信任。" : "验证一次账户密码，下次用当前系统用户打开时自动进入。"}</p>
-      {!account.trusted_login && <PasswordField label="验证账户密码" value={password} onChange={setPassword} autoComplete="current-password" />}
-      <button className="quiet-button" disabled={!account.trusted_login && !password}>{account.trusted_login ? "关闭本机信任" : "信任此电脑"}</button>
+      <h4>记住我</h4>
+      <p className="field-help">{enabled ? "已信任此电脑，下次用当前系统用户打开时自动进入。手动锁定仍需验证，退出账户会撤销信任。" : "验证一次账户密码，信任此电脑，下次用当前系统用户打开时自动进入。"}</p>
+      {!enabled && <PasswordField label="验证账户密码" value={password} onChange={setPassword} autoComplete="current-password" />}
+      <button className="quiet-button" disabled={!enabled && !password}>{enabled ? "关闭记住我" : "信任此电脑"}</button>
       {message && <p className="account-error" role="alert">{message}</p>}
     </fieldset>
   </form>;
@@ -763,11 +774,11 @@ function AccountDeviceSettings() {
   };
   return <section className="account-device-settings" aria-label="登录与解锁">
     <h4>登录与解锁</h4>
-    <label className="account-device-option check-line">
+    {!localDesktop() && <label className="account-device-option check-line">
       <input type="checkbox" checked={Boolean(account.devices?.automatic) && states.automatic === "available"} disabled={busy || states.automatic === "unavailable"}
         onChange={(event) => change("automatic", event.target.checked)} />
       <span><strong>记住登录</strong><small>{description("automatic", "重新打开直接进入。手动锁定后仍需指纹或密码。")}</small></span>
-    </label>
+    </label>}
     <label className="account-device-option check-line">
       <input type="checkbox" checked={Boolean(account.devices?.biometric) && credentialPresent(states.biometric)} disabled={busy || states.biometric === "unavailable" || (!deviceSupport.biometric_available && !credentialPresent(states.biometric))}
         onChange={(event) => change("biometric", event.target.checked)} />

@@ -1,0 +1,19 @@
+.tailscale-panel { display: flex; flex-direction: column; gap: 16px; }
+.tailscale-panel > .field-help { margin: 0; }
+.tailscale-state { display: flex; align-items: center; gap: 12px; }
+.tailscale-state > div { flex: 1; min-width: 0; }
+.tailscale-state strong, .tailscale-state span, .tailscale-peer strong, .tailscale-peer span { display: block; overflow-wrap: anywhere; }
+.tailscale-state span, .tailscale-peer span { font-size: 12px; color: var(--muted); margin-top: 4px; }
+.tailscale-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tailscale-section { display: flex; flex-direction: column; gap: 10px; min-width: 0; border-top: 1px solid var(--border); padding-top: 16px; }
+.tailscale-section h3 { margin: 0; font-size: 14px; }
+.tailscale-section .field-help { margin: 0; }
+.tailscale-section .field-label { display: flex; align-items: center; gap: 6px; }
+.tailscale-section textarea { width: 100%; resize: vertical; min-height: 72px; font-family: var(--font-mono, monospace); font-size: 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel, transparent); color: inherit; padding: 9px 10px; }
+.tailscale-section > button { align-self: flex-start; }
+.tailscale-command, .tailscale-key, .tailscale-peer { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.tailscale-command { border: 1px solid var(--border); border-radius: 7px; padding: 7px 10px; }
+.tailscale-command code, .tailscale-peer > div { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.tailscale-keys, .tailscale-peers { display: flex; flex-direction: column; gap: 10px; }
+.tailscale-key code { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.tailscale-peer .quiet-button { flex-shrink: 0; }

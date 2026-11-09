@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { FolderOpen } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
+import { SafetyMessage } from "./safety-message";
 
 export function EnvironmentStorage({ status, onConfirm }) {
   const [location, setLocation] = useState(null);
@@ -56,7 +57,7 @@ export function EnvironmentStorage({ status, onConfirm }) {
   };
   return <section className="environment-versions environment-storage" aria-label="本机环境存储">
     <h4>本机环境存储</h4>
-    <p className="field-help">Linux 镜像、下载缓存和虚拟磁盘可以放在另一块本地磁盘。项目文件保存在各自的项目文件夹。</p>
+    <p className="field-help">系统镜像、下载缓存和虚拟磁盘可以放在另一块本地磁盘。项目文件保存在各自的项目文件夹。</p>
     <div className="setting-summary-row"><span>当前环境目录</span><strong>{location?.directory || "正在读取…"}</strong></div>
     {location?.backup && <p className="field-help">迁移前的备份保存在 <code>{location.backup}</code>。确认新环境能正常启动、文件和登录状态齐全后，可自行清理备份。</p>}
     <label>新存储位置
@@ -70,6 +71,6 @@ export function EnvironmentStorage({ status, onConfirm }) {
       </button>
     </div>
     {job?.kind === "storage" && job.running && <p role="status" className="field-help">{job.message}</p>}
-    {error && <p role="alert" className="error-message">{error}</p>}
+    {error && <p role="alert" className="error-message"><SafetyMessage message={error} /></p>}
   </section>;
 }
