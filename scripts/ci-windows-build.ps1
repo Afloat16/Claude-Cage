@@ -53,7 +53,7 @@ try {
     Invoke-BuildTool 'node' @('--test', 'internal/cage/browser-clipboard.test.mjs', 'scripts/windows-native-bridge.test.mjs')
     Invoke-BuildTool (Get-BuildCommand @('pwsh.exe', 'pwsh')) @('-NoProfile', '-NonInteractive', '-File', 'scripts/windows-workbench-smoke.test.ps1')
     $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell/v1.0/powershell.exe'
-    & (Join-Path $PSScriptRoot 'test-windows-installation-files.ps1') -HelperShell $windowsPowerShell
+    & (Join-Path $PSScriptRoot 'test-windows-installation-files.ps1') -HelperShell $windowsPowerShell -InstallerSmoke
     if ($Release) {
         & (Join-Path $PSScriptRoot 'prepare-qemu-release.ps1')
         $qemuSource = Join-Path $repository '_output/windows-qemu-sources/full-source.tar.gz'
