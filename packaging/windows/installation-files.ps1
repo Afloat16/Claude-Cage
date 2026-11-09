@@ -23,7 +23,8 @@ trap {
                 $chain += @{type = $exception.GetType().FullName; hresult = $exception.HResult}
                 $exception = $exception.InnerException
             }
-            @{operation = $Operation; phase = $diagnosticStep; pointerSize = [IntPtr]::Size; errors = $chain} | ConvertTo-Json -Depth 4 |
+            $lines = @([regex]::Matches($failure.ScriptStackTrace, ': line (\d+)') | ForEach-Object { [int]$_.Groups[1].Value })
+            @{operation = $Operation; phase = $diagnosticStep; pointerSize = [IntPtr]::Size; errors = $chain; lines = $lines; category = [string]$failure.CategoryInfo.Category} | ConvertTo-Json -Depth 4 |
                 Set-Content -LiteralPath $Diagnostics -Encoding UTF8
           }
         } catch { }
