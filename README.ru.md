@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Сайт проекта](https://lee-xeo.github.io/Claude-Cage/) · [Скачать приложение](https://lee-xeo.github.io/Claude-Cage/ru/#download) · [Начало работы](docs/getting-started.md) · [Часто задаваемые вопросы](docs/troubleshooting.md) · [Внести свой вклад](CONTRIBUTING.md) · [Руководство (на китайском)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[Сайт проекта](https://lee-xeo.github.io/Claude-Cage/) · [Скачать приложение](https://lee-xeo.github.io/Claude-Cage/ru/#download) · [Начало работы](docs/getting-started.md) · [Часто задаваемые вопросы](docs/troubleshooting.md) · [Руководство (на китайском)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS и подписанные версии Windows обновляются че
 - По умолчанию публичный исходящий трафик поддерживает IPv4 TCP, а DNS идёт через тот же прокси. Публичные UDP, IPv6, ICMP и прямой доступ к хосту или локальной сети ограничены. При явном включении Tailscale доступ к устройствам определяется правилами частной сети.
 - Сетевые проверки показывают текущую конфигурацию и выборочные доказательства. Они не могут гарантировать, что учетная запись обойдет ограничения платформы, и не заменяют полный аудит безопасности виртуализации.
 
-Подробности см. [Границы сети и данных](docs/getting-started.md#网络与数据边界), [Проектирование сетевых проверок](docs/design/network-checks.md) и [Встроенный сетевой прокси-сервер](docs/design/managed-proxy.md).
+Подробности см. [Границы сети и данных](docs/getting-started.md#网络与数据边界).
 
 ## Документация и вклад
 
@@ -106,8 +106,6 @@ macOS и подписанные версии Windows обновляются че
 | Установите, настройте сетевой прокси и откройте свой первый проект. | [Начало работы](docs/getting-started.md) |
 | Устранение неполадок при загрузке, запуске, подключении и входе в систему | [FAQ и восстановление](docs/troubleshooting.md) |
 | Изучите элементы управления клавиатурой, внешний вид, сохранение данных и поведение при выходе. | [Ежедневное использование](docs/getting-started.md#日常使用) |
-| Создавайте из исходного кода или вносите улучшения | [Руководство по вкладу](CONTRIBUTING.md) |
-| Понимать обязанности модуля и сетевые ограничения. | [Дизайн верстака](docs/design/workbench.md) |
 | Сообщить о воспроизводимой проблеме | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 Проект быстро развивается. Присоединяйтесь к группе сообщества, чтобы поделиться отзывами; сопровождающие сообщества приветствуются.
@@ -118,9 +116,9 @@ macOS и подписанные версии Windows обновляются че
 
 ## Происхождение и лицензирование
 
-Cage происходит от [agent-vm](https://github.com/sylvinus/agent-vm) ; исходный уровень выше по течению `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Cage происходит от [agent-vm](https://github.com/sylvinus/agent-vm).
 
-Основная лицензия проекта [MIT](LICENSE). Входящие в комплект компоненты сохраняют соответствующие лицензии. Mihomo распространяется как отдельный исполняемый файл под лицензией GPL-3.0. Также см. [NOTICE](NOTICE), [Сторонние лицензии](THIRD_PARTY_LICENSES), [Сторонние источники](third_party/SOURCES) и [происхождение noVNC](ui/vendor/novnc/README.cage.md). Описание добывающего проекта сохранено в файле [Восходящий README](docs/agent-vm-upstream.md).
+Основная лицензия проекта [MIT](LICENSE). Входящие в комплект компоненты сохраняют соответствующие лицензии. Mihomo распространяется как отдельный исполняемый файл под лицензией GPL-3.0. Также см. [NOTICE](NOTICE) · [Сторонние лицензии](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage — это независимый общественный проект, не связанный с Anthropic.
 

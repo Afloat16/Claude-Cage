@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ပါဝင်ကူညီပါ။](CONTRIBUTING.md) · [အသုံးပြုမှုလမ်းညွှန် (တရုတ်ဘာသာ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[ပရောဂျက်ဝက်ဘ်ဆိုက်](https://lee-xeo.github.io/Claude-Cage/) · [အက်ပ်ကို ဒေါင်းလုဒ်လုပ်ရန်](https://lee-xeo.github.io/Claude-Cage/my/#download) · [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [အသုံးပြုမှုလမ်းညွှန် (တရုတ်ဘာသာ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS နှင့် လက်မှတ်ထိုးထားသော Window
 - မူလအနေဖြင့် အင်တာနက်အထွက်သည် IPv4 TCP ကို ပံ့ပိုးပြီး DNS သည် တူညီသော proxy ကို သုံးသည်။ အများသုံး UDP၊ IPv6၊ ICMP နှင့် မူရင်းကွန်ပျူတာ သို့မဟုတ် LAN သို့ တိုက်ရိုက်ချိတ်ဆက်မှုကို ကန့်သတ်ထားသည်။ Tailscale ကို ကိုယ်တိုင်ဖွင့်ပါက ကိုယ်ပိုင်ကွန်ရက်ခွင့်ပြုချက်အတိုင်း စက်များကို ချိတ်ဆက်နိုင်သည်။
 - ကွန်ရက်စစ်ဆေးမှုများသည် လက်ရှိဖွဲ့စည်းပုံနှင့် နမူနာပုံသက်သေကို ပြသသည်။ အကောင့်တစ်ခုသည် ပလပ်ဖောင်းကန့်သတ်ချက်များကို ရှောင်ရှားနိုင်မည်ဟု အာမခံမပေးနိုင်ပါ။ ၎င်းတို့သည် ပြီးပြည့်စုံသော virtualization လုံခြုံရေးစစ်ဆေးမှုကို အစားထိုးမည်မဟုတ်ပါ။
 
-အသေးစိတ်ကို ကြည့်ပါ။ [ကွန်ရက်နှင့် ဒေတာနယ်နိမိတ်များ](docs/getting-started.md#网络与数据边界), [ကွန်ရက်စစ်ဆေးခြင်း ဒီဇိုင်း](docs/design/network-checks.md) နှင့် [Built-in ကွန်ရက် proxy ဒီဇိုင်း](docs/design/managed-proxy.md).
+အသေးစိတ်ကို ကြည့်ပါ။ [ကွန်ရက်နှင့် ဒေတာနယ်နိမိတ်များ](docs/getting-started.md#网络与数据边界).
 
 ## စာရွက်စာတမ်းများနှင့် ပံ့ပိုးမှုများ
 
@@ -106,8 +106,6 @@ macOS နှင့် လက်မှတ်ထိုးထားသော Window
 | ထည့်သွင်းပါ၊ ကွန်ရက်ပရောက်စီကို စီစဉ်သတ်မှတ်ပါ၊ သင်၏ပထမဆုံးပရောဂျက်ကိုဖွင့်ပါ။ | [စတင်လုပ်ဆောင်ခြင်း။](docs/getting-started.md) |
 | ဒေါင်းလုဒ်များ၊ စတင်ခြင်း၊ ချိတ်ဆက်မှုနှင့် လက်မှတ်ထိုးဝင်ခြင်းတို့ကို ပြဿနာဖြေရှင်းပါ။ | [FAQ နှင့် ပြန်လည်ရယူခြင်း။](docs/troubleshooting.md) |
 | ကီးဘုတ်ထိန်းချုပ်မှုများ၊ အသွင်အပြင်၊ ဒေတာ ခိုင်မြဲမှုနှင့် ထွက်ပေါက်အပြုအမူတို့ကို လေ့လာပါ။ | [နေ့စဉ်အသုံးပြုခြင်း။](docs/getting-started.md#日常使用) |
-| အရင်းအမြစ်မှ တည်ဆောက်ပါ သို့မဟုတ် တိုးတက်မှုများကို ပံ့ပိုးကူညီပါ။ | [ပံ့ပိုးကူညီမှုလမ်းညွှန်](CONTRIBUTING.md) |
-| မော်ဂျူးတာဝန်များနှင့် ကွန်ရက်ကန့်သတ်ချက်များကို နားလည်ပါ။ | [အလုပ်ခုံဒီဇိုင်း](docs/design/workbench.md) |
 | မျိုးပွားနိုင်သော ပြဿနာကို သတင်းပို့ပါ။ | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 ပရောဂျက်က အရှိန်အဟုန်နဲ့ တိုးတက်နေတယ်။ တုံ့ပြန်ချက်မျှဝေရန် ကွန်မြူနတီအဖွဲ့သို့ ဝင်ရောက်ပါ။ ရပ်ရွာထိန်းသိမ်းသူ များကို ကြိုဆိုပါတယ်။
@@ -118,9 +116,9 @@ macOS နှင့် လက်မှတ်ထိုးထားသော Window
 
 ## မူရင်းနှင့်လိုင်စင်
 
-Cage မှ ဆင်းသက်လာသည်။ [agent-vm](https://github.com/sylvinus/agent-vm) ; ရေစီးကြောင်းအခြေခံသည် `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Cage မှ ဆင်းသက်လာသည်။ [agent-vm](https://github.com/sylvinus/agent-vm).
 
-ပရောဂျက်ရဲ့ အဓိက လိုင်စင်ကတော့ [MIT](LICENSE). အစုလိုက်အစည်းလိုက် အစိတ်အပိုင်းများသည် ၎င်းတို့၏ သက်ဆိုင်ရာလိုင်စင်များကို ဆက်လက်ထိန်းသိမ်းထားသည်။ Mihomo ကို GPL-3.0 အောက်တွင် သီးခြားလုပ်ဆောင်နိုင်သော လုပ်ဆောင်ချက်အဖြစ် ဖြန့်ဝေထားသည်။ ကြည့်လည်းကြည့် [NOTICE](NOTICE), [Third-party လိုင်စင်များ](THIRD_PARTY_LICENSES), [ပြင်ပအရင်းအမြစ်များ](third_party/SOURCES) နှင့် [noVNC သက်သေ](ui/vendor/novnc/README.cage.md). အထက်ပိုင်း ပရောဂျက်၏ ဖော်ပြချက်ကို ချန်လှပ်ထားသည်။ [အထက်ပိုင်း README](docs/agent-vm-upstream.md).
+ပရောဂျက်ရဲ့ အဓိက လိုင်စင်ကတော့ [MIT](LICENSE). အစုလိုက်အစည်းလိုက် အစိတ်အပိုင်းများသည် ၎င်းတို့၏ သက်ဆိုင်ရာလိုင်စင်များကို ဆက်လက်ထိန်းသိမ်းထားသည်။ Mihomo ကို GPL-3.0 အောက်တွင် သီးခြားလုပ်ဆောင်နိုင်သော လုပ်ဆောင်ချက်အဖြစ် ဖြန့်ဝေထားသည်။ ကြည့်လည်းကြည့် [NOTICE](NOTICE) · [Third-party လိုင်စင်များ](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage သည် လွတ်လပ်သောအသိုင်းအဝိုင်းပရောဂျက်တစ်ခုဖြစ်ပြီး Anthropic နှင့် မသက်ဆိုင်ပါ။
 

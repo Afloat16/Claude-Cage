@@ -56,7 +56,7 @@ Windows 快捷键以 `Ctrl` 为主：`Ctrl+O` 打开项目、`Ctrl+T` 新建网�
 
 ## 常见启动问题
 
-Windows Hypervisor Platform 已启用时，QEMU 仍可能因嵌套虚拟化初始化失败而退出，错误码为 `80370302`。当前开发构建在 Windows x64 的默认 WHPX 参数中使用 `kernel-irqchip=off`，由 QEMU 实现中断控制器，保留 WHPX 的 CPU 加速。正常桌面入口直接使用该参数，无需外部 PowerShell 兼容脚本；显式设置的 QEMU machine 参数仍优先。此设置改变中断控制器实现，具体硬件上的多核、时钟和性能表现见[验收报告](test-reports/2026-11-06-exit-recovery/README.md)。启动失败时，“操作详情”显示经过脱敏的 QEMU stderr 摘要，完整脱敏诊断包可从设置导出。
+Windows Hypervisor Platform 已启用时，QEMU 仍可能因嵌套虚拟化初始化失败而退出，错误码为 `80370302`。当前开发构建在 Windows x64 的默认 WHPX 参数中使用 `kernel-irqchip=off`，由 QEMU 实现中断控制器，保留 WHPX 的 CPU 加速。正常桌面入口直接使用该参数，无需外部 PowerShell 兼容脚本；显式设置的 QEMU machine 参数仍优先。此设置改变中断控制器实现，具体性能取决于硬件及虚拟化能力。启动失败时，“操作详情”显示经过脱敏的 QEMU stderr 摘要，完整脱敏诊断包可从设置导出。
 
 当前开发构建在升级或强制结束后会自动检查旧连接记录及控制锁。旧锁空闲时修复其所有者和私有权限，再由新后台重建连接记录；真实后台持有的锁继续阻止接管。权限无法迁移时显示具体原因。请保留个人配置目录，不要通过删除账户或虚拟磁盘解决连接问题。点右上角 × 隐藏窗口并保留托盘，结束应用请使用“退出 Cage”；运行中的环境可选择保留运行或停止后退出。
 
@@ -69,68 +69,12 @@ Windows Hypervisor Platform 已启用时，QEMU 仍可能因嵌套虚拟化初�
 
 反馈问题时提供 Cage 版本、Windows 版本与内部版本号、CPU 架构、失败步骤和错误原文。不要附带代理密码、订阅链接、会话地址或未脱敏的配置文件。
 
-## 维护者构建与验收
-
-### 平台验收记录
-
-Windows 实现和安装器处于开发验收阶段。源码构建成功不代表所有电脑均已通过验收；下载时应查看对应发行说明。未签名开发包用于测试，不能通过应用内更新自动安装。正式发行还需要可信代码签名、完整的随附软件源码材料和 Win10/11 实机验收。
-
-当前开发包已在 Windows 11 Pro 24H2（26100）的 Intel x64 实体机验证安装、覆盖安装、原生工作台、QEMU/WHPX 启动、十一项关键安全检查、中文空格路径共享、终端输入与缩放，以及浏览器和编辑器操作。暂停外网后客机 HTTPS 请求被阻断，重新检测后恢复；配置和项目文件在覆盖安装后保留。卸载保留数据及拒绝未签名更新也已实测。Windows 10 的实机兼容性和可信签名版本之间的完整升级仍待验证。
-
-Windows 11 x64（内部版本 26200）另已在普通账户的原生工作台验证首次选 D 盘、显示真实下载字节、断点续传、已有环境从 C 盘迁到 D 盘并启动，以及迁移中断恢复。迁移后核对了虚拟机内文件、内置编辑器登录会话和本机测试账户。
-
-
-### Windows 客机里的 PowerShell
+## Windows 客机里的 PowerShell
 
 Hyper-V 装机流程为新建的 Windows 11 x64 客机预装 PowerShell 7.6.9 LTS。首次登录后，在客机终端运行 `pwsh --version` 即可查看版本；旧脚本仍可用 `powershell.exe` 调用系统的 5.1。
 
 Windows 开发包将创建脚本放在安装目录的 `resources\guest-os\new-windows-guest.ps1`。创建客机时，宿主从微软下载约 110 MB 的 x64 ZIP，核对 SHA-256 后写入只读安装盘。客机无需联网，所有用户共用 `%ProgramFiles%\PowerShell\7`。宿主也可通过 `-PowerShellZip` 指定已下载的同版本文件。该步骤在 Windows 首次安装时运行，已有客机不会在 Cage 更新时重装。[客机创建脚本](../scripts/guest-os/new-windows-test-vm.ps1) · [微软发布校验清单](https://github.com/PowerShell/PowerShell/releases/download/v7.6.9/hashes.sha256)
 
-### 构建 Windows 应用
+## 静默安装选项
 
-Windows QEMU 由固定源码及 `patches/qemu` 中的补丁构建。MSYS2 UCRT64 需要安装 `gcc`、`glib2`、`pixman`、`libslirp`、`dtc`、`ninja`、`python`、`pkgconf` 对应的 `mingw-w64-ucrt-x86_64-` 软件包，以及 `make`、`patch`、`diffutils`。`CAGE_MSYS2_ROOT` 指向 MSYS2 根目录。QEMU 源码和构建目录须使用不含空格的路径。`build-windows.ps1` 自动构建并校验 QEMU 缓存，安装包旁的源码材料包含对应补丁及依赖清单。
-
-构建使用 PowerShell 7、Go（遵循 `go.mod`）、Node.js、.NET 10 SDK、7-Zip 和 NSIS。依赖版本、下载地址及哈希固定在 `packaging/windows/dependencies.json`；构建时逐个校验。源码默认版本来自根目录 `VERSION`。
-
-```powershell
-pwsh -File scripts/build-windows.ps1
-pwsh -File scripts/package-windows.ps1 -SkipBuild
-```
-
-构建会检查前端资源是否为空、是否含全零字节、JavaScript 语法与入口引用，并为资源生成哈希清单。后台编译后核对嵌入的资源。Windows 应用目录在交付前还必须使用独立临时配置，通过 WebView2 页面加载与原生桥自检；超时或失败会停止构建。在 Windows 上使用 `-SkipBuild` 打包也会重新执行该自检。自检不启动虚拟机，也不读取默认个人配置。失败时保留临时诊断目录，成功时确认后台退出后清理。
-
-应用目录输出到 `_output/windows-amd64/app`，安装器与校验文件输出到 `_output/releases/<版本>/windows`。正式签名构建使用构建脚本的 `-Release` 模式，支持 SSL.com eSigner 或当前用户证书存储中的代码签名证书；发布脚本还要求与 QEMU 构建相对应的源码归档。参数以脚本帮助为准。签名完成后再生成发行物摘要，不能对签名后的文件重新修改。两个平台同批发布时，使用[公开发行流程](public-releases.md#发布安装包)生成共用校验清单；官网仅在公开 Release 的 Windows 附件和摘要有效时显示下载按钮。
-
-本地测试需要可信签名时，构建和打包脚本均可使用 `-Sign`。此模式沿用当前版本，签名应用、后端、代理核心、卸载器和安装器，并核对 Windows 信任及发布者证书。测试安装包带 `-test-signed` 文件名后缀。
-
-```powershell
-pwsh -File scripts/build-windows.ps1 -Sign
-pwsh -File scripts/package-windows.ps1 -SkipBuild -Sign
-```
-
-安装器的快捷方式页采用原生复选框。自动化安装可传入 `/DESKTOPSHORTCUT=0|1` 和 `/STARTMENUSHORTCUT=0|1`，参数放在最后的 `/D=` 安装目录之前。未提供参数的静默更新沿用已保存的选择。实现使用 NSIS 的自定义页面和状态接口。[NSIS 页面文档](https://nsis.sourceforge.io/Docs/nsDialogs/Readme.html)
-
-安装器和卸载器通过 `MUI_ICON`、`MUI_UNICON` 指定 Cage 图标，配置放在 Modern UI 页面定义之前。打包脚本检查可执行文件的主图标组，逐档核对 16–256 像素的七幅图像与 `Cage.ico` 一致。图标被模板覆盖时，打包会报错。[Modern UI 图标配置](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)
-
-卸载清单枚举应用载荷的全部文件和目录，包括点号开头的文件及隐藏属性项目。安装回归还会核对卸载后专用程序目录完全移除，确保随后可以装回同一路径。
-
-安装目标支持尚未创建的路径、已有空目录和带有效 Cage 安装标记的程序目录。目录检查使用 NSIS `DirState` 区分空目录与实际内容。缺少有效安装标记且含文件或子目录时，安装器要求另选目录。回归测试先创建空目录，再执行完整安装流程。
-
-首次验证 eSigner 时，在自己的终端运行下面的命令。需要 Java 21 和 Node.js；macOS、Windows 和 Linux 都可以调用签名工具。工具固定版本与摘要保存在 `packaging/windows/signing.json`，下载内容变化时会停止，须审核后更新。输入 SSL.com 用户名、密码、凭据 ID，等工具提示后再输入验证器当时显示的六位验证码。密码和验证码不显示、不保存；签名后的副本写入新的输出目录，原文件保留。
-
-```sh
-node scripts/esigner.mjs install
-node scripts/esigner.mjs sign /absolute/path/to/Cage.exe --output-dir /absolute/path/to/fresh-signed-output
-```
-
-签名单个文件不会发版。完整 Windows 构建选择 `CAGE_WINDOWS_SIGNING_PROVIDER=esigner`，并设置 `CAGE_ESIGNER_USERNAME`、`CAGE_ESIGNER_PASSWORD`、`CAGE_ESIGNER_CREDENTIAL_ID`、`CAGE_ESIGNER_CERTIFICATE_SERIAL` 和 `CAGE_ESIGNER_TOTP_SECRET`；其中 TOTP 密钥供无人值守流程生成验证码，不能用六位验证码代替。NSIS 的卸载器签名子进程不提供交互终端，因此完整打包需要这些环境配置。密码和密钥不要写入 shell 命令历史或源码。GitHub 环境配置见 [CI/CD 说明](ci-cd.md#首次配置发布材料)。
-
-Windows 正式构建会检查可信 Authenticode 签名、时间戳与指定证书；只通过这些检查的副本才会替换待打包文件。其他平台上的签名测试不能替代 Windows 信任与安装验收。自动更新继续要求旧应用和新安装器使用相同发布者公钥，换用新密钥前需要单独安排更新迁移。
-
-工具参数与验证器配置以 SSL.com 的 [CodeSignTool 指南](https://www.ssl.com/guide/esigner-codesigntool-command-guide/)和 [签名凭据指南](https://www.ssl.com/guide/esigner-signing-credential-guide/)为准。
-
-CI 负责源码、原生窗口、安装器和 Windows 可执行测试；干净 Windows 10/11 上的虚拟化仍需要设备验收。每次正式发行至少记录：首次安装、WebView2 首次启动、无虚拟化时的提示、代理导入、VM 首次下载与启动、网络隔离检查、中文和空格路径共享、终端输入与缩放、退出恢复、从旧签名版升级、失败恢复、卸载后数据保留。只有真实执行的项目才能标记通过。
-
-### 窗口上栏的外观
-
-切换「设置 → 外观」后，菜单栏及其下拉菜单会采用所选主题的侧栏配色。Windows 11 的标题栏使用相同配色，Windows 10 的标题栏随浅色或深色模式切换。开启 Windows 对比度主题时，原生菜单和标题栏采用系统配色。
+静默安装可传入 `/DESKTOPSHORTCUT=0|1` 和 `/STARTMENUSHORTCUT=0|1`，参数放在最后的 `/D=` 安装目录之前。未提供参数的静默更新沿用已保存的快捷方式选择。

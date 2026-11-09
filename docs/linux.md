@@ -2,11 +2,13 @@
 
 Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 22.04/24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，默认创建持久 Debian 13 虚拟机，也可通过“自动匹配本机系统版本”下载官方镜像，创建与主机同发行版的 Linux 客机，包括 Ubuntu 22.04。所有本机项目共用所选的持久环境与 Linux 工具链。首次创建时可以直接选择 Ubuntu 22.04，无需主机也运行该版本。主机与客机可以是不同的 Linux 发行版；macOS、Windows、Debian 与 Ubuntu 的组合见[选择客机系统](guide/guest-systems.md)。
 
-同一个桌面应用也可以从侧栏 SSH 连接已部署 Cage 的服务器。使用远程工作台只需本机图形依赖，本机模式另需 KVM 和虚拟机工具。云服务器的无 KVM 容器部署见[云端部署设计](design/cloud-deployment.md)和[部署说明](../deploy/cloud/README.md)。
+同一个桌面应用也可以从侧栏 SSH 连接已部署 Cage 的服务器。使用远程工作台只需本机图形依赖，本机模式另需 KVM 和虚拟机工具。云服务器的无 KVM 容器部署见[云端使用指南](guide/cloud.md)和[部署说明](../deploy/cloud/README.md)。
 
 Ubuntu 22.04 的桌面包采用兼容该系统的构建基线，已在隔离容器验证真实窗口、浏览器启动、重装与卸载数据保留。完整 KVM 客机安装、物理桌面输入法和 Claude 登录尚未实测，不能把容器验证视为这些操作通过。系统匹配、续装与各路线范围见[客机系统指南](guide/guest-systems.md)。
 
 ## 安装前准备
+
+Ubuntu 22.04 需要启用 `universe`、`jammy-updates` 与 `jammy-security`，并安装更新后的 WebKitGTK 4.1（至少 2.40）。系统初始镜像中的旧 WebKit 无法运行当前工作台。
 
 电脑需要图形桌面、可用的 KVM 硬件虚拟化、足够的磁盘空间和自己的代理节点。默认虚拟磁盘上限为 24 GiB。云主机需要服务商开放嵌套虚拟化；没有 `/dev/kvm` 的服务器不能按普通桌面流程启动 Cage 环境。
 
@@ -26,7 +28,7 @@ Cage 日常以普通用户运行。不要用 `sudo cage-desktop` 启动工作台
 
 ## 安装并开始工作
 
-在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Linux。从对应 Release 下载 `Cage-<版本>-linux-amd64.deb` 与 `SHA256SUMS`，核对该文件的 SHA-256 后安装。尚无公开安装包时，平台入口会指向本页，可按下文[维护者构建与验收](#维护者构建与验收)构建：
+在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Linux。从对应 Release 下载 `Cage-<版本>-linux-amd64.deb` 与 `SHA256SUMS`，核对该文件的 SHA-256 后安装。只有对应 Release 提供安装包时，才执行下面的安装命令：
 
 ```sh
 sudo apt install ./Cage-<版本>-linux-amd64.deb
@@ -64,30 +66,3 @@ sudo apt remove claude-cage
 - 能打开工作台但无法联网：在 Cage 内确认已选择代理节点并查看网络检查。主机浏览器能联网不能证明 Cage 代理已可用。
 
 反馈时提供发行版、CPU 架构、Cage 版本、桌面环境以及失败步骤和错误原文。避免附带代理密码、订阅链接、账户文件和带会话信息的地址。
-
-## 维护者构建与验收
-
-### 平台验收记录
-
-Linux 支持处于开发验收阶段。安装包及真实测试范围以对应发行说明为准；云服务器中的窗口测试不能代表所有桌面环境、显卡和输入法均已通过验收。ARM64、RPM 发行版及 Wayland 的完整交互尚未验收。
-
-Ubuntu 22.04 的新增验证范围见 [Ubuntu 22.04 验收记录](test-reports/2026-11-09-ubuntu2204/README.md)。
-
-开发包已在 Debian 12 云端隔离环境验证原生工作台、窗口重开后的界面状态、代理生命周期、系统包安装与卸载保留数据。QEMU 软件模拟验证了客体启动、共享文件保护和迁移重启。KVM 硬件加速、Ubuntu 24.04 实机以及真实 Claude 业务网络仍需验收。
-
-
-正式构建基线为 Ubuntu 22.04 x86_64（glibc 2.35），同一安装包在 Debian 12、Ubuntu 22.04/24.04 上执行兼容检查。从更新发行版构建的原生程序可能需要更高版本 glibc，不能标为兼容 Ubuntu 22.04。GTK/WebKitGTK 依赖来自发行版软件源（[Debian 依赖](https://packages.debian.org/bookworm/libwebkit2gtk-4.1-0)、[Ubuntu 22.04 依赖](https://packages.ubuntu.com/jammy/libwebkit2gtk-4.1-0)），动态库最低版本由打包脚本自动提取。
-
-Ubuntu 22.04 需要启用 `universe`、`jammy-updates` 与 `jammy-security`，安装更新后的 WebKitGTK 4.1（至少 2.40）。系统初始镜像中的旧 WebKit 不能用于构建或运行当前工作台。
-
-构建需要遵循 `go.mod` 的 Go、Node.js 24、C 编译器和以下系统包：
-
-```sh
-sudo apt install build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libjson-glib-dev dpkg-dev curl ca-certificates
-make cage-linux
-bash scripts/package-linux.sh --skip-build
-```
-
-应用目录为 `_output/linux-amd64/app`；安装包、校验清单和 Mihomo 对应源码位于 `_output/releases/<版本>/linux`。`packaging/linux/dependencies.json` 固定代理核心及源码的下载地址与哈希。Cage 不随包复制发行版 QEMU 或 WebKit 库，系统包管理器负责这些组件的维护。
-
-`make check-linux` 可在其他主机检查 Linux Go 编译与静态诊断。原生桌面、Go 测试及安装检查须在 Linux 执行；CI 使用非 root 用户、独立配置和虚拟显示。真实发行还需验证 KVM 启动、代理出口及失败阻断、中文空格路径共享、终端输入与缩放、网页和编辑器、关闭恢复、升级和卸载后的数据保留，以及常见 X11/Wayland 桌面和输入法。

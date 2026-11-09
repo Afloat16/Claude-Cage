@@ -32,8 +32,7 @@ await mkdir(target, { recursive: true });
 await writeFile(`${target}/mainland-ipv4.txt`, data);
 await writeFile(`${target}/LICENSE`, license);
 await writeFile(`${target}/source.json`, JSON.stringify({
-  upstream: `https://github.com/${upstream}`, commit,
-  url: `${source}/china.txt`, sha256: createHash("sha256").update(data).digest("hex"),
+  sha256: createHash("sha256").update(data).digest("hex"),
   ipv4_prefixes: prefixes.length, license: "MIT",
 }, null, 2) + "\n");
 console.log(`Updated ${prefixes.length} mainland IPv4 prefixes from ${commit}`);

@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[وب سایت پروژه](https://lee-xeo.github.io/Claude-Cage/) · [دانلود برنامه](https://lee-xeo.github.io/Claude-Cage/fa/#download) · [شروع کردن](docs/getting-started.md) · [سوالات متداول](docs/troubleshooting.md) · [مشارکت کنید](CONTRIBUTING.md) · [راهنمای استفاده (چینی)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[وب سایت پروژه](https://lee-xeo.github.io/Claude-Cage/) · [دانلود برنامه](https://lee-xeo.github.io/Claude-Cage/fa/#download) · [شروع کردن](docs/getting-started.md) · [سوالات متداول](docs/troubleshooting.md) · [راهنمای استفاده (چینی)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS و نسخه‌های امضاشدهٔ Windows از پراکسی انتخا
 - خروجی عمومی به‌طور پیش‌فرض IPv4 TCP را پشتیبانی می‌کند و DNS از همان پراکسی می‌گذرد. UDP، IPv6 و ICMP عمومی و اتصال مستقیم به میزبان یا شبکهٔ محلی محدودند. با فعال‌سازی صریح Tailscale، دسترسی به دستگاه‌ها تابع مجوزهای شبکهٔ خصوصی است.
 - بررسی های شبکه پیکربندی فعلی و شواهد نمونه برداری شده را نشان می دهد. آن‌ها نمی‌توانند تضمین کنند که یک حساب از محدودیت‌های پلتفرم جلوگیری می‌کند، و جایگزین ممیزی امنیتی کامل مجازی‌سازی نمی‌شوند.
 
-برای جزئیات، نگاه کنید [مرزهای شبکه و داده](docs/getting-started.md#网络与数据边界), [طراحی چک های شبکه](docs/design/network-checks.md) و [طراحی پروکسی شبکه داخلی](docs/design/managed-proxy.md).
+برای جزئیات، نگاه کنید [مرزهای شبکه و داده](docs/getting-started.md#网络与数据边界).
 
 ## اسناد و مشارکت
 
@@ -106,8 +106,6 @@ macOS و نسخه‌های امضاشدهٔ Windows از پراکسی انتخا
 | یک پروکسی شبکه را نصب کنید، پیکربندی کنید و اولین پروژه خود را باز کنید | [شروع کردن](docs/getting-started.md) |
 | عیب‌یابی دانلود، راه‌اندازی، اتصال و ورود به سیستم | [سوالات متداول و بازیابی](docs/troubleshooting.md) |
 | کنترل های صفحه کلید، ظاهر، ماندگاری داده ها و رفتار خروج را بیاموزید | [استفاده روزانه](docs/getting-started.md#日常使用) |
-| از منبع بسازید یا به بهبودها کمک کنید | [راهنمای مشارکت](CONTRIBUTING.md) |
-| مسئولیت های ماژول و محدودیت های شبکه را درک کنید | [طراحی میز کار](docs/design/workbench.md) |
 | یک مشکل قابل تکرار را گزارش کنید | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 این پروژه به سرعت در حال پیشرفت است. برای به اشتراک گذاشتن بازخورد به گروه جامعه بپیوندید. از نگهبانان جامعه استقبال می شود.
@@ -118,9 +116,9 @@ macOS و نسخه‌های امضاشدهٔ Windows از پراکسی انتخا
 
 ## مبدا و مجوز
 
-Cage مشتق شده از [agent-vm](https://github.com/sylvinus/agent-vm) ; خط پایه بالادست است `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Cage مشتق شده از [agent-vm](https://github.com/sylvinus/agent-vm).
 
-مجوز اصلی پروژه می باشد [MIT](LICENSE). اجزای همراه مجوز مربوطه خود را حفظ می کنند. Mihomo به عنوان یک فایل اجرایی جداگانه تحت GPL-3.0 توزیع شده است. همچنین ببینید [NOTICE](NOTICE), [مجوزهای شخص ثالث](THIRD_PARTY_LICENSES), [منابع شخص ثالث](third_party/SOURCES) و [منشأ noVNC](ui/vendor/novnc/README.cage.md). توضیحات پروژه بالادستی در [بالادست README](docs/agent-vm-upstream.md).
+مجوز اصلی پروژه می باشد [MIT](LICENSE). اجزای همراه مجوز مربوطه خود را حفظ می کنند. Mihomo به عنوان یک فایل اجرایی جداگانه تحت GPL-3.0 توزیع شده است. همچنین ببینید [NOTICE](NOTICE) · [مجوزهای شخص ثالث](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage یک پروژه اجتماعی مستقل است و به آنتروپیک وابسته نیست.
 

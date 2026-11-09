@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Сайт праекта](https://lee-xeo.github.io/Claude-Cage/) · [Спампаваць праграму](https://lee-xeo.github.io/Claude-Cage/be/#download) · [Пачатак працы](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Унесці свой уклад](CONTRIBUTING.md) · [Дапаможнік (па-кітайску)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[Сайт праекта](https://lee-xeo.github.io/Claude-Cage/) · [Спампаваць праграму](https://lee-xeo.github.io/Claude-Cage/be/#download) · [Пачатак працы](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Дапаможнік (па-кітайску)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS і падпісаныя версіі Windows абнаўляюцца пра
 - Па змаўчанні публічны выходны трафік падтрымлівае IPv4 TCP, а DNS ідзе праз той жа проксі. Публічныя UDP, IPv6, ICMP і прамы доступ да хоста або лакальнай сеткі абмежаваныя. Пасля яўнага ўключэння Tailscale доступ да прылад вызначаюць правілы прыватнай сеткі.
 - Сеткавыя праверкі паказваюць бягучую канфігурацыю і выбарку доказаў. Яны не могуць гарантаваць, што ўліковы запіс пазбегне абмежаванняў платформы, і не замяняюць поўны аўдыт бяспекі віртуалізацыі.
 
-Падрабязней гл [Межы сеткі і дадзеных](docs/getting-started.md#网络与数据边界), [Дызайн сеткавых праверак](docs/design/network-checks.md) і [Дызайн убудаванага сеткавага проксі](docs/design/managed-proxy.md).
+Падрабязней гл [Межы сеткі і дадзеных](docs/getting-started.md#网络与数据边界).
 
 ## Дакументацыя і ўклады
 
@@ -106,8 +106,6 @@ macOS і падпісаныя версіі Windows абнаўляюцца пра
 | Усталюйце, наладзьце сеткавы проксі і адкрыйце свой першы праект | [Пачатак працы](docs/getting-started.md) |
 | Выпраўленне непаладак спампоўкі, запуску, падключэння і ўваходу ў сістэму | [FAQ і аднаўленне](docs/troubleshooting.md) |
 | Вывучыце элементы кіравання з клавіятуры, знешні выгляд, захаванне даных і паводзіны пры выхадзе | [Штодзённае выкарыстанне](docs/getting-started.md#日常使用) |
-| Стварайце з зыходнага кода або ўносіце паляпшэнні | [Кіраўніцтва па ўкладах](CONTRIBUTING.md) |
-| Зразумець абавязкі модуля і сеткавыя абмежаванні | [Канструкцыя варштата](docs/design/workbench.md) |
 | Паведаміць аб узнаўляльнай праблеме | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 Праект імкліва развіваецца. Далучайцеся да групы супольнасці, каб падзяліцца водгукамі; вітаюцца супрацоўнікі супольнасці.
@@ -118,9 +116,9 @@ macOS і падпісаныя версіі Windows абнаўляюцца пра
 
 ## Паходжанне і ліцэнзаванне
 
-Клетка паходзіць ад [agent-vm](https://github.com/sylvinus/agent-vm) ; базавая лінія ўверх па плыні `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Клетка паходзіць ад [agent-vm](https://github.com/sylvinus/agent-vm).
 
-Асноўная ліцэнзія праекта [MIT](LICENSE). Кампаненты ў камплекце захоўваюць адпаведныя ліцэнзіі. Mihomo распаўсюджваецца як асобны выкананы файл пад GPL-3.0. Таксама гл [NOTICE](NOTICE), [Ліцэнзіі іншых вытворцаў](THIRD_PARTY_LICENSES), [Староннія крыніцы](third_party/SOURCES) і [noVNC паходжанне](ui/vendor/novnc/README.cage.md). Апісанне праекта ўверх па плыні захавалася ў [Уверх па плыні README](docs/agent-vm-upstream.md).
+Асноўная ліцэнзія праекта [MIT](LICENSE). Кампаненты ў камплекце захоўваюць адпаведныя ліцэнзіі. Mihomo распаўсюджваецца як асобны выкананы файл пад GPL-3.0. Таксама гл [NOTICE](NOTICE) · [Ліцэнзіі іншых вытворцаў](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage з'яўляецца незалежным грамадскім праектам і не звязаны з Anthropic.
 

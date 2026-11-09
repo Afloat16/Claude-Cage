@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[موقع المشروع](https://lee-xeo.github.io/Claude-Cage/) · [تنزيل التطبيق](https://lee-xeo.github.io/Claude-Cage/ar/#download) · [البدء](docs/getting-started.md) · [الأسئلة الشائعة](docs/troubleshooting.md) · [ساهم](CONTRIBUTING.md) · [دليل الاستخدام (بالصينية)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[موقع المشروع](https://lee-xeo.github.io/Claude-Cage/) · [تنزيل التطبيق](https://lee-xeo.github.io/Claude-Cage/ar/#download) · [البدء](docs/getting-started.md) · [الأسئلة الشائعة](docs/troubleshooting.md) · [دليل الاستخدام (بالصينية)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@
 - يدعم الاتصال العام الصادر افتراضيًا IPv4 TCP ويمر DNS عبر الوكيل نفسه. تُقيَّد UDP وIPv6 وICMP العامة والاتصالات المباشرة بالمضيف والشبكة المحلية. عند تفعيل Tailscale صراحةً، يخضع الوصول إلى الأجهزة لأذونات الشبكة الخاصة.
 - تُظهر عمليات فحص الشبكة التكوين الحالي والأدلة التي تم أخذ عينات منها. ولا يمكنها ضمان أن الحساب سوف يتجنب قيود النظام الأساسي، ولا تحل محل تدقيق أمان المحاكاة الافتراضية الكامل.
 
-لمزيد من التفاصيل، انظر [حدود الشبكة والبيانات](docs/getting-started.md#网络与数据边界), [تصميم فحص الشبكة](docs/design/network-checks.md) و [تصميم وكيل الشبكة المدمج](docs/design/managed-proxy.md).
+لمزيد من التفاصيل، انظر [حدود الشبكة والبيانات](docs/getting-started.md#网络与数据边界).
 
 ## التوثيق والمساهمات
 
@@ -106,8 +106,6 @@
 | قم بتثبيت وكيل الشبكة وتكوينه وافتح مشروعك الأول | [البدء](docs/getting-started.md) |
 | استكشاف أخطاء التنزيلات وبدء التشغيل والاتصال وتسجيل الدخول وإصلاحها | [الأسئلة الشائعة والاسترداد](docs/troubleshooting.md) |
 | تعرف على عناصر التحكم في لوحة المفاتيح والمظهر واستمرارية البيانات وسلوك الخروج | [الاستخدام اليومي](docs/getting-started.md#日常使用) |
-| البناء من المصدر أو المساهمة في التحسينات | [دليل المساهمة](CONTRIBUTING.md) |
-| فهم مسؤوليات الوحدة وقيود الشبكة | [تصميم طاولة العمل](docs/design/workbench.md) |
 | الإبلاغ عن مشكلة قابلة للتكرار | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 المشروع يتطور بسرعة. انضم إلى مجموعة المجتمع لمشاركة التعليقات؛ مشرفو المجتمع مرحب بهم.
@@ -118,9 +116,9 @@
 
 ## الأصول والترخيص
 
-القفص مشتق من [agent-vm](https://github.com/sylvinus/agent-vm) ; خط الأساس المنبع هو `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+القفص مشتق من [agent-vm](https://github.com/sylvinus/agent-vm).
 
-الترخيص الرئيسي للمشروع هو [MIT](LICENSE). تحتفظ المكونات المجمعة بالتراخيص الخاصة بها. يتم توزيع Mihomo كملف قابل للتنفيذ منفصل تحت GPL-3.0. انظر أيضا [NOTICE](NOTICE), [تراخيص الطرف الثالث](THIRD_PARTY_LICENSES), [مصادر الطرف الثالث](third_party/SOURCES) و [مصدر noVNC](ui/vendor/novnc/README.cage.md). يتم الاحتفاظ بوصف المشروع الأولي في ملف [الملف التمهيدي التمهيدي](docs/agent-vm-upstream.md).
+الترخيص الرئيسي للمشروع هو [MIT](LICENSE). تحتفظ المكونات المجمعة بالتراخيص الخاصة بها. يتم توزيع Mihomo كملف قابل للتنفيذ منفصل تحت GPL-3.0. انظر أيضا [NOTICE](NOTICE) · [تراخيص الطرف الثالث](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage هو مشروع مجتمعي مستقل ولا ينتمي إلى Anthropic.
 

@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [下载应用](https://lee-xeo.github.io/Claude-Cage/#download) · [使用文档](https://lee-xeo.github.io/Claude-Cage/docs/) · [常见问题](https://lee-xeo.github.io/Claude-Cage/docs/troubleshooting/) · [参与开发](CONTRIBUTING.md)**
+**[项目主页](https://lee-xeo.github.io/Claude-Cage/) · [下载应用](https://lee-xeo.github.io/Claude-Cage/#download) · [使用文档](https://lee-xeo.github.io/Claude-Cage/docs/) · [常见问题](https://lee-xeo.github.io/Claude-Cage/docs/troubleshooting/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -96,11 +96,11 @@ macOS 和已签名 Windows 版本支持通过所选代理更新；Windows 未签
 - 默认公网出站支持 IPv4 TCP，DNS 通过同一代理；公网 UDP、IPv6、ICMP 及主机和局域网直连受限。主动启用 Tailscale 后，可按私网权限连接设备。
 - 网络检查展示当前配置和采样证据，无法保证账户不会受到平台限制，也不能代替完整的虚拟化安全审计。
 
-详细机制见[网络与数据边界](docs/getting-started.md#网络与数据边界)、[网络检查设计](docs/design/network-checks.md)和[内置代理设计](docs/design/managed-proxy.md)。
+详细机制见[网络与数据边界](docs/getting-started.md#网络与数据边界)。
 
 ## 文档与贡献
 
-面向用户的[官网使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)支持按功能浏览、搜索与章节直达。源码与设计资料见[仓库文档导航](docs/README.md)。
+面向用户的[官网使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)支持按功能浏览、搜索与章节直达。各项操作见[使用文档导航](docs/README.md)。
 
 | 你要做什么 | 从这里开始 |
 |---|---|
@@ -113,8 +113,6 @@ macOS 和已签名 Windows 版本支持通过所选代理更新；Windows 未签
 | 维护存储、资源、更新与备份 | [维护、资源与数据](https://lee-xeo.github.io/Claude-Cage/docs/maintenance/) |
 | 处理下载、启动、联网和登录问题 | [故障排查](https://lee-xeo.github.io/Claude-Cage/docs/troubleshooting/) |
 | 了解文件、按键和关闭与退出行为 | [项目、终端与文件](https://lee-xeo.github.io/Claude-Cage/docs/workbench/) |
-| 从源码构建或提交改进 | [贡献指南](CONTRIBUTING.md) |
-| 了解模块与网络约束 | [工作台设计](docs/design/workbench.md) |
 | 报告可复现问题 | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 本项目仍在快速迭代中，欢迎加入交流群提意见，欢迎社区大佬一起维护
@@ -125,9 +123,9 @@ macOS 和已签名 Windows 版本支持通过所选代理更新；Windows 未签
 
 ## 来源与许可
 
-Cage 基于 [agent-vm](https://github.com/sylvinus/agent-vm) 二次开发，上游基线为 `652688aae92c35ce536b9be52262e1cc5ec6e03a`。
+Cage 基于 [agent-vm](https://github.com/sylvinus/agent-vm) 二次开发。
 
-项目主许可为 [MIT](LICENSE)。随附组件保留各自许可，Mihomo 作为独立可执行文件按 GPL-3.0 分发；请同时参阅 [NOTICE](NOTICE)、[第三方许可](THIRD_PARTY_LICENSES)、[第三方来源](third_party/SOURCES)及 [noVNC 来源说明](ui/vendor/novnc/README.cage.md)。上游项目的说明保存在[上游 README](docs/agent-vm-upstream.md)。
+项目主许可为 [MIT](LICENSE)。随附组件保留各自许可，Mihomo 作为独立可执行文件按 GPL-3.0 分发；请同时参阅 [NOTICE](NOTICE) · [第三方许可](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage 是独立社区项目，与 Anthropic 无隶属关系。
 

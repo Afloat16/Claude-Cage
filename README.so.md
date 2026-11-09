@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Soo dejiso abka](https://lee-xeo.github.io/Claude-Cage/so/#download) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Wax ku darso](CONTRIBUTING.md) · [Hagaha isticmaalka (Shiine)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[Mareegta mashruuca](https://lee-xeo.github.io/Claude-Cage/) · [Soo dejiso abka](https://lee-xeo.github.io/Claude-Cage/so/#download) · [Bilaabidda](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Hagaha isticmaalka (Shiine)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ Guji 'Mashruuca Furan' si aad u dooratid galka kombiyuutarka kaaga, fur terminal
 - Sida caadiga ah bixitaanka internetku wuxuu taageeraa IPv4 TCP, DNS-na isla proxy-ga ayuu maraa. UDP, IPv6 iyo ICMP dadweyne iyo xidhiidh toos ah oo martigeliye ama LAN ah waa xaddidan yihiin. Markaad si cad u hawlgeliso Tailscale, gelitaanka aaladuhu wuxuu raacaa oggolaanshaha shabakadda gaarka ah.
 - Jeegaga shabakada waxay tusinaysaa qaabka hadda jira iyo cadaymaha la muunada ah. Ma dammaanad qaadi karaan in akoonku uu ka fogaanayo xannibaadaha goobta, mana beddelaan xisaab-xidhka amniga oo dhammaystiran.
 
-Faahfaahinta, eeg [Xuduudaha shabakada iyo xogta](docs/getting-started.md#网络与数据边界), [Naqshad hubinta shabakada](docs/design/network-checks.md) iyo [Naqshadaynta wakiilnimada shabakadda ee ku dhex jirta](docs/design/managed-proxy.md).
+Faahfaahinta, eeg [Xuduudaha shabakada iyo xogta](docs/getting-started.md#网络与数据边界).
 
 ## Dukumentiyada iyo wax ku biirinta
 
@@ -106,8 +106,6 @@ Si aad u hesho tusmada buuxda, eeg [Tusmada dhokumentiyada](docs/README.md).
 | Ku rakib, habee wakiil shabakad, oo fur mashruucaaga ugu horreeya | [Bilaabidda](docs/getting-started.md) |
 | Xallinta soo dejinta, bilaabista, isku xidhka, iyo soo gelista | [FAQ iyo soo kabashada](docs/troubleshooting.md) |
 | Baro kontaroolada kiiboodhka, muuqaalka, adkaysiga xogta, iyo habdhaqanka bixista | [Isticmaalka maalinlaha ah](docs/getting-started.md#日常使用) |
-| Isha ka dhis ama ka qayb qaado hagaajin | [Hagaha wax ku biirinta](CONTRIBUTING.md) |
-| Faham mas'uuliyadaha moduleka iyo caqabadaha shabakada | [Naqshadaynta goobta shaqada](docs/design/workbench.md) |
 | Ka warbixi arrin dib loo soo saari karo | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 Mashruucu si xawli ah ayuu u socdaa. Ku biir kooxda bulshada si aad ula wadaagto jawaab celinta; ilaaliyayaasha bulshada waa la soo dhawaynayaa.
@@ -118,9 +116,9 @@ Mashruucu si xawli ah ayuu u socdaa. Ku biir kooxda bulshada si aad ula wadaagto
 
 ## Asalka iyo shatiga
 
-Qafis waxaa laga soo qaatay [agent-vm](https://github.com/sylvinus/agent-vm) ; salka sare waa `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Qafis waxaa laga soo qaatay [agent-vm](https://github.com/sylvinus/agent-vm).
 
-Shatiga ugu weyn ee mashruuca waa [MIT](LICENSE). Qaybaha xidhxidhan waxay haystaan ​​shatiyadooda. Mihomo waxaa loo qaybiyaa sidii mid gaar ah oo la fulin karo iyadoo hoos timaada GPL-3.0. Sidoo kale arag [NOTICE](NOTICE), [Shatiyada xisbiga saddexaad](THIRD_PARTY_LICENSES), [Ilaha dhinac saddexaad](third_party/SOURCES) iyo [noVNC](ui/vendor/novnc/README.cage.md). Sharaxaada mashruuca korka ayaa lagu xafiday gudaha [Kordhinta README](docs/agent-vm-upstream.md).
+Shatiga ugu weyn ee mashruuca waa [MIT](LICENSE). Qaybaha xidhxidhan waxay haystaan ​​shatiyadooda. Mihomo waxaa loo qaybiyaa sidii mid gaar ah oo la fulin karo iyadoo hoos timaada GPL-3.0. Sidoo kale arag [NOTICE](NOTICE) · [Shatiyada xisbiga saddexaad](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage waa mashruuc bulsho oo madax banaan oo aan xidhiidh la lahayn Anthropic.
 

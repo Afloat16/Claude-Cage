@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[د پروژې ویب پاڼه](https://lee-xeo.github.io/Claude-Cage/) · [اپلیکیشن ډاونلوډ کړئ](https://lee-xeo.github.io/Claude-Cage/ps/#download) · [پیل کول](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [مرسته وکړي](CONTRIBUTING.md) · [د کارولو لارښود (په چینایي)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[د پروژې ویب پاڼه](https://lee-xeo.github.io/Claude-Cage/) · [اپلیکیشن ډاونلوډ کړئ](https://lee-xeo.github.io/Claude-Cage/ps/#download) · [پیل کول](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [د کارولو لارښود (په چینایي)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS او لاسلیک شوې Windows نسخې د ټاکلي پراکسي له 
 - عام وتونکی اتصال په اصل کې IPv4 TCP ملاتړ کوي او DNS د هماغه پراکسي له لارې ځي. عام UDP، IPv6، ICMP او کوربه یا محلي شبکې ته مستقیم اتصال محدود دي. د Tailscale په څرګند فعالولو، وسیلو ته لاسرسی د خصوصي شبکې د اجازو تابع دی.
 - د شبکې چک اوسني ترتیب او نمونه شوي شواهد ښیې. دوی نشي تضمین کولی چې یو حساب به د پلیټ فارم محدودیتونو څخه مخنیوی وکړي، او دوی د بشپړ مجازی امنیت پلټنې ځای نه نیسي.
 
-د جزیاتو لپاره، وګورئ [د شبکې او معلوماتو حدود](docs/getting-started.md#网络与数据边界), [د شبکې چک ډیزاین](docs/design/network-checks.md) او [د شبکې پراکسي ډیزاین جوړ شوی](docs/design/managed-proxy.md).
+د جزیاتو لپاره، وګورئ [د شبکې او معلوماتو حدود](docs/getting-started.md#网络与数据边界).
 
 ## اسناد او ونډې
 
@@ -106,8 +106,6 @@ macOS او لاسلیک شوې Windows نسخې د ټاکلي پراکسي له 
 | د شبکې پراکسي نصب کړئ، تنظیم کړئ، او خپله لومړۍ پروژه پرانیزئ | [پیل کول](docs/getting-started.md) |
 | د ډاونلوډونو، پیل کولو، ارتباطاتو، او لاسلیک کولو ستونزې حل کړئ | [FAQ او بیا رغونه](docs/troubleshooting.md) |
 | د کیبورډ کنټرولونه، بڼه، د معلوماتو دوام، او د وتلو چلند زده کړئ | [ورځنی استعمال](docs/getting-started.md#日常使用) |
-| د سرچینې څخه جوړ کړئ یا پرمختګونو کې مرسته وکړئ | [د ونډې لارښود](CONTRIBUTING.md) |
-| د ماډل مسؤلیتونه او د شبکې محدودیتونه درک کړئ | [د کاري بینچ ډیزاین](docs/design/workbench.md) |
 | د بیا تولید وړ مسلې راپور ورکړئ | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 پروژه په چټکۍ سره وده کوي. د نظر شریکولو لپاره د ټولنې ګروپ کې ګډون وکړئ؛ د ټولنې ساتونکي ښه راغلاست.
@@ -118,9 +116,9 @@ macOS او لاسلیک شوې Windows نسخې د ټاکلي پراکسي له 
 
 ## اصل او جواز ورکول
 
-Cage څخه اخیستل شوی [agent-vm](https://github.com/sylvinus/agent-vm) ; د پورته جریان اساسی کرښه ده `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Cage څخه اخیستل شوی [agent-vm](https://github.com/sylvinus/agent-vm).
 
-د پروژې اصلي جواز دی [MIT](LICENSE). بنډل شوي برخې خپل اړوند جوازونه ساتي. Mihomo د GPL-3.0 لاندې د جلا اجرا وړ په توګه ویشل شوی. هم وګورئ [NOTICE](NOTICE), [د دریمې ډلې جوازونه](THIRD_PARTY_LICENSES), [د دریمې ډلې سرچینې](third_party/SOURCES) او [noVNC ثابت](ui/vendor/novnc/README.cage.md). د پورتنۍ پروژې توضیحات په کې ساتل شوي [Upstream README](docs/agent-vm-upstream.md).
+د پروژې اصلي جواز دی [MIT](LICENSE). بنډل شوي برخې خپل اړوند جوازونه ساتي. Mihomo د GPL-3.0 لاندې د جلا اجرا وړ په توګه ویشل شوی. هم وګورئ [NOTICE](NOTICE) · [د دریمې ډلې جوازونه](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage یوه خپلواکه ټولنه پروژه ده او د انتروپیک سره تړاو نلري.
 

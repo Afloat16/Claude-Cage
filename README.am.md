@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[የፕሮጀክት ድር ጣቢያ](https://lee-xeo.github.io/Claude-Cage/) · [መተግበሪያውን ያውርዱ](https://lee-xeo.github.io/Claude-Cage/am/#download) · [በመጀመር ላይ](docs/getting-started.md) · [የሚጠየቁ ጥያቄዎች](docs/troubleshooting.md) · [አዋጡ](CONTRIBUTING.md) · [የአጠቃቀም መመሪያ (በቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[የፕሮጀክት ድር ጣቢያ](https://lee-xeo.github.io/Claude-Cage/) · [መተግበሪያውን ያውርዱ](https://lee-xeo.github.io/Claude-Cage/am/#download) · [በመጀመር ላይ](docs/getting-started.md) · [የሚጠየቁ ጥያቄዎች](docs/troubleshooting.md) · [የአጠቃቀም መመሪያ (በቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS እና የተፈረሙ Windows ስሪቶች በተመረጠው ፕሮክ�
 - በነባሪ የውጭ አውታረ መረብ IPv4 TCP ይደግፋል፣ DNS በዚያው ፕሮክሲ ይላካል። የሕዝብ UDP፣ IPv6፣ ICMP እና ቀጥታ ወደ አስተናጋጅ ወይም LAN ግንኙነት የተገደቡ ናቸው። Tailscale በግልጽ ሲነቃ የመሣሪያ ግንኙነት የግል አውታረ መረቡን ፈቃድ ይከተላል።
 - የአውታረ መረብ ፍተሻዎች የአሁኑን ውቅር እና የናሙና ማስረጃዎችን ያሳያሉ። መለያ የመድረክ ገደቦችን እንደሚያስወግድ ዋስትና ሊሰጡ አይችሉም እና የተሟላ የቨርችዋል ሴኪዩሪቲ ኦዲትን አይተኩም።
 
-ለዝርዝር መረጃ ይመልከቱ [የአውታረ መረብ እና የውሂብ ገደቦች](docs/getting-started.md#网络与数据边界), [የአውታረ መረብ ቼኮች ንድፍ](docs/design/network-checks.md) እና [አብሮ የተሰራ የአውታረ መረብ ተኪ ንድፍ](docs/design/managed-proxy.md).
+ለዝርዝር መረጃ ይመልከቱ [የአውታረ መረብ እና የውሂብ ገደቦች](docs/getting-started.md#网络与数据边界).
 
 ## ሰነዶች እና አስተዋጽዖዎች
 
@@ -106,8 +106,6 @@ macOS እና የተፈረሙ Windows ስሪቶች በተመረጠው ፕሮክ�
 | የአውታረ መረብ ተኪ ጫን፣ አዋቅር እና የመጀመሪያህን ፕሮጀክት ክፈት | [በመጀመር ላይ](docs/getting-started.md) |
 | ማውረዶችን፣ ጅምርን፣ ግንኙነትን እና መግባትን መላ ፈልግ | [የሚጠየቁ ጥያቄዎች እና መልሶ ማግኛ](docs/troubleshooting.md) |
 | የቁልፍ ሰሌዳ መቆጣጠሪያዎችን፣ መልክን፣ የውሂብን ጽናት እና የመውጣት ባህሪን ተማር | [ዕለታዊ አጠቃቀም](docs/getting-started.md#日常使用) |
-| ከምንጩ ይገንቡ ወይም ማሻሻያዎችን ያበረክቱ | [የአስተዋጽኦ መመሪያ](CONTRIBUTING.md) |
-| የሞዱል ኃላፊነቶችን እና የአውታረ መረብ ገደቦችን ይረዱ | [የሥራ ቦታ ንድፍ](docs/design/workbench.md) |
 | ሊባዛ የሚችል ጉዳይ ሪፖርት ያድርጉ | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 ፕሮጀክቱ በፍጥነት እያደገ ነው. ግብረመልስ ለማጋራት የማህበረሰብ ቡድኑን ይቀላቀሉ; የማህበረሰብ ጠባቂዎች እንኳን ደህና መጡ።
@@ -118,9 +116,9 @@ macOS እና የተፈረሙ Windows ስሪቶች በተመረጠው ፕሮክ�
 
 ## አመጣጥ እና ፈቃድ
 
-Cage የመጣው ከ [agent-vm](https://github.com/sylvinus/agent-vm) ; የላይኛው መነሻ መስመር ነው። `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+Cage የመጣው ከ [agent-vm](https://github.com/sylvinus/agent-vm).
 
-የፕሮጀክቱ ዋና ፈቃድ ነው። [MIT](LICENSE). የተጠቀለሉ ክፍሎች የየራሳቸውን ፈቃዶች እንደያዙ ይቆያሉ። ሚሆሞ በGPL-3.0 ስር እንደ የተለየ ተፈጻሚነት ይሰራጫል። እንዲሁም ይመልከቱ [NOTICE](NOTICE), [የሶስተኛ ወገን ፍቃዶች](THIRD_PARTY_LICENSES), [የሶስተኛ ወገን ምንጮች](third_party/SOURCES) እና [noVNC ፕሮቬንሽን](ui/vendor/novnc/README.cage.md). የላይኛው ፕሮጀክት መግለጫ በ ውስጥ ተጠብቆ ይቆያል [ወደላይ README](docs/agent-vm-upstream.md).
+የፕሮጀክቱ ዋና ፈቃድ ነው። [MIT](LICENSE). የተጠቀለሉ ክፍሎች የየራሳቸውን ፈቃዶች እንደያዙ ይቆያሉ። ሚሆሞ በGPL-3.0 ስር እንደ የተለየ ተፈጻሚነት ይሰራጫል። እንዲሁም ይመልከቱ [NOTICE](NOTICE) · [የሶስተኛ ወገን ፍቃዶች](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage ራሱን የቻለ የማህበረሰብ ፕሮጀክት ነው እና ከAnthropic ጋር ግንኙነት የለውም።
 

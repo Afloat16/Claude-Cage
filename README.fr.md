@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Télécharger l’application](https://lee-xeo.github.io/Claude-Cage/fr/#download) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Contribuer](CONTRIBUTING.md) · [Guide d’utilisation (chinois)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[Site Web du projet](https://lee-xeo.github.io/Claude-Cage/) · [Télécharger l’application](https://lee-xeo.github.io/Claude-Cage/fr/#download) · [Commencer](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [Guide d’utilisation (chinois)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ Cliquez sur « Ouvrir le projet » pour sélectionner un dossier sur votre ordin
 - Par défaut, les sorties publiques prennent en charge IPv4 TCP et DNS passe par le même proxy. UDP, IPv6, ICMP publics et les accès directs à l’hôte ou au réseau local sont limités. En activant Tailscale, les accès aux appareils suivent les règles du réseau privé.
 - Les vérifications du réseau montrent la configuration actuelle et des échantillons de preuves. Ils ne peuvent pas garantir qu’un compte évitera les restrictions de la plateforme et ne remplacent pas un audit complet de sécurité de la virtualisation.
 
-Pour plus de détails, voir [Limites du réseau et des données](docs/getting-started.md#网络与数据边界), [Conception de contrôles de réseau](docs/design/network-checks.md) et [Conception de proxy réseau intégré](docs/design/managed-proxy.md).
+Pour plus de détails, voir [Limites du réseau et des données](docs/getting-started.md#网络与数据边界).
 
 ## Documentation et contributions
 
@@ -106,8 +106,6 @@ Pour l'index complet, voir [Index des documents](docs/README.md).
 | Installez, configurez un proxy réseau et ouvrez votre premier projet | [Commencer](docs/getting-started.md) |
 | Dépanner les téléchargements, le démarrage, la connectivité et la connexion | [FAQ et récupération](docs/troubleshooting.md) |
 | Apprenez les commandes du clavier, l'apparence, la persistance des données et le comportement de sortie | [Utilisation quotidienne](docs/getting-started.md#日常使用) |
-| Construire à partir des sources ou apporter des améliorations | [Guide de contribution](CONTRIBUTING.md) |
-| Comprendre les responsabilités du module et les contraintes du réseau | [Conception d'établi](docs/design/workbench.md) |
 | Signaler un problème reproductible | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 Le projet évolue rapidement. Rejoignez le groupe communautaire pour partager vos commentaires ; les responsables de la communauté sont les bienvenus.
@@ -118,9 +116,9 @@ Le projet évolue rapidement. Rejoignez le groupe communautaire pour partager vo
 
 ## Origines et licences
 
-La cage est dérivée de [agent-vm](https://github.com/sylvinus/agent-vm) ; la ligne de base en amont est `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+La cage est dérivée de [agent-vm](https://github.com/sylvinus/agent-vm).
 
-La licence principale du projet est [MIT](LICENSE). Les composants groupés conservent leurs licences respectives. Mihomo est distribué sous forme d'exécutable distinct sous GPL-3.0. Voir aussi [NOTICE](NOTICE), [Licences tierces](THIRD_PARTY_LICENSES), [Sources tierces](third_party/SOURCES) et [provenance noVNC](ui/vendor/novnc/README.cage.md). La description du projet en amont est conservée dans le [README en amont](docs/agent-vm-upstream.md).
+La licence principale du projet est [MIT](LICENSE). Les composants groupés conservent leurs licences respectives. Mihomo est distribué sous forme d'exécutable distinct sous GPL-3.0. Voir aussi [NOTICE](NOTICE) · [Licences tierces](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage est un projet communautaire indépendant et n'est pas affilié à Anthropic.
 

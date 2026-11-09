@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[프로젝트 웹사이트](https://lee-xeo.github.io/Claude-Cage/) · [앱 다운로드](https://lee-xeo.github.io/Claude-Cage/ko/#download) · [시작하기](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [기여](CONTRIBUTING.md) · [사용 문서 (중국어)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[프로젝트 웹사이트](https://lee-xeo.github.io/Claude-Cage/) · [앱 다운로드](https://lee-xeo.github.io/Claude-Cage/ko/#download) · [시작하기](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [사용 문서 (중국어)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS와 서명된 Windows 버전은 선택한 프록시를 통해 업데이트�
 - 기본 인터넷 아웃바운드는 IPv4 TCP를 지원하며 DNS는 같은 프록시를 사용합니다. 인터넷 UDP, IPv6, ICMP와 호스트·LAN 직접 연결은 제한됩니다. Tailscale을 직접 활성화하면 사설망 권한에 따라 기기에 연결할 수 있습니다.
 - 네트워크 검사에는 현재 구성과 샘플링된 증거가 표시됩니다. 계정이 플랫폼 제한을 피할 것이라고 보장할 수 없으며 완전한 가상화 보안 감사를 대체하지 않습니다.
 
-자세한 내용은 다음을 참조하세요. [네트워크 및 데이터 경계](docs/getting-started.md#网络与数据边界), [네트워크 검사 디자인](docs/design/network-checks.md) 그리고 [내장형 네트워크 프록시 설계](docs/design/managed-proxy.md).
+자세한 내용은 다음을 참조하세요. [네트워크 및 데이터 경계](docs/getting-started.md#网络与数据边界).
 
 ## 문서화 및 기여
 
@@ -106,8 +106,6 @@ macOS와 서명된 Windows 버전은 선택한 프록시를 통해 업데이트�
 | 네트워크 프록시 설치, 구성 및 첫 번째 프로젝트 열기 | [시작하기](docs/getting-started.md) |
 | 다운로드, 시작, 연결 및 로그인 문제 해결 | [FAQ 및 복구](docs/troubleshooting.md) |
 | 키보드 컨트롤, 모양, 데이터 지속성 및 종료 동작 알아보기 | [매일 사용](docs/getting-started.md#日常使用) |
-| 소스에서 빌드하거나 개선에 기여 | [투고 가이드](CONTRIBUTING.md) |
-| 모듈 책임 및 네트워크 제약 사항 이해 | [작업대 디자인](docs/design/workbench.md) |
 | 재현 가능한 문제 보고 | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 이 프로젝트는 빠르게 발전하고 있습니다. 피드백을 공유하려면 커뮤니티 그룹에 가입하세요. 커뮤니티 관리자를 환영합니다.
@@ -118,9 +116,9 @@ macOS와 서명된 Windows 버전은 선택한 프록시를 통해 업데이트�
 
 ## 원산지 및 라이선스
 
-케이지는 다음에서 파생됩니다. [agent-vm](https://github.com/sylvinus/agent-vm) ; 업스트림 기준선은 다음과 같습니다. `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+케이지는 다음에서 파생됩니다. [agent-vm](https://github.com/sylvinus/agent-vm).
 
-프로젝트의 기본 라이센스는 다음과 같습니다. [MIT](LICENSE). 번들 구성 요소는 해당 라이센스를 유지합니다. Mihomo는 GPL-3.0에 따라 별도의 실행 파일로 배포됩니다. 또한 참조하십시오 [NOTICE](NOTICE), [타사 라이선스](THIRD_PARTY_LICENSES), [제3자 소스](third_party/SOURCES) 그리고 [noVNC 출처](ui/vendor/novnc/README.cage.md). 업스트림 프로젝트의 설명은 [업스트림 읽어보기](docs/agent-vm-upstream.md).
+프로젝트의 기본 라이센스는 다음과 같습니다. [MIT](LICENSE). 번들 구성 요소는 해당 라이센스를 유지합니다. Mihomo는 GPL-3.0에 따라 별도의 실행 파일로 배포됩니다. 또한 참조하십시오 [NOTICE](NOTICE) · [타사 라이선스](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage는 독립적인 커뮤니티 프로젝트이며 Anthropic과 관련이 없습니다.
 

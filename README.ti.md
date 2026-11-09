@@ -8,7 +8,7 @@
 
 [![Release](https://img.shields.io/github/v/release/Lee-xeo/Claude-Cage?include_prereleases)](https://github.com/Lee-xeo/Claude-Cage/releases) [![CI](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Lee-xeo/Claude-Cage/actions/workflows/ci.yml) [![MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**[መርበብ ሓበሬታ ፕሮጀክት](https://lee-xeo.github.io/Claude-Cage/) · [ነቲ መተግበሪ ኣውርድ](https://lee-xeo.github.io/Claude-Cage/ti/#download) · [ምጅማር](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [ኣበርክቶ ግበሩ](CONTRIBUTING.md) · [መምርሒ ኣጠቓቕማ (ብቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
+**[መርበብ ሓበሬታ ፕሮጀክት](https://lee-xeo.github.io/Claude-Cage/) · [ነቲ መተግበሪ ኣውርድ](https://lee-xeo.github.io/Claude-Cage/ti/#download) · [ምጅማር](docs/getting-started.md) · [FAQ](docs/troubleshooting.md) · [መምርሒ ኣጠቓቕማ (ብቻይንኛ)](https://lee-xeo.github.io/Claude-Cage/docs/)**
 
 [简体中文](README.md) · [繁體中文](README.zh-TW.md) · [Русский](README.ru.md) · [العربية](README.ar.md) · [فارسی](README.fa.md) · [한국어](README.ko.md) · [Español](README.es.md) · [မြန်မာဘာသာ](README.my.md) · [Беларуская](README.be.md) · [پښتو](README.ps.md) · [دری](README.prs.md) · [አማርኛ](README.am.md) · [Soomaali](README.so.md) · [ትግርኛ](README.ti.md) · [Français](README.fr.md)
 
@@ -94,7 +94,7 @@ macOS እና ዝተፈረሙ Windows ስሪቶች ብዝተመርጸ ፕሮክ�
 - ብነባሪ ህዝባዊ ወጻኢ ግንኙነት IPv4 TCP ይድግፍ፣ DNS ብተመሳሳሊ ፕሮክሲ ይሕለፍ። ህዝባዊ UDP፣ IPv6፣ ICMP እና ቀጥታ ናብ ኣአንጋዲ ወይ LAN ግንኙነት ውሱናት እዮም። Tailscale ብግልጺ ምስ ኣንቃሕካ፣ ናይ መሳርሒ ግንኙነት ናይ ውልቃዊ መርበብ ፍቓድ ይኽተል።
 - ኔትወርክ ምፍታሽ ህሉው ውቅርን ናሙና ዝተወሰደ መርትዖን የርኢ። ሓደ ኣካውንት ካብ ናይ መድረኽ ገደባት ከም ዝርሕቕ ውሕስነት ክህቡ ኣይክእሉን እዮም፣ ምሉእ ቨርቹዋላይዜሽን ድሕነት ኦዲት ድማ ኣይትክኡን እዮም።
 
-ንዝርዝር ሓበሬታ ርአ [ዶባት ኔትወርክን ዳታን](docs/getting-started.md#网络与数据边界), [ኔትወርክ ዲዛይን ይምርምር](docs/design/network-checks.md) ከምኡ’ውን... [ኣብ ውሽጡ ዝተሃንጸ ዲዛይን ፕሮክሲ ኔትወርክ](docs/design/managed-proxy.md).
+ንዝርዝር ሓበሬታ ርአ [ዶባት ኔትወርክን ዳታን](docs/getting-started.md#网络与数据边界).
 
 ## ሰነዳትን ኣበርክቶታትን
 
@@ -106,8 +106,6 @@ macOS እና ዝተፈረሙ Windows ስሪቶች ብዝተመርጸ ፕሮክ�
 | ኔትወርክ ፕሮክሲ ምትካል፡ ምውቃር፡ ናይ መጀመርታ ፕሮጀክትካ ድማ ክፈት | [ምጅማር](docs/getting-started.md) |
 | ናይ ምውራድ፣ ምጅማር፣ ምትእስሳርን ምእታውን ጸገማት ምፍታሕ | [FAQን ምሕዋይን](docs/troubleshooting.md) |
 | ቁጽጽር ቁልፊ ሰሌዳ፡ መልክዕ፡ ጽንዓት ዳታን ናይ ምውጻእ ባህሪን ተማሃር | [መዓልታዊ ኣጠቓቕማ](docs/getting-started.md#日常使用) |
-| ካብ ምንጪ ምህናጽ ወይ ምምሕያሻት ኣበርክቶ | [መምርሒ ኣበርክቶ](CONTRIBUTING.md) |
-| ናይ ሞዱል ሓላፍነትን ናይ መርበብ ድሩትነትን ምርዳእ | [ዲዛይን ናይ ስራሕ መንበር](docs/design/workbench.md) |
 | ክባዛሕ ዝኽእል ጉዳይ ሪፖርት ግበሩ | [GitHub Issues](https://github.com/Lee-xeo/Claude-Cage/issues) |
 
 እቲ ፕሮጀክት ብቕልጡፍ ይምዕብል ኣሎ። ርእይቶ ንምክፋል ኣብቲ ናይ ማሕበረሰብ ጉጅለ ​​ተጸንበሩ፤ ሕብረተሰብ ዝሕልዉ ሰባት ድሉዋት እዮም።
@@ -118,9 +116,9 @@ macOS እና ዝተፈረሙ Windows ስሪቶች ብዝተመርጸ ፕሮክ�
 
 ## መበቆልን ፍቓድን ምሃብ
 
-ጓጓ ካብ ዝመጸ እዩ። [agent-vm](https://github.com/sylvinus/agent-vm) ; እቲ ላዕለዋይ መበገሲ መስመር እዩ። `652688aae92c35ce536b9be52262e1cc5ec6e03a`.
+ጓጓ ካብ ዝመጸ እዩ። [agent-vm](https://github.com/sylvinus/agent-vm).
 
-እቲ ፕሮጀክት ቀንዲ ፍቓድ... [MIT](LICENSE). ዝተጠርነፉ ኣካላት በብወገኖም ፍቓድ ይዕቅቡ። ሚሆሞ ኣብ ትሕቲ GPL-3.0 ከም ፍሉይ ፈጻሚ ይዝርጋሕ። ከምኡ ውን ርአ [NOTICE](NOTICE), [ናይ ሳልሳይ ወገን ፍቓድ](THIRD_PARTY_LICENSES), [ሳልሳይ ወገን ምንጭታት](third_party/SOURCES) ከምኡ’ውን... [noVNC መበቆል እዩ።](ui/vendor/novnc/README.cage.md). እቲ ላዕለዋይ ፕሮጀክት ዝሃቦ መግለጺ ኣብቲ... [ላዕለዋይ ጽፍሒ README](docs/agent-vm-upstream.md).
+እቲ ፕሮጀክት ቀንዲ ፍቓድ... [MIT](LICENSE). ዝተጠርነፉ ኣካላት በብወገኖም ፍቓድ ይዕቅቡ። ሚሆሞ ኣብ ትሕቲ GPL-3.0 ከም ፍሉይ ፈጻሚ ይዝርጋሕ። ከምኡ ውን ርአ [NOTICE](NOTICE) · [ናይ ሳልሳይ ወገን ፍቓድ](THIRD_PARTY_LICENSES) · [noVNC](ui/vendor/novnc/LICENSE.txt)。
 
 Cage ናጻ ማሕበረሰባዊ ፕሮጀክት ኮይኑ ምስ ኣንትሮፒክ ርክብ የብሉን።
 
