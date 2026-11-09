@@ -59,6 +59,7 @@ export function SettingsPanel({
   const [localKeyboard, setLocalKeyboard] = useState(() => clientKeyboard(current.keyboard));
   const [accountDirty, setAccountDirty] = useState(false);
   const [proxyDirty, setProxyDirty] = useState(false);
+  const [resourceDirty, setResourceDirty] = useState(false);
   const [draft, setDraft] = useState({ ...current }),
     [section, setSection] = useState(initialSection),
     [probe, setProbe] = useState(null),
@@ -106,7 +107,7 @@ export function SettingsPanel({
       return;
     }
     if (
-      (!changed && !accountDirty && !proxyDirty) ||
+      (!changed && !accountDirty && !proxyDirty && !resourceDirty) ||
       (await onConfirm({
         title: "放弃尚未保存的修改？",
         body: "当前环境不会改变。关闭后会丢弃这次表单修改。",
@@ -599,7 +600,7 @@ export function SettingsPanel({
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
                 <EnvironmentVersions status={status} onConfirm={onConfirm} />
-                <ResourceSettings status={status} onConfirm={onConfirm} />
+                <ResourceSettings status={status} onConfirm={onConfirm} onDirtyChange={setResourceDirty} />
  <DiagnosticSettings />
                 {status.can_restore && (
                   <button
@@ -653,7 +654,7 @@ export function SettingsPanel({
             </div>
           )}
         </div>
-        {(!["appearance", "browser", "account", "claude-accounts", "vault", "mobile", "archived-sessions"].includes(section) || changed) && (
+        {(!["appearance", "browser", "account", "claude-accounts", "vault", "mobile", "archived-sessions", "project"].includes(section) || changed) && (
           <footer className="settings-footer">
             {" "}
             <>

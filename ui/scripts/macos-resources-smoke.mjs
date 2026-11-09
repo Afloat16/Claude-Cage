@@ -48,6 +48,7 @@ try {
   await panel.getByText("已保存，重启环境后生效。", { exact: true }).waitFor();
   assert.deepEqual(requests[0].allocation, { automatic: false, memory_gib: 6, cpus: 3 });
   failSave = true;
+  await panel.getByLabel("内存上限（GiB）", { exact: true }).fill("8");
   await panel.getByRole("button", { name: "保存资源配置", exact: true }).click();
   const error = panel.getByRole("alert").filter({ hasText: "资源配置保存失败" });
   await error.waitFor();
@@ -58,11 +59,12 @@ try {
   assert.ok(await error.isVisible());
   failSave = false;
   await panel.getByRole("button", { name: "重启并应用已保存配置", exact: true }).click();
-  await page.getByRole("dialog", { name: "重启并应用已保存的资源配置？", exact: true }).getByRole("button", { name: "保存后重启", exact: true }).click();
+  await page.getByRole("dialog", { name: "重启并应用已保存的资源配置？", exact: true }).getByRole("button", { name: "重启并应用", exact: true }).click();
   await error.waitFor({ state: "hidden" });
   assert.deepEqual(requests.at(-1), {});
   await panel.getByRole("heading", { name: "计算资源", exact: true }).scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(output, "macos-resources.png"), animations: "disabled" });
+  await panel.getByText("资源统计说明", { exact: true }).click();
   await panel.getByText(/内存估算使用客机物理容量/).scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(output, "macos-resource-observation.png"), animations: "disabled" });
   assert.deepEqual(errors, []);
