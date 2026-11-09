@@ -50,7 +50,7 @@ try {
   const before = await help.boundingBox();
   await picker.click();
   const expanded = await help.boundingBox();
-  assert.ok(expanded.y > before.y + 40, "options must push the following content down");
+  assert.ok(Math.abs(expanded.y - before.y) < 1, "floating options must not move the following content");
   await page.keyboard.press("Escape");
   assert.ok(Math.abs((await help.boundingBox()).y - before.y) < 1, "closing options restores the layout");
   await picker.click();

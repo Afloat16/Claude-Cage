@@ -91,13 +91,14 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
   return (
     <div className="guest-system-picker">
       <span>客户机系统</span>
-      {view.system || view.linux_systems?.length ? <InlineSelect aria-label="客户机系统" value={system.clone ? "host" : os} disabled={system.pending}
+      <InlineSelect aria-label="客户机系统" value={system.clone ? "host" : os} disabled={system.pending}
         onValueChange={(value) => onChange({ guest_system: value === "host" ? view.system : value, clone: value === "host", clone_key: "", clone_ready: false, media: "", sha256: "", editor_terms: false })}>
         {Boolean(view.system) && <option value="host" disabled={!view.available}>自动匹配本机系统版本{view.available ? "" : "（暂不可用）"}</option>}
         <option value="debian-13">Debian 13</option>
-        {(view.linux_systems || []).map((id) => <option key={id} value={id}>{names[id]}</option>)}
-        {["macos", "windows-11"].includes(view.system) && <option value={view.system} disabled={!view.available}>{names[view.system]}{view.available ? "" : "（暂不可用）"}</option>}
-      </InlineSelect> : <strong>Debian 13</strong>}
+        <option value="ubuntu-22.04" disabled={!view.linux_systems?.includes("ubuntu-22.04")}>Ubuntu 22.04{view.linux_systems?.includes("ubuntu-22.04") ? "" : "（此构建暂不可用）"}</option>
+        <option value="macos" disabled={view.system !== "macos" || !view.available}>macOS{view.system === "macos" ? view.available ? "" : "（暂不可用）" : "（需要 Apple Silicon Mac）"}</option>
+        <option value="windows-11" disabled={view.system !== "windows-11" || !view.available}>Windows 11{view.system === "windows-11" ? view.available ? "" : "（暂不可用）" : "（需要 Windows 11 与 Hyper-V）"}</option>
+      </InlineSelect>
       {system.clone && !system.activate && (deferMatch ? <small className="guest-install-fields">Cage 会检测本机系统版本。配置代理后匹配官方镜像，并显示下载量与空间要求。</small> : <HostCloneSummary pending={system.pending} onChange={onChange} />)}
       {!system.clone && os !== "debian-13" && !system.activate && <div className="guest-install-fields">
         {os === "ubuntu-22.04" ? <>

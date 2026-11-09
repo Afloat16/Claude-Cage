@@ -6,7 +6,7 @@ import { smokeCaptureDirectory } from "./smoke-captures.mjs";
 const require = createRequire(import.meta.url);
 const engines = require(process.env.CAGE_PLAYWRIGHT_MODULE || "playwright");
 const engine = process.env.CAGE_TEST_BROWSER || "chromium";
-const browser = await engines[engine].launch();
+const browser = await engines[engine].launch({executablePath:process.env.CAGE_TEST_BROWSER_PATH});
 const output = await smokeCaptureDirectory("mobile-inline-select");
 const origin = process.env.CAGE_UI_URL || "http://127.0.0.1:5399";
 const errors = [];
@@ -38,7 +38,7 @@ try {
   const create = page.getByRole("button", { name: "新建会话", exact: true });
   const collapsed = await create.boundingBox();
   await picker.press("Enter");
-  assert.ok((await create.boundingBox()).y > collapsed.y);
+  assert.ok(Math.abs((await create.boundingBox()).y-collapsed.y)<1);
   await picker.press("End");
   await picker.press("Enter");
   await picker.getByText("gamma", { exact: true }).waitFor();
@@ -49,9 +49,10 @@ try {
   assert.equal(await picker.getAttribute("aria-expanded"), "false");
   assert.equal((await create.boundingBox()).y, collapsed.y);
   await picker.tap();
+  await picker.tap();
   await create.tap();
   await page.getByRole("textbox", { name: "消息", exact: true }).waitFor();
-  assert.equal(creations, 1, "one tap after an expanded project selector must create exactly one session");
+  assert.equal(creations, 1, "one tap after closing the project selector must create exactly one session");
   assert.equal(sessions[0].workspace, "/work/gamma");
   await page.screenshot({ path: join(output, `${engine}-new-session.png`) });
   await page.close();
@@ -86,12 +87,13 @@ try {
   await phone.getByRole("button", { name: "收藏夹", exact: true }).tap();
   await phone.getByRole("button", { name: "收藏此页", exact: true }).tap();
   await phone.getByRole("combobox", { name: "保存到", exact: true }).tap();
+  await phone.getByRole("combobox", { name: "保存到", exact: true }).tap();
   await phone.getByRole("button", { name: "保存收藏", exact: true }).tap();
   await phone.getByRole("button", { name: "取消此页收藏", exact: true }).waitFor();
-  assert.equal(writes, 1, "one tap after the expanded folder selector must save exactly once");
+  assert.equal(writes, 1, "one tap after closing the folder selector must save exactly once");
   await phone.screenshot({ path: join(output, `${engine}-saved-favorite.png`) });
   assert.deepEqual(errors, []);
-  console.log(`${engine}: inline layout, keyboard selection, Escape, focus restoration and first-tap session/favorite mutations passed.`);
+  console.log(`${engine}: floating layout, keyboard selection, Escape, focus restoration and session/favorite mutations passed.`);
 } finally {
   await browser.close();
 }

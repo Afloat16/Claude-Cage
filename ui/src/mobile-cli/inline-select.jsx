@@ -1,11 +1,14 @@
 import React, { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
+import { useSelectPopup } from "../select-popup";
 
-// Options follow the trigger in normal flow and keep the combobox focused.
+// The floating options keep the combobox focused without shifting the page.
 export function InlineSelect({ label, value, options, onChange, onLongPress, footer, disabled, icon }) {
   const id = useId();
   const root = useRef(null);
   const trigger = useRef(null);
+  const list = useRef(null);
   const hold = useRef(null);
   const held = useRef(false);
   const origin = useRef(null);
@@ -13,11 +16,11 @@ export function InlineSelect({ label, value, options, onChange, onLongPress, foo
   const [cursor, setCursor] = useState(value);
   const selected = options.find(item => item.value === value);
   const visible = open && !disabled;
+  const position = useSelectPopup(visible, trigger, list, options.length);
   const cancelHold = () => { clearTimeout(hold.current); hold.current = null; };
   useEffect(() => {
     if (!visible) return;
-    const outside = event => { if (!root.current.contains(event.target)) setOpen(false); };
-    // Let the outside click reach its target before the inline list reflows.
+    const outside = event => { if (!root.current.contains(event.target) && !list.current?.contains(event.target)) setOpen(false); };
     document.addEventListener("click", outside, true);
     return () => document.removeEventListener("click", outside, true);
   }, [visible]);
@@ -80,7 +83,7 @@ export function InlineSelect({ label, value, options, onChange, onLongPress, foo
       onClick={() => {if (held.current) {held.current = false; return;} setCursor(value); setOpen(!visible);}}>
       {icon}<span>{selected?.label || label}</span><ChevronDown size={14} aria-hidden="true" />
     </button>
-    {visible && <div className="inline-select-popover">
+    {visible && createPortal(<div className="inline-select-popover" ref={list} style={position}>
       <div className="inline-select-options" role="listbox" id={id} aria-label={label + "选项"}>
         {options.map((item, index) => <div key={item.value} role="option" id={id + "-" + index}
           aria-selected={item.value === value} data-active={item.value === cursor || undefined}
@@ -90,6 +93,6 @@ export function InlineSelect({ label, value, options, onChange, onLongPress, foo
         </div>)}
       </div>
       {footer && <p className="inline-select-hint" id={id + "-hint"}>{footer}</p>}
-    </div>}
+    </div>, document.body)}
   </div>;
 }

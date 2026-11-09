@@ -31,12 +31,12 @@ try {
   await country.press("Escape");
   const before = await layoutTop(country);
   await picker.click();
-  const options = picker.locator("..").getByRole("listbox");
+  const options = page.getByRole("listbox");
   await options.waitFor();
   const expanded = await layoutTop(country);
   const list = await options.boundingBox();
-  assert.ok(expanded > before, "expanded options must move the following fields down");
-  assert.ok((await layoutTop(options)) + list.height <= expanded, "options must not cover the next control");
+  assert.ok(Math.abs(expanded - before) < 1, "floating options must not move the following fields");
+  assert.ok(list.height > 0, "options must remain visible");
   await picker.press("ArrowDown");
   await picker.press("Enter");
   await page.getByLabel("允许的城市", { exact: true }).waitFor({ state: "hidden" });

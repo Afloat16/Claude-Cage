@@ -103,10 +103,10 @@ try {
   await group.waitFor();
   const before = await group.boundingBox();
   await projectFilter.click();
-  const options = panel.getByRole("listbox",{name:"项目筛选选项"});
+  const options = page.getByRole("listbox",{name:"项目筛选选项"});
   const opened = await options.boundingBox();
   const shifted = await group.boundingBox();
-  assert.ok(shifted.y > before.y + 20 && opened.y + opened.height <= shifted.y,"project filter covered content");
+  assert.ok(Math.abs(shifted.y-before.y)<1 && opened.height>0,"floating project filter moved content");
   await projectFilter.press("Escape");
   assert.ok(Math.abs((await group.boundingBox()).y - before.y) < 2,"filter did not restore layout");
   await projectFilter.press("End"); await projectFilter.press("Enter");
@@ -114,7 +114,7 @@ try {
   assert.equal(await panel.getByRole("heading",{name:"电脑保留的历史",exact:true}).count(),0);
   await projectFilter.press("Home"); await projectFilter.press("Enter");
   const filter = panel.getByRole("combobox",{name:"会话筛选"});
-  await filter.click(); await panel.getByRole("option",{name:"已置顶",exact:true}).click();
+  await filter.click(); await page.getByRole("option",{name:"已置顶",exact:true}).click();
   assert.equal(await panel.getByRole("article").count(),1);
   await filter.press("Home"); await filter.press("Enter");
   const search = panel.getByRole("searchbox",{name:"搜索已归档的会话"});
@@ -143,7 +143,7 @@ try {
   const phoneFilter = phone.getByRole("combobox",{name:"项目筛选"});
   await phoneFilter.click();
   const phoneOptions = await phone.getByRole("listbox",{name:"项目筛选选项"}).boundingBox();
-  assert.ok((await phoneGroup.boundingBox()).y >= phoneOptions.y + phoneOptions.height,"phone filter covered content");
+  assert.ok(Math.abs((await phoneGroup.boundingBox()).y-phoneBefore.y)<1 && phoneOptions.height>0,"floating phone filter moved content");
   await phoneFilter.press("Escape");
   assert.ok(Math.abs((await phoneGroup.boundingBox()).y-phoneBefore.y)<2);
   await phone.getByRole("heading",{name:"已归档会话",exact:true}).click();

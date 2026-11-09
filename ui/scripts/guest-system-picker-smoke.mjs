@@ -22,10 +22,10 @@ for (const [platform, id] of [["darwin","macos"], ["windows","windows-11"], ["li
           const storage = page.getByRole("button",{name:"选择环境存储位置"});
           const initialY = (await storage.boundingBox()).y;
           await picker.click();
-          const option = region.getByRole("option").last();
+          const option = page.getByRole("option").last();
           assert.equal(await option.getAttribute("aria-disabled"),"true");
           const position = await option.boundingBox();
-          assert.ok((await storage.boundingBox()).y >= position.y + position.height);
+          assert.ok(Math.abs((await storage.boundingBox()).y - initialY) < 1 && position.height > 0);
           await picker.press("Escape");
           assert.ok(Math.abs((await storage.boundingBox()).y - initialY) <= 1, "collapsed picker restores the following control");
         }

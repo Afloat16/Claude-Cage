@@ -28,7 +28,7 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     await option.waitFor();
     const box = await option.boundingBox();
     const expanded = await storage.boundingBox();
-    assert.ok(expanded.y > initial.y && box.y + box.height <= expanded.y, "inline options overlap the next control");
+    assert.ok(Math.abs(expanded.y - initial.y) < 1 && box.height > 0, "floating options must not move the next control");
     await picker.press("Escape");
     assert.equal((await storage.boundingBox()).y, initial.y);
     await picker.press("Enter");

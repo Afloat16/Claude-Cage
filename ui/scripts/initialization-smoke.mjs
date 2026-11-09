@@ -13,7 +13,7 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     beforeNavigate: async (page, state) => {
       state.status.local_vm_storage = true;
       await page.route("**/api/environment/storage", route => route.fulfill({ json: { directory: "/preview/cage-state", has_environment: false } }));
-      await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system } }));
+      await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system, linux_systems: ["ubuntu-22.04"] } }));
       await page.route("**/api/environment/guest-systems/clone", route => route.fulfill({ json: { key: "matched-image", enough_space: true, minimum_free_gib: 51, free_gib: 120, download_bytes: 19769944180, plan: { host: { system, version: system === "windows-11" ? "25H2" : "26.5", build: "123", edition: "Professional", language: "zh-CN" }, version: "26.5", build: "456", bytes: 19769944180 } } }));
       await page.route("**/api/start", route => {
         starts++;
@@ -36,14 +36,21 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
   try {
     assert.equal(await page.getByRole("complementary", { name: "项目与终端" }).count(), 0);
     const picker = page.getByRole("combobox", { name: "客户机系统" });
-    const storage = page.getByRole("region", { name: "本机环境存储" });
-    await storage.getByText("/preview/cage-state").waitFor();
+    const storage = page.getByRole("region", { name: "环境存储目录" });
+    await storage.getByLabel("存储目录", { exact: true }).waitFor();
+    assert.equal(await storage.getByLabel("存储目录", { exact: true }).inputValue(), "/preview/cage-state");
+    assert.equal(await storage.getByText("当前环境目录", { exact: true }).count(), 0);
+    assert.equal(await storage.getByText("新存储位置", { exact: true }).count(), 0);
     const before = await storage.boundingBox();
     await picker.click();
     const option = page.getByRole("option", { name: "自动匹配本机系统版本", exact: true });
     await option.waitFor();
+    for (const name of [/^Debian/, /^Ubuntu/, /^macOS/, /^Windows/]) assert.equal(await page.getByRole("option", { name }).count(), 1);
     const expanded = await storage.boundingBox();
-    assert.ok(expanded.y > before.y);
+    assert.ok(Math.abs(expanded.y - before.y) < 1, "floating system choices must not move storage");
+    const menu = await page.getByRole("listbox").boundingBox();
+    assert.ok(menu.x >= 0 && menu.y >= 0 && menu.x + menu.width <= 1280 && menu.y + menu.height <= 850, "floating menu must stay inside the viewport");
+    if (evidence) await page.screenshot({ path: `${evidence}/${platform}-systems-floating.png`, fullPage: true });
     await picker.press("Home"); await picker.press("Enter");
     await page.getByText("Cage 会检测本机系统版本。配置代理后匹配官方镜像，并显示下载量与空间要求。").waitFor();
     if (system === "windows-11") await page.getByRole("checkbox").check();
@@ -85,6 +92,44 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     assert.deepEqual(errors, []);
     console.log(`PASS ${platform}: independent initialization, inline keyboard selection, back navigation, progress, refresh, retry, completion gate and reopen`);
   } finally { await browser.close(); }
+}
+
+{
+  let location = { directory: "/preview/default-state", has_environment: false }, writes = 0, fail = true;
+  const f = await createWorkbench({ initialization: { required: true, tracked: true }, beforeNavigate: async (page, state) => {
+    state.status.local_vm_storage = true;
+    await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system: "macos", linux_systems: ["ubuntu-22.04"] } }));
+    await page.route("**/api/environment/storage", route => {
+      if (route.request().method() === "GET") return route.fulfill({ json: location });
+      const body = route.request().postDataJSON();
+      writes++;
+      assert.equal(body.previous, "/preview/default-state");
+      assert.equal(body.migrate, false);
+      if (fail) return route.fulfill({ status: 400, contentType: "text/plain; charset=utf-8", body: "请选择专用空文件夹" });
+      location = { ...location, directory: body.directory };
+      state.status.job = { id: "save-storage", kind: "storage", running: false };
+      return route.fulfill({ json: state.status.job });
+    });
+  } });
+  try {
+    const input = f.page.getByLabel("存储目录", { exact: true });
+    assert.equal(await input.inputValue(), "/preview/default-state");
+    await input.fill("/preview/chosen-state");
+    assert.equal(writes, 0, "editing must not save before Next");
+    await f.page.getByRole("button", { name: "下一步：配置代理" }).click();
+    await f.page.getByRole("alert").filter({ hasText: "请选择专用空文件夹" }).waitFor();
+    assert.equal(await input.inputValue(), "/preview/chosen-state");
+    assert.equal(await f.page.getByRole("heading", { name: "连接你的网络代理" }).count(), 0);
+    fail = false;
+    await f.page.getByRole("button", { name: "下一步：配置代理" }).click();
+    await f.page.getByRole("heading", { name: "连接你的网络代理" }).waitFor();
+    assert.equal(location.directory, "/preview/chosen-state");
+    assert.equal(writes, 2);
+    await f.page.getByRole("button", { name: "上一步", exact: true }).click();
+    assert.equal(await input.inputValue(), "/preview/chosen-state");
+    assert.deepEqual(f.errors, []);
+    console.log("PASS storage: one default-filled directory, save on Next, rejected path preserved, retry and back navigation");
+  } finally { await f.browser.close(); }
 }
 
 {

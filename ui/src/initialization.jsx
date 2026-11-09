@@ -4,7 +4,7 @@ import { api, native, nativeAvailable } from "./api";
 import { isRemoteClient } from "./client-context.mjs";
 import { useAccount } from "./account";
 import { GuestSystemPicker, HostCloneSummary, validGuestChoice } from "./guest-system-picker";
-import { EnvironmentStorage } from "./environment-storage";
+import { InitializationStorage } from "./initialization-storage";
 import { ProxySettings } from "./proxy-settings";
 import { SetupProgress } from "./setup-progress";
 import { DiagnosticSettings } from "./diagnostics.jsx";
@@ -54,6 +54,7 @@ function Initialization({ initial, onComplete }) {
   const [status, setStatus] = useState(null);
   const [proxy, setProxy] = useState(null);
   const [choice, setChoice] = useState(undefined);
+  const [storage, setStorage] = useState(null);
   const [pending, setPending] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -174,6 +175,27 @@ function Initialization({ initial, onComplete }) {
     setProxyDirty(false);
     setStep(step === "install" ? "proxy" : pending || account?.guest_system ? "install" : "system");
   }
+  async function nextFromSystem() {
+    await run(async () => {
+      const directory = storage.directory.trim();
+      if (directory !== storage.location.directory) {
+        const accepted = await api("/environment/storage", { directory, previous: storage.location.directory, migrate: false });
+        let job;
+        do {
+          await new Promise(resolve => setTimeout(resolve, 300));
+          if (!alive.current) return;
+          const next = await api("/status");
+          setStatus(next); job = next.job;
+          if (job.id !== accepted.id) throw new Error("存储操作状态已变化，请核对目录后重试。");
+        } while (job.running);
+        if (job.error) throw new Error(job.error);
+        const location = await api("/environment/storage");
+        if (location.directory !== directory) throw new Error("存储目录尚未保存，请重新选择后重试。");
+        setStorage({ location, directory: location.directory });
+      }
+      setStep("proxy");
+    });
+  }
   const failed = Boolean(job.error || error);
   const progress = job.setup_progress && { ...job, setup_progress: job.setup_progress };
   const title = step === "system" ? "为 Cage 准备独立环境" : step === "proxy" ? "连接你的网络代理" : ready ? "Cage 已准备就绪" : failed ? "继续完成环境安装" : busy ? "正在准备你的环境" : "安装并检查客机环境";
@@ -187,7 +209,7 @@ function Initialization({ initial, onComplete }) {
         <div className="initialization-stage" key={step}>
           {step === "system" && <>
             <GuestSystemPicker system={choice} onChange={setChoice} preserveOnUnmount deferMatch />
-            <EnvironmentStorage status={status} onConfirm={confirm} />
+            <InitializationStorage value={storage} onChange={setStorage} disabled={busy} />
           </>}
           {step === "proxy" && <><ProxySettings initializing status={status} onConfirm={confirm} onDirty={setProxyDirty} onApplied={async () => { setProxy(await api("/proxy")); pollNow.current?.(); }} />{choice?.clone && !needsProxySetup(null, status, proxy) && <HostCloneSummary pending={choice.pending} onChange={setChoice} />}</>}
           {step === "install" && (ready ? <div className="initialization-ready"><ShieldCheck size={36} /><h2>环境已就绪</h2><p>独立客机已安装，工具、文件和登录状态会持续保存。以后打开 Cage 可直接进入工作台。</p></div> : <>
@@ -201,7 +223,7 @@ function Initialization({ initial, onComplete }) {
         {error && <p className="initialization-notice" role="alert"><SafetyMessage message={error} /></p>}
         <footer className="initialization-actions">
           {step === "system" ? <span /> : <button className="text-button" disabled={busy} onClick={back}><ChevronLeft size={16} />上一步</button>}
-          {step === "system" && <button className="primary" disabled={busy || choice === undefined || (!choice?.clone && !validGuestChoice(choice)) || choice?.clone && choice.guest_system === "windows-11" && !choice.editor_terms || Boolean(connectionError)} onClick={() => setStep("proxy")}>下一步：配置代理</button>}
+          {step === "system" && <button className="primary" disabled={busy || !storage?.directory.trim() || choice === undefined || (!choice?.clone && !validGuestChoice(choice)) || choice?.clone && choice.guest_system === "windows-11" && !choice.editor_terms || Boolean(connectionError)} onClick={nextFromSystem}>{submitting && <LoaderCircle size={16} className="spin" />}下一步：配置代理</button>}
           {step === "proxy" && <button className="primary" disabled={busy || proxyDirty || !account?.guest_system && !pending && !validGuestChoice(choice) || needsProxySetup(null, status, proxy) || Boolean(connectionError)} onClick={install}>{submitting ? <LoaderCircle size={16} className="spin" /> : null}开始安装</button>}
           {step === "install" && ready && <button className="primary" disabled={submitting || Boolean(connectionError)} onClick={enter}>进入工作台</button>}
         </footer>

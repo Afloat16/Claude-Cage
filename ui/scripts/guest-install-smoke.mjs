@@ -23,7 +23,7 @@ for (const [id, name, platform] of [["macos", "macOS", "darwin"], ["windows-11",
     const option = page.getByRole("option", { name, exact: true });
     await option.waitFor();
     const row = await option.boundingBox(), below = await storage.boundingBox();
-    assert.ok(below.y > storageBefore.y && row.y + row.height <= below.y);
+    assert.ok(Math.abs(below.y - storageBefore.y) < 1 && row.height > 0);
     await picker.press("Escape");
     assert.equal((await storage.boundingBox()).y, storageBefore.y);
     await picker.press("Enter"); await picker.press("End"); await picker.press("Enter");

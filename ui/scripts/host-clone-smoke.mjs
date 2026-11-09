@@ -53,14 +53,14 @@ for (const [platform, system, version, edition] of [
     const initialHeight = (await region.boundingBox()).height;
     await picker.focus();
     await picker.press("ArrowDown");
-    const option = region.getByRole("option", {
+    const option = page.getByRole("option", {
       name: "自动匹配本机系统版本",
       exact: true,
     });
     await option.waitFor();
     assert.ok(
-      (await region.boundingBox()).height > initialHeight,
-      "options occupy layout space",
+      Math.abs((await region.boundingBox()).height - initialHeight) < 1,
+      "floating options must not change layout height",
     );
     await picker.press("Home");
     await picker.press("Enter");

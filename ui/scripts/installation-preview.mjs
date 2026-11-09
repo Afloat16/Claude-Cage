@@ -51,7 +51,7 @@ http.createServer(async (req, res) => {
     else if (url.pathname === "/api/settings") value = { workspace: "/preview/workspace", browser_home_url: "https://www.bing.com/", timezone: "Asia/Shanghai", locale: "zh_CN.UTF-8", keyboard: status.keyboard };
     else if (url.pathname === "/api/appearance") value = { ...defaultAppearance, mode: "light" };
     else if (url.pathname === "/api/proxy") value = { active: true, selected: "preview-node", port: 17896, core_available: true, state: "prepared", sources: [{ id: "preview", name: "预览代理", nodes: [{ id: "preview-node", name: "预览节点", type: "http" }] }] };
-    else if (url.pathname === "/api/environment/guest-systems") value = { fresh: !pending, available: true, system, pending };
+    else if (url.pathname === "/api/environment/guest-systems") value = { fresh: !pending, available: true, system, pending, linux_systems: ["ubuntu-22.04"] };
     else if (url.pathname === "/api/environment/guest-systems/clone") value = { plan, key: "preview-only", enough_space: scenario !== "space", download_bytes: scenario === "cached" ? 0 : scenario === "resume" ? Math.floor(host.bytes / 3) : host.bytes, minimum_free_gib: 32 + Math.ceil(host.bytes / 1073741824), free_gib: scenario === "space" ? 10 : 120, installation_started: Boolean(pending) };
     else if (url.pathname === "/api/host/git") value = { state: "ok", ready: true, message: "本机 Git 安全保护已启用。" };
     else if (url.pathname === "/api/terminals") value = [];

@@ -61,14 +61,14 @@ try {
   await panel.getByRole("status").filter({hasText:"已取消归档 1 个会话"}).waitFor();
   assert.deepEqual(operations.splice(0),[{id:"a2",operation:"restore"}],"filtered select all affected hidden sessions");
   await search.fill("");
-  // Changing project filters also clears selection, and the dropdown pushes content down.
+  // Changing filters clears selection; its floating list keeps content in place.
   await checkbox(panel,allName).check();
   const filter = panel.getByRole("combobox",{name:"项目筛选"});
   const toolbar = panel.getByRole("group",{name:"批量处理会话"});
   const before = await toolbar.boundingBox();
   await filter.click();
-  const list = await panel.getByRole("listbox",{name:"项目筛选选项"}).boundingBox();
-  assert.ok((await toolbar.boundingBox()).y >= list.y + list.height);
+  const list = await page.getByRole("listbox",{name:"项目筛选选项"}).boundingBox();
+  assert.ok(Math.abs((await toolbar.boundingBox()).y-before.y)<1 && list.height>0);
   await filter.press("Escape");
   assert.ok(Math.abs((await toolbar.boundingBox()).y-before.y)<2);
   await filter.press("End"); await filter.press("Enter");

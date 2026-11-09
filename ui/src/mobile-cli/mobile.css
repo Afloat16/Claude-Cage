@@ -67,7 +67,7 @@ h2 { font-size: 17px; line-height: 1.45; font-weight: 620; }
 .inline-select-trigger > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .inline-select-trigger svg { flex: none; }
 .inline-select-trigger[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
-.inline-select-popover { width: 100%; margin: 3px 0 5px; border: 1px solid var(--line); border-radius: 10px; padding: 4px; background: var(--paper); }
+.inline-select-popover { width: 100%; border: 1px solid var(--line); border-radius: 10px; padding: 4px; background: var(--paper); color: var(--ink); overflow: auto; box-shadow: 0 8px 24px #00000020; overscroll-behavior: contain; }
 .inline-select-options { max-height: min(280px, 38vh); overflow-y: auto; }
 .inline-select-options [role="option"] { display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 44px; padding: 10px 12px; border-radius: 8px; font-size: 14px; overflow-wrap: anywhere; cursor: pointer; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .inline-select-options [role="option"] svg { flex: none; }

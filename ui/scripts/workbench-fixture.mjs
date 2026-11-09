@@ -385,5 +385,5 @@ export async function createWorkbench({
 
 export async function chooseInline(picker, value) {
   await picker.click();
-  await picker.locator("..").getByRole("option").and(picker.page().locator(`[data-value=${JSON.stringify(String(value))}]`)).click();
+  await picker.page().getByRole("option").and(picker.page().locator(`[data-value=${JSON.stringify(String(value))}]`)).click();
 }

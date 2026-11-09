@@ -17,6 +17,13 @@
 .initialization .guest-install-fields small { font-size: 14px; line-height: 1.65; }
 .initialization .host-clone-summary { padding: 18px; gap: 10px; background: var(--chrome); }
 .initialization .environment-storage { padding-top: 22px; border-top: 1px solid var(--line); }
+.initialization-storage { padding-top: 22px; border-top: 1px solid var(--line); }
+.initialization-storage > label { font-size: 16px; font-weight: 550; color: var(--strong); }
+.initialization-storage > p { color: var(--muted); font-size: 14px; margin: 8px 0 16px; }
+.initialization-directory-control { display: flex; gap: 10px; }
+.initialization-directory-control input { flex: 1; min-width: 0; min-height: 42px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; background: var(--input); color: var(--ink); font: inherit; }
+.initialization-directory-control button { flex: none; }
+@media (max-width: 500px) { .initialization-directory-control { flex-wrap: wrap; } .initialization-directory-control input { flex-basis: 100%; } }
 .initialization .environment-storage > h4 { font-size: 16px; margin: 0 0 8px; }
 .initialization .field-help { color: var(--muted); font-size: 14px; }
 .initialization .environment-storage label { display: grid; gap: 8px; margin: 16px 0 10px; }
