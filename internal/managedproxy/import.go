@@ -5,10 +5,13 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"maps"
+	"net/http"
 	"strconv"
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/net/http/httpguts"
 )
 
 // NodeIssue contains display metadata only, never node credentials or field values.
@@ -85,10 +88,12 @@ func parseNodes(data []byte, sourceID string) ([]Node, []NodeIssue, error) {
 			issue.Reason = "节点协议暂不支持"
 		case server == "" || len(server) > 253:
 			issue.Reason = "节点服务器缺失或过长"
-		case unsafeOption(p):
-			issue.Reason = "节点不能引用本机文件、网络接口或额外路由"
 		default:
-			if typ == "hysteria2" {
+			if err := normalizeWebSocket(p); err != nil {
+				issue.Reason = err.Error()
+			} else if unsafeOption(p) {
+				issue.Reason = "节点不能引用本机文件、网络接口或额外路由"
+			} else if typ == "hysteria2" {
 				if err := normalizeHysteria2(p); err != nil {
 					issue.Reason = err.Error()
 				}
@@ -219,6 +224,93 @@ func normalizeHysteria2(p map[string]any) error {
 		delete(p, alias.from)
 	}
 	return nil
+}
+
+// Legacy WebSocket fields are accepted by the core but ignored by its transport.
+// Normalize only nodes carrying aliases, leaving other protocol options alone.
+func normalizeWebSocket(p map[string]any) error {
+	legacy := false
+	for key := range p {
+		if optionKey(key) == "ws-path" || optionKey(key) == "ws-headers" {
+			legacy = true
+		}
+	}
+	if !legacy {
+		return nil
+	}
+	if err := normalizeImportKeys(p, "ws-path", "ws-headers", "ws-opts", "network"); err != nil {
+		return err
+	}
+	if p["type"] != "vmess" && p["type"] != "vless" && p["type"] != "trojan" {
+		return errors.New("旧 WebSocket 字段仅适用于 VMess、VLESS 或 Trojan 节点")
+	}
+	if p["network"] != "ws" {
+		return errors.New("旧 WebSocket 字段需要显式设置 network: ws，请核对节点传输方式")
+	}
+	opts := map[string]any{}
+	if raw, exists := p["ws-opts"]; exists {
+		current, ok := raw.(map[string]any)
+		if !ok {
+			return errors.New("WebSocket 字段 ws-opts 无效，未忽略旧字段")
+		}
+		opts = maps.Clone(current)
+	}
+	if err := normalizeImportKeys(opts, "path", "headers"); err != nil {
+		return err
+	}
+	if raw, exists := p["ws-path"]; exists {
+		path, ok := raw.(string)
+		if !ok {
+			return errors.New("WebSocket 字段 ws-path 无效，未忽略该字段")
+		}
+		if current, exists := opts["path"]; exists && current != path {
+			return errors.New("WebSocket 字段 ws-path 与 ws-opts.path 冲突")
+		}
+		opts["path"] = path
+		delete(p, "ws-path")
+	}
+	if raw, exists := p["ws-headers"]; exists {
+		headers, err := webSocketHeaders(raw)
+		if err != nil {
+			return err
+		}
+		if current, exists := opts["headers"]; exists {
+			modern, err := webSocketHeaders(current)
+			if err != nil {
+				return err
+			}
+			for key, value := range modern {
+				if previous, exists := headers[key]; exists && previous != value {
+					return errors.New("WebSocket 字段 ws-headers 与 ws-opts.headers 冲突")
+				}
+				headers[key] = value
+			}
+		}
+		opts["headers"] = headers
+		delete(p, "ws-headers")
+	}
+	p["ws-opts"] = opts
+	return nil
+}
+
+func webSocketHeaders(raw any) (map[string]any, error) {
+	input, ok := raw.(map[string]any)
+	if !ok {
+		return nil, errors.New("WebSocket 请求头必须为字符串映射，未忽略该字段")
+	}
+	headers := make(map[string]any, len(input))
+	for key, rawValue := range input {
+		value, ok := rawValue.(string)
+		if !ok || !httpguts.ValidHeaderFieldName(key) || !httpguts.ValidHeaderFieldValue(value) {
+			return nil, errors.New("WebSocket 请求头无效，未忽略该字段")
+		}
+		key = http.CanonicalHeaderKey(key)
+		if previous, exists := headers[key]; exists && previous != value {
+			return nil, errors.New("WebSocket 请求头存在大小写不同的冲突写法")
+		}
+		headers[key] = value
+	}
+	return headers, nil
 }
 
 func hysteria2Ports(raw any) (string, error) {

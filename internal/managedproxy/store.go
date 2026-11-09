@@ -283,6 +283,10 @@ func (s Store) Runtime(profile string) ([]byte, error) {
 			for key, value := range n.Config {
 				config[key] = value
 			}
+			// Older stores may contain legacy headers accepted before normalization.
+			if err := normalizeWebSocket(config); err != nil {
+				return nil, fmt.Errorf("节点 %q：%w", n.Name, err)
+			}
 			if via, overridden := dialers[n.ID]; overridden {
 				delete(config, "dialer-proxy")
 				if via != "" {
