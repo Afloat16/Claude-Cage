@@ -876,10 +876,12 @@ function App() {
   const tabLayoutKey = status?.environment_directory || status?.workspace;
   const metadata = savedTabs[tabLayoutKey] || {};
   const claudeLabels = new Map(claudeProfiles.accounts?.map((account) => [account.id, account.label || account.email]));
+  const claudeNumbers = new Map(claudeProfiles.accounts?.map((account, index) => [account.id, index + 1]));
   const terminalAccountName = (tab) => claudeLabels.get(tab.claude_account_id) ||
     (tab.terminalKind === "claude-login" ? "新账号登录" : tab.claude_account_id ? "Claude 账号" : "");
   const displayTabs = orderedTabs(tabs, metadata).map((tab) =>
-    tab.claude_account_id || tab.terminalKind === "claude-login" ? { ...tab, claudeLabel: terminalAccountName(tab) } : tab);
+    tab.claude_account_id || tab.terminalKind === "claude-login" ? { ...tab,
+      claudeLabel: terminalAccountName(tab), claudeAccountNumber: claudeNumbers.get(tab.claude_account_id) } : tab);
   const browserTabs = displayTabs.filter((tab) => tab.kind !== "terminal");
   const switchTabs =
     terminal && !showHome

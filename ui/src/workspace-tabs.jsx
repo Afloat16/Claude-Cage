@@ -12,10 +12,12 @@ import {
   X,
 } from "lucide-react";
 import { tabName } from "./workspace-state.mjs";
+import { AgentIcon } from "./agent-icon";
 
-export function TabIcon({ kind, favicon, size = 16 }) {
+export function TabIcon({ kind, favicon, agent, accountNumber, size = 16 }) {
   const [failed, setFailed] = useState("");
-  if (kind === "terminal") return <TerminalSquare size={size} />;
+  if (kind === "terminal" && agent) return <AgentIcon accountNumber={accountNumber} size={Math.max(20, size)} />;
+  if (kind === "terminal") return <TerminalSquare size={Math.max(20, size)} />;
   if (kind === "editor") return <FileCode2 size={size} />;
   if (typeof favicon === "string" && favicon.length <= 8192 &&
       /^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(favicon) && failed !== favicon)
@@ -326,7 +328,7 @@ export function WorkspaceTabs({
                     : -1
                 }
                 disabled={!ready && tab.kind !== "terminal"}
-                title={tab.url ? `${title}\n${tab.url}` : tab.claudeLabel ? `${title} · ${tab.claudeLabel}` : title}
+                title={tab.url ? `${title}\n${tab.url}` : [title, tab.claudeAccountNumber && `账号 ${tab.claudeAccountNumber}`, tab.claudeLabel].filter(Boolean).join(" · ")}
                 onClick={() => onSelect(tab.id)}
                 onContextMenu={(event) => showMenu(tab, event)}
                 onKeyDown={(event) => {
@@ -351,7 +353,9 @@ export function WorkspaceTabs({
                   onSelect(tabs[at].id);
                 }}
               >
-                <TabIcon kind={tab.kind} favicon={tab.favicon} size={15} />
+                <TabIcon kind={tab.kind} favicon={tab.favicon} size={15}
+                  agent={tab.terminalKind === "claude" || tab.terminalKind === "claude-login" || Boolean(tab.cli_session_id) || Boolean(tab.claude_account_id)}
+                  accountNumber={tab.claudeAccountNumber} />
                 <span>{title}</span>
                 {tab.claudeLabel && <small className="claude-tab-profile">{tab.claudeLabel}</small>}
                 {saved[tab.id]?.pinned && <Pin size={11} className="tab-pin" />}
@@ -420,7 +424,9 @@ export function WorkspaceTabs({
                         onSelect(tab.id);
                       }}
                     >
-                      <TabIcon kind={tab.kind} favicon={tab.favicon} />
+                      <TabIcon kind={tab.kind} favicon={tab.favicon}
+                        agent={tab.terminalKind === "claude" || tab.terminalKind === "claude-login" || Boolean(tab.cli_session_id) || Boolean(tab.claude_account_id)}
+                        accountNumber={tab.claudeAccountNumber} />
                       <span>{tabName(tab, saved)}</span>
                       {tab.id === active && (
                         <span className="current-tab-marker">当前</span>
