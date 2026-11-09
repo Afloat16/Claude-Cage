@@ -458,6 +458,29 @@ export function installRemoteInput(
           ? code[3].toLowerCase()
           : event.key.toLowerCase();
       if (["Shift", "Control", "Alt", "Meta"].includes(event.key)) physical.add(code);
+      if (event.key === "Shift") {
+        const sym = getKeysym(event);
+        transport.sendKey(sym, code, true);
+        remote.set(code, sym);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
+      if (event.key === "Enter" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        // Native IME focus can change after Shift was pressed. RFB carries
+        // modifier key events, not the Enter event's shiftKey flag.
+        const shift = physical.has("ShiftRight") ? [0xffe2, "ShiftRight"] : [0xffe1, "ShiftLeft"];
+        const sym = getKeysym(event);
+        if (!remote.has(shift[1])) transport.sendKey(...shift, true);
+        transport.sendKey(sym, code, true);
+        transport.sendKey(sym, code, false);
+        if (physical.has(shift[1])) remote.set(shift[1], shift[0]);
+        else transport.sendKey(...shift, false);
+        handled.add(code);
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        return;
+      }
       if (
         mapping &&
         event.metaKey &&

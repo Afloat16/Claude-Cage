@@ -450,6 +450,17 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       },
     });
     terminal.attachCustomKeyEventHandler((event) => {
+      if (event.key === "Enter" && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
+          !event.isComposing && event.keyCode !== 229) {
+        event.preventDefault();
+        if (event.type === "keydown") {
+          // Bracketed insertion adds a line inside shell/CLI editors. Programs
+          // without paste mode receive the distinct CSI-u Shift+Enter key.
+          void enqueue(() => send(terminal.modes.bracketedPasteMode
+            ? "\x1b[200~\n\x1b[201~" : "\x1b[13;2u")).catch(() => {});
+        }
+        return false;
+      }
       if (!terminalModifier(event) || event.type !== "keydown") return true;
       const key = event.key.toLowerCase();
       if (key === "c") {

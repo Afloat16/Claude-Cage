@@ -90,7 +90,7 @@ function fixture(native = false, browserComposition = false, options = {}) {
     nativeAvailable: () => native,
     getKeycode: (e) => e.code,
     getKeysym: (e) =>
-      ({ Shift: 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb })[e.key] ??
+      ({ Shift: e.code === "ShiftRight" ? 0xffe2 : 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb, Enter: 0xff0d })[e.key] ??
       (e.key.length === 1 ? e.key.codePointAt(0) : null),
     Keysyms: {
       lookup: (codepoint) =>
@@ -180,6 +180,42 @@ function fixture(native = false, browserComposition = false, options = {}) {
     reads: () => reads,
   };
 }
+for (const guest of ["linux", "windows", "darwin"]) {
+  test(`${guest}: Shift+Enter restores a modifier missed during focus changes`, () => {
+    const f = fixture();
+    f.setGuestPlatform(guest);
+    try {
+      assert.equal(f.key("keydown", "Enter", "Enter", { shiftKey: true }).defaultPrevented, true);
+      f.key("keyup", "Enter", "Enter", { shiftKey: true });
+      assert.deepEqual(f.keys, [
+        [0xffe1, "ShiftLeft", true], [0xff0d, "Enter", true],
+        [0xff0d, "Enter", false], [0xffe1, "ShiftLeft", false],
+      ]);
+      f.keys.length = 0;
+      f.key("keydown", "Enter", "Enter", { shiftKey: true, isComposing: true });
+      assert.deepEqual(f.keys, [], "IME confirmation must not insert a newline");
+    } finally { f.controller.dispose(); }
+  });
+  for (const code of ["ShiftLeft", "ShiftRight"]) {
+    test(`${guest}: Shift+Enter keeps held ${code} until its release`, () => {
+      const f = fixture();
+      f.setGuestPlatform(guest);
+      try {
+        const sym = code === "ShiftRight" ? 0xffe2 : 0xffe1;
+        f.key("keydown", "Shift", code, { shiftKey: true });
+        f.key("keydown", "Enter", "Enter", { shiftKey: true });
+        f.key("keyup", "Enter", "Enter", { shiftKey: true });
+        assert.ok(!f.keys.some(([key, , down]) => key === sym && !down));
+        f.key("keyup", "Shift", code);
+        assert.deepEqual(f.keys.at(-1), [sym, code, false]);
+        f.keys.length = 0;
+        f.win.dispatchEvent(new Event("blur"));
+        assert.deepEqual(f.keys, [], "released Shift must not remain held remotely");
+      } finally { f.controller.dispose(); }
+    });
+  }
+}
+
 test("Mac find and redo preserve the Linux Ctrl/Shift chord", () => {
   const f = fixture();
   try {

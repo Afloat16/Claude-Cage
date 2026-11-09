@@ -183,6 +183,12 @@ try {
   );
   assert.equal(await target.inputValue(), "");
   await clear();
+  await page.keyboard.press("Shift+Enter");
+  assert.deepEqual((await keys()).map(({ sym, down }) => [sym, down]), [
+    [0xffe1, 1], [0xff0d, 1], [0xff0d, 0], [0xffe1, 0],
+  ], "Shift+Enter must preserve the modifier through the real RFB encoder");
+  assert.deepEqual(await texts(), [], "newline must not also commit textarea text");
+  await clear();
   await page.keyboard.down("Shift");
   await page.evaluate(() => {
     probe.rfb._cagePasteJob = { id: "punctuation", phase: "fence", timer: setTimeout(() => {}, 1000), resolve() {} };
@@ -361,6 +367,18 @@ try {
   await page.waitForFunction(() => probe.nativeRequests.some(value => value.operation === "activate"));
   await page.evaluate(() => {
     const owner = probe.nativeRequests.find(value => value.operation === "activate").owner;
+    for (const kind of ["keydown", "keyup"]) {
+      window.dispatchEvent(new CustomEvent("cage-native-input", {
+        detail: { owner, kind, key: "Enter", code: "Enter", shiftKey: true },
+      }));
+    }
+  });
+  assert.deepEqual((await keys()).map(({ sym, down }) => [sym, down]), [
+    [0xffe1, 1], [0xff0d, 1], [0xff0d, 0], [0xffe1, 0],
+  ], "native Enter's shiftKey must survive without a preceding DOM Shift event");
+  await clear();
+  await page.evaluate(() => {
+    const owner = probe.nativeRequests.find(value => value.operation === "activate").owner;
     const emit = value => window.dispatchEvent(new CustomEvent("cage-native-input", { detail: { owner, ...value } }));
     emit({kind:"compositionstart"});
     emit({kind:"compositionupdate",text:"ni'hao",selectionStart:3,selectionEnd:6});
@@ -397,6 +415,7 @@ try {
         passed: true,
         checks: [
           "real noVNC keyboard and RFB encoding",
+          "Shift+Enter and native modifier recovery",
           "English input",
           "fullwidth question mark and punctuation",
           "English question mark and modifier release",
