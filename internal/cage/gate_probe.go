@@ -33,7 +33,9 @@ func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 	transport := &http.Transport{Proxy: nil, DialContext: e.DialContext, DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://api.ipify.org?format=json", nil)
+	// The proxy resolves this name remotely. An IPv4-only service measures the
+	// same address family as the guest policy even when the proxy is dual-stack.
+	req, _ := http.NewRequestWithContext(ctx, "GET", "https://ipv4.icanhazip.com/", nil)
 	req.Header.Set("User-Agent", "Cage-network-check/1")
 	resp, err := client.Do(req)
 	if err != nil {
@@ -41,16 +43,14 @@ func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 		return "", usererror.Wrap("通过所选代理查询出口 IP", err, "请检查网络与代理中的节点是否可用，再重新检测；未能确认出口时，外网保持关闭。")
 	}
 	defer resp.Body.Close()
-	var data struct {
-		IP string `json:"ip"`
-	}
 	if resp.StatusCode != 200 {
 		return "", fmt.Errorf("查询出口 IP 失败：检测服务返回 HTTP %d。请检查所选代理，稍后重新检测；外网保持关闭。", resp.StatusCode)
 	}
-	if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&data) != nil {
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4097))
+	if err != nil || len(body) > 4096 {
 		return "", errors.New("查询出口 IP 失败：检测服务没有返回有效的 IP 记录。请更换可用节点或稍后重新检测；外网保持关闭。")
 	}
-	ip, err := netip.ParseAddr(data.IP)
+	ip, err := netip.ParseAddr(strings.TrimSpace(string(body)))
 	if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() {
 		return "", errors.New("出口检测结果不是有效公网 IPv4 地址")
 	}
