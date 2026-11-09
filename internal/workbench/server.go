@@ -42,6 +42,7 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	desktopStatus                                    desktopStatusCache
 	agentNativeQueue                                 agentNativeQueue
 	macSetupProjectsChecked                          time.Time
 	macSetupProjectsAttempt                          time.Time

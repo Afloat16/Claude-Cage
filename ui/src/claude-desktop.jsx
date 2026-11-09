@@ -12,6 +12,7 @@ import { ProjectDialog } from "./project-dialog";
 import { api } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { RemoteView } from "./views";
+import { useWindowVisibility } from "./window-visibility";
 import "./claude-desktop.css";
 
 const desktopZooms = [0.75, 0.9, 1, 1.1, 1.25, 1.5];
@@ -104,26 +105,37 @@ export function ClaudeDesktop({
   const [closedChooser, setClosedChooser] = useState("");
   const directoryRequest = uploads.find((item) => item.directory && item.id !== closedChooser);
   const [zoom, setZoom] = useDesktopZoom();
+  const windowVisible = useWindowVisibility();
+  const screenVisible = visible && windowVisible;
   const [desktop, setDesktop] = useState(null);
   const [error, setError] = useState("");
   const [statusError, setStatusError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [jobID, setJobID] = useState("");
   const opened = useRef(false);
+  const statusRequest = useRef(null);
+  const statusRevision = useRef(0);
   const ownJob = status.job?.kind?.startsWith("claude-desktop-");
   const busy = submitting || Boolean(status.job?.running) || Boolean(jobID);
-  const refresh = async () => {
+  const refresh = async (valid = () => true) => {
+    const revision = statusRevision.current;
+    const request = statusRequest.current ??= api("/claude-desktop");
     try {
-      const value = await api("/claude-desktop");
+      const value = await request;
+      if (!valid() || revision !== statusRevision.current) return null;
       setDesktop(value);
       setStatusError("");
       return value;
     } catch (e) {
-      setStatusError(e.message);
+      if (valid() && revision === statusRevision.current) setStatusError(e.message);
       return null;
+    } finally {
+      if (statusRequest.current === request) statusRequest.current = null;
     }
   };
   const run = async (action) => {
+    statusRevision.current++;
+    statusRequest.current = null;
     setSubmitting(true);
     setError("");
     try {
@@ -136,24 +148,25 @@ export function ClaudeDesktop({
     }
   };
   useEffect(() => {
-    if (!status.vm_running || status.job?.running) return;
+    if (!screenVisible || !status.vm_running || status.job?.running) return;
     let disposed = false;
+    let timer;
     const poll = async () => {
-      const value = await refresh();
+      const value = await refresh(() => !disposed);
       if (disposed) return;
       if (value && !opened.current) {
         opened.current = true;
         if (value.installed && !value.running && !value.failed && !jobID)
           await run("start");
       }
+      if (!disposed) timer = setTimeout(poll, 5000);
     };
     poll();
-    const timer = setInterval(poll, 5000);
     return () => {
       disposed = true;
-      clearInterval(timer);
+      clearTimeout(timer);
     };
-  }, [status.vm_running, status.job?.running]);
+  }, [screenVisible, status.vm_running, status.job?.running]);
   useEffect(() => {
     if (!jobID || status.job?.id !== jobID || status.job.running) return;
     setJobID("");
@@ -182,7 +195,7 @@ export function ClaudeDesktop({
         }}
       />}
       <DesktopToolbar desktop={desktop} platform={status.guest_system === "windows-11" ? "Windows" : "Linux"} zoom={zoom} setZoom={setZoom}
-        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy} refresh={refresh} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand} />
+        onConfirm={onConfirm} onStop={() => run("stop")} busy={busy} refresh={() => refresh()} sidebarCollapsed={sidebarCollapsed} onExpand={onExpand} />
       {(error || statusError || desktop?.failed) && (
         <div className="connection-banner" role="alert">
           <SafetyMessage message={error || statusError || (desktop?.failure_reason === "oom-kill"
