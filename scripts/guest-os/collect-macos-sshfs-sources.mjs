@@ -23,8 +23,9 @@ export function inspectDependency(name, prefix) {
   const spec = lock[name];
   const formula = join(prefix, '.brew', `${name}.rb`);
   const receipt = JSON.parse(readFileSync(join(prefix, 'INSTALL_RECEIPT.json')));
-  if (sha256(formula) !== spec.formulaSha256 || receipt.source?.spec !== 'stable' || receipt.source?.versions?.stable !== spec.version) {
-    throw new Error(`${name}: installed formula/version differs from the reviewed SSHFS dependency lock; update the source lock before building.`);
+  const formulaDigest = sha256(formula);
+  if (![spec.formulaSha256, ...(spec.additionalFormulaSha256 ?? [])].includes(formulaDigest) || receipt.source?.spec !== 'stable' || receipt.source?.versions?.stable !== spec.version) {
+    throw new Error(`${name}: installed formula/version differs from the reviewed SSHFS dependency lock; actual version=${receipt.source?.versions?.stable}, formulaSHA256=${formulaDigest}. Update the source lock before building.`);
   }
   // The raw receipt can contain personal paths. Keep only build identity fields.
   const selected = Object.fromEntries(['homebrew_version', 'compiler', 'arch', 'built_as_bottle', 'poured_from_bottle', 'built_on', 'used_options', 'runtime_dependencies'].map(key => [key, receipt[key]]));
