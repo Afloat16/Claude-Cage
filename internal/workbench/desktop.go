@@ -276,15 +276,35 @@ func PrepareUpdate(configPath string, stop bool) (DesktopResult, error) {
 		return DesktopResult{Status: "prepared"}, nil
 	}
 	if c.launch.Controller.Protocol == controlProtocol {
-		status, err := c.call("POST", "/api/handoff", map[string]string{"token": c.record.Token}, nil)
-		if err != nil {
-			return DesktopResult{}, err
-		}
-		if status == http.StatusOK {
-			if err = c.waitForExit(); err != nil {
+		// Routine status probes also hold the operation lock. Retry briefly.
+		// every request still checks running jobs, terminals and VM ownership.
+		handoffCtx, cancelHandoff := context.WithTimeout(ctx, 3*time.Second)
+		defer cancelHandoff()
+		conflicted := false
+	handoff:
+		for {
+			status, err := c.callContext(handoffCtx, "POST", "/api/handoff", map[string]string{"token": c.record.Token}, nil)
+			if err != nil {
+				if conflicted && handoffCtx.Err() != nil {
+					break
+				}
 				return DesktopResult{}, err
 			}
-			return DesktopResult{Status: "prepared"}, nil
+			if status == http.StatusOK {
+				if err = c.waitForExit(); err != nil {
+					return DesktopResult{}, err
+				}
+				return DesktopResult{Status: "prepared"}, nil
+			}
+			if status != http.StatusConflict {
+				break
+			}
+			conflicted = true
+			select {
+			case <-handoffCtx.Done():
+				break handoff
+			case <-time.After(50 * time.Millisecond):
+			}
 		}
 	}
 	return DesktopResult{Status: "stop_required", Message: "请保存文件后确认停止环境并安装更新。终端任务会结束，项目和登录状态会保留。"}, nil
