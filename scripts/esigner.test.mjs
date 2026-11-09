@@ -36,11 +36,14 @@ test('signing retries only declared server errors without output and remains bou
   count = 0;
   await assert.rejects(invokeSigning({ outputPath, pause: async () => {}, invoke: async () => { count++; throw failure(); } }), /server_error/);
   assert.equal(count, 3);
-  for (const message of ['OTP rejected', 'authentication failed', 'timeout', 'CodeSignTool failed (exit 1). server_error', `${failure().message}\nOTP rejected`, `${failure().message}\ntimeout`]) {
+  for (const message of ['OTP rejected', 'authentication failed', 'timeout', 'CodeSignTool failed (exit 1). server_error', `${failure().message}\nOTP rejected`, `${failure().message}\ninvalid otp`, `${failure().message}\ntimeout`]) {
     count = 0;
     await assert.rejects(invokeSigning({ outputPath, pause: async () => assert.fail('must not wait'), invoke: async () => { count++; throw new Error(message); } }));
     assert.equal(count, 1);
   }
+  count = 0;
+  await assert.rejects(invokeSigning({ outputPath, pause: async () => assert.fail('quota is not transient'), invoke: async () => { count++; throw Object.assign(failure(), { quotaExceeded: true }); } }));
+  assert.equal(count, 1);
   count = 0;
   await invokeSigning({ outputPath, pause: async () => assert.fail('output requires trust verification, never another signature'), invoke: async () => { count++; await writeFile(outputPath, 'candidate output'); throw failure(); } });
   assert.equal(count, 1);
@@ -72,6 +75,11 @@ public class Signer {
     String otp = new Scanner(System.in).nextLine();
     if (!otp.equals("123456")) System.exit(16);
     System.out.println(otp);
+    if (Arrays.asList(args).contains("quota")) {
+      Files.writeString(Path.of("logs", "code_signing_tool.log"), "sensitive-user sensitive-id sensitive-token\\n    at com.ssl.code.signing.tool.csc.CscApi.getMalwareScanResponse(CscApi.java:1)\\nQuotaExceededError dummy-password");
+      System.out.println("Error: {\\\"error\\\":\\\"server_error\\\",\\\"token\\\":\\\"sensitive-token\\\"}");
+      System.exit(11);
+    }
     if (Arrays.asList(args).contains("fail")) { System.out.println("Error: dummy-password"); System.exit(4); }
   }
 }
@@ -104,6 +112,21 @@ public class Signer {
       else process.env.CAGE_ESIGNER_PASSWORD = previous;
     }
   }
+  const quotaMarker = join(temp, 'quota-marker');
+  let quotaCalls = 0;
+  await assert.rejects(invokeSigning({ outputPath: join(temp, 'no-signed-output.exe'), pause: async () => assert.fail('quota cannot cause a second signing request'), invoke: () => {
+    quotaCalls++;
+    return invokeJava({ jar, config, arguments: [quotaMarker, 'quota'], otp: async () => '123456', secrets: ['dummy-password'] });
+  } }), error => {
+    assert.equal(error.failureStage, 'malware-scan');
+    assert.equal(error.providerCode, 'server_error');
+    assert.equal(error.quotaExceeded, true);
+    for (const secret of ['sensitive-user', 'sensitive-id', 'sensitive-token', 'dummy-password', '123456']) assert.ok(!`${error.message}${JSON.stringify(error)}`.includes(secret));
+    return true;
+  });
+  assert.equal(quotaCalls, 1);
+  const quotaWorking = await readFile(quotaMarker, 'utf8');
+  await assert.rejects(readFile(join(quotaWorking, 'logs/code_signing_tool.log')), { code: 'ENOENT' });
 });
 
 test('modified vendor binaries are refused before executing Java', async t => {

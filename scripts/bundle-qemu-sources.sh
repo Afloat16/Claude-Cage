@@ -6,6 +6,9 @@ runtime=$(cygpath -u "$2")
 archive=$(cygpath -u "$3")
 node_command=${CAGE_NODE:-node}
 if [[ -n ${CAGE_NODE:-} ]]; then node_command=$(cygpath -u "$CAGE_NODE"); fi
+for tool in "$node_command" git curl tar sha256sum find sort xargs pacman-key mkdir mktemp cp mv rm grep; do
+    command -v "$tool" >/dev/null 2>&1 || { echo "Missing source-collection tool: $tool" >&2; exit 1; }
+done
 commit=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.commit" "$repository/packaging/windows/dependencies.json")
 [[ $commit =~ ^[a-f0-9]{40}$ && -s "$runtime/build-source-packages.txt" ]] || { echo 'QEMU source/package identity is missing.' >&2; exit 1; }
 stage=$(mktemp -d)

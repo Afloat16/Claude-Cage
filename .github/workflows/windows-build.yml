@@ -51,7 +51,7 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
-            make patch diffutils
+            make patch diffutils git findutils curl
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-glib2
             mingw-w64-ucrt-x86_64-pixman
@@ -131,7 +131,7 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
-            make patch diffutils
+            make patch diffutils git findutils curl
             mingw-w64-ucrt-x86_64-gcc
             mingw-w64-ucrt-x86_64-glib2
             mingw-w64-ucrt-x86_64-pixman
@@ -154,6 +154,7 @@ jobs:
           ./scripts/build-qemu-windows.ps1
           $identity = Get-Content '_output/windows-deps/qemu-cage/cage-build.json' -Raw | ConvertFrom-Json
           "fingerprint=$($identity.fingerprint)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "manifest=$((Get-FileHash '_output/windows-deps/qemu-cage/cage-build.json' -Algorithm SHA256).Hash)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           $collectorHash = (Get-FileHash 'scripts/bundle-qemu-sources.sh' -Algorithm SHA256).Hash + (Get-FileHash 'scripts/prepare-qemu-release.ps1' -Algorithm SHA256).Hash
           "collector=$collectorHash" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
       - name: Preserve only the completed verified runtime cache
@@ -166,7 +167,7 @@ jobs:
         id: qemu_sources
         with:
           path: _output/windows-qemu-sources
-          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.collector }}
+          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.manifest }}-${{ steps.qemu_build.outputs.collector }}
       - name: Collect and verify corresponding sources before signing
         env:
           CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
@@ -176,7 +177,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: _output/windows-qemu-sources
-          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.collector }}
+          key: cage-qemu-sources-${{ steps.qemu_build.outputs.fingerprint }}-${{ steps.qemu_build.outputs.manifest }}-${{ steps.qemu_build.outputs.collector }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

@@ -11,13 +11,14 @@ if (-not $MsysDirectory) { throw 'Set CAGE_MSYS2_ROOT to the MSYS2 UCRT64 build 
 $runtime = Join-Path $repository '_output/windows-deps/qemu-cage'
 & (Join-Path $PSScriptRoot 'build-qemu-windows.ps1') -OutputDirectory $runtime -MsysDirectory $MsysDirectory
 $runtimeIdentity = Get-Content (Join-Path $runtime 'cage-build.json') -Raw | ConvertFrom-Json
+$runtimeManifestHash = (Get-FileHash -LiteralPath (Join-Path $runtime 'cage-build.json') -Algorithm SHA256).Hash
 $collectorHash = (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'bundle-qemu-sources.sh') -Algorithm SHA256).Hash + (Get-FileHash -LiteralPath $PSCommandPath -Algorithm SHA256).Hash
 $directory = Join-Path $repository '_output/windows-qemu-sources'
 $archive = Join-Path $directory 'full-source.tar.gz'
 $record = Join-Path $directory 'source-identity.json'
 if ((Test-Path -LiteralPath $record) -and (Test-Path -LiteralPath $archive)) {
     $identity = Get-Content -LiteralPath $record -Raw | ConvertFrom-Json
-    if ($identity.schema -ne 1 -or $identity.fingerprint -ne $runtimeIdentity.fingerprint -or $identity.collectorHash -ne $collectorHash -or $identity.sha256 -ne (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash) {
+    if ($identity.schema -ne 2 -or $identity.fingerprint -ne $runtimeIdentity.fingerprint -or $identity.runtimeManifestHash -ne $runtimeManifestHash -or $identity.collectorHash -ne $collectorHash -or $identity.sha256 -ne (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash) {
         throw 'Cached QEMU sources differ from their verified runtime identity.'
     }
     Write-Host 'Verified cached QEMU corresponding sources.'
@@ -31,7 +32,7 @@ try {
     Invoke-BuildTool (Join-Path $MsysDirectory 'usr/bin/bash.exe') @('-l',
         (Join-Path $PSScriptRoot 'bundle-qemu-sources.sh'), $repository, $runtime, $archive)
 } finally { $env:MSYSTEM = $savedMsystem; $env:CHERE_INVOKING = $savedChere; $env:CAGE_NODE = $savedNode }
-$identity = @{ schema = 1; fingerprint = $runtimeIdentity.fingerprint; collectorHash = $collectorHash; sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash }
+$identity = @{ schema = 2; fingerprint = $runtimeIdentity.fingerprint; runtimeManifestHash = $runtimeManifestHash; collectorHash = $collectorHash; sha256 = (Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash }
 $identity | ConvertTo-Json | Set-Content -LiteralPath "$record.partial" -Encoding utf8
 Move-Item -LiteralPath "$record.partial" -Destination $record -Force
 Write-Host 'Collected and verified QEMU corresponding sources before application signing.'

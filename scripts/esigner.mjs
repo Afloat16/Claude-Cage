@@ -12,6 +12,8 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const pin = JSON.parse(await readFile(new URL('../packaging/windows/signing.json', import.meta.url), 'utf8'));
 const configPath = 'conf/code_sign_tool.properties';
 const secretNames = ['CAGE_ESIGNER_PASSWORD', 'CAGE_ESIGNER_TOTP_SECRET'];
+const providerCodes = ['server_error', 'invalid_grant', 'invalid_client', 'access_denied', 'unauthorized', 'invalid_request', 'invalid_otp', 'malware_detected'];
+const rejectedOrUncertain = /timeout|timed out|abort|cancel|invalid_grant|invalid_client|access_denied|unauthorized|(?:otp|totp|authentication|authorization|credential|password)[^\n]*(?:invalid|expired|failed|rejected)|(?:invalid|expired|failed|rejected)[^\n]*(?:otp|totp|authentication|credential|password)/i;
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const toolDirectory = () => resolve(process.env.CAGE_ESIGNER_TOOL_DIR || join(root, '_output/esigner', `CodeSignTool-v${pin.version}`));
 
@@ -124,7 +126,19 @@ export async function invokeJava({ java = 'java', jar, config, arguments: args, 
     if (otpError) throw otpError;
     const output = redact(`${stdout}\n${stderr}`, knownSecrets);
     if (code !== 0 || /\b(?:Error:|Exception|Missing required option|Unmatched argument)/u.test(output)) {
-      throw new Error(`CodeSignTool failed (exit ${code}). ${output.slice(-2500).trim()}`);
+      let privateLog = '';
+      try { privateLog = await readFile(join(temp, 'logs', 'code_signing_tool.log'), 'utf8'); } catch { /* Optional diagnostic only. */ }
+      const stages = { getMalwareScanResponse: 'malware-scan', getScanSettingsResponse: 'scan-settings', getCredentialsAuthorize: 'credentials-authorize', signHash: 'sign-hash', isOtpTypeOnline: 'otp-type', sendOtp: 'send-otp', getCredentialInfo: 'credentials-info', getCredentialIDs: 'credentials-list' };
+      const method = /^\s*at com\.ssl\.code\.signing\.tool\.csc\.CscApi\.(getMalwareScanResponse|getScanSettingsResponse|getCredentialsAuthorize|signHash|isOtpTypeOnline|sendOtp|getCredentialInfo|getCredentialIDs)\(/m.exec(privateLog)?.[1];
+      const failureStage = stages[method] || 'unknown';
+      const rawCode = /"error"\s*:\s*"([a-z_]+)"/.exec(output)?.[1];
+      const providerCode = providerCodes.includes(rawCode) ? rawCode : 'unclassified';
+      const quotaExceeded = /QuotaExceededError/.test(privateLog + output);
+      // Never attach the raw response or vendor log to the exception. These
+      // fixed classifications are the only diagnostic values leaving memory.
+      throw Object.assign(new Error(`CodeSignTool failed (exit ${code}). stage=${failureStage}; error=${providerCode}; quotaExceeded=${quotaExceeded}.`), {
+        failureStage, providerCode, quotaExceeded, nonRetryable: quotaExceeded || rejectedOrUncertain.test(output),
+      });
     }
     return output;
   } finally {
@@ -177,8 +191,9 @@ export async function invokeSigning({ invoke, outputPath, pause = ms => new Prom
     catch (error) {
       try { await access(outputPath); return ''; }
       catch (outputError) { if (outputError.code !== 'ENOENT') throw error; }
-      const uncertainOrRejected = /timeout|timed out|abort|cancel|invalid_grant|invalid_client|access_denied|unauthorized|(?:otp|totp|authentication|authorization|credential|password)[^\n]*(?:invalid|expired|failed|rejected)/i.test(error.message);
-      if (attempt === 2 || uncertainOrRejected || !/^CodeSignTool failed \(exit 11\)/.test(error.message) || !/"error"\s*:\s*"server_error"/.test(error.message)) throw error;
+      const uncertainOrRejected = error.nonRetryable || error.quotaExceeded || rejectedOrUncertain.test(error.message) || /QuotaExceededError/.test(error.message);
+      const serverError = error.providerCode === 'server_error' || /"error"\s*:\s*"server_error"/.test(error.message);
+      if (attempt === 2 || uncertainOrRejected || !/^CodeSignTool failed \(exit 11\)/.test(error.message) || !serverError) throw error;
       console.error(`Signing service returned server_error; retrying in ${(attempt + 1) * 15} seconds.`);
       await pause((attempt + 1) * 15000);
     }
@@ -191,9 +206,8 @@ export function credentialDiagnostic(error) {
   if (!error) return { operation: 'credential_info', success: true, stage: 'csc-credential-info', exitCode: 0, error: '' };
   const match = /^CodeSignTool failed \(exit ([0-9]{1,3})\)/.exec(error.message);
   const exitCode = match && Number(match[1]) <= 255 ? Number(match[1]) : null;
-  const code = /"error"\s*:\s*"([a-z_]+)"/.exec(error.message)?.[1];
-  const allowed = ['server_error', 'invalid_grant', 'invalid_client', 'access_denied', 'unauthorized', 'invalid_request'];
-  return { operation: 'credential_info', success: false, stage: exitCode === 1 ? 'oauth-token' : exitCode === 2 ? 'csc-credential-info' : 'client', exitCode, error: allowed.includes(code) ? code : 'unclassified' };
+  const code = error.providerCode || /"error"\s*:\s*"([a-z_]+)"/.exec(error.message)?.[1];
+  return { operation: 'credential_info', success: false, stage: exitCode === 1 ? 'oauth-token' : exitCode === 2 ? 'csc-credential-info' : 'client', exitCode, error: providerCodes.includes(code) ? code : 'unclassified' };
 }
 
 async function main(argv) {
