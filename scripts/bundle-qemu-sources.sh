@@ -6,7 +6,7 @@ runtime=$(cygpath -u "$2")
 archive=$(cygpath -u "$3")
 node_command=${CAGE_NODE:-node}
 if [[ -n ${CAGE_NODE:-} ]]; then node_command=$(cygpath -u "$CAGE_NODE"); fi
-for tool in "$node_command" git curl tar sha256sum find sort xargs pacman-key mkdir mktemp cp mv rm grep; do
+for tool in "$node_command" git curl tar sha256sum find sort xargs pacman-key pacman-conf mkdir mktemp cp mv rm grep; do
     command -v "$tool" >/dev/null 2>&1 || { echo "Missing source-collection tool: $tool" >&2; exit 1; }
 done
 commit=$("$node_command" -p "JSON.parse(require('fs').readFileSync(process.argv[1])).qemuSource.commit" "$repository/packaging/windows/dependencies.json")
@@ -15,6 +15,12 @@ source_repository=$("$node_command" -p "JSON.parse(require('fs').readFileSync(pr
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 mkdir -p "$stage/source/packages" "$stage/source/cage"
+# pacman-key requires lock-never for verification. Keep the installed public
+# keys and trust database intact; only the private verification copy gets it.
+installed_keyring=$(pacman-conf gpgdir)
+mkdir -p "$stage/keyring"
+cp "$installed_keyring/pubring.gpg" "$installed_keyring/trustdb.gpg" "$stage/keyring/"
+printf 'lock-never\n' > "$stage/keyring/gpg.conf"
 git -c core.autocrlf=false init -q "$stage/source/qemu"
 git -C "$stage/source/qemu" fetch --depth=1 "$source_repository" "$commit"
 git -c core.autocrlf=false -C "$stage/source/qemu" checkout -q --detach FETCH_HEAD
@@ -48,7 +54,7 @@ while read -r base version; do
         url="https://repo.msys2.org/mingw/sources/$name"
         if curl --fail --location --retry 2 -o "$stage/source/packages/$name" "$url"; then
             curl --fail --location --retry 3 -o "$stage/source/packages/$name.sig" "$url.sig"
-            pacman-key --verify "$stage/source/packages/$name.sig" "$stage/source/packages/$name"
+            pacman-key --gpgdir "$stage/keyring" --verify "$stage/source/packages/$name.sig" "$stage/source/packages/$name"
             found=true
             break
         fi
