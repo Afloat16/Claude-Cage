@@ -3,19 +3,64 @@ package workbench
 import (
 	"strconv"
 	"strings"
+	"time"
 )
 
 type SetupProgress struct {
-	Phase    string `json:"phase"`
-	Label    string `json:"label"`
-	Received *int64 `json:"received,omitempty"`
-	Total    int64  `json:"total,omitempty"`
+	Phase          string  `json:"phase"`
+	Label          string  `json:"label"`
+	Received       *int64  `json:"received,omitempty"`
+	Total          int64   `json:"total,omitempty"`
+	System         string  `json:"system,omitempty"`
+	Operation      string  `json:"operation,omitempty"`
+	BytesPerSecond float64 `json:"bytes_per_second,omitempty"`
 }
 
 // Only fixed component names from the installer are displayed. Other output
 // continues through the existing redacted operation log.
 func parseSetupProgress(line string) *SetupProgress {
 	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "CAGE_GUEST_BYTES ") {
+		fields := strings.Fields(line)
+		if len(fields) != 5 {
+			return nil
+		}
+		name := guestProgressName(fields[1])
+		received, err := strconv.ParseInt(fields[3], 10, 64)
+		total, te := strconv.ParseInt(fields[4], 10, 64)
+		if name == "" || err != nil || te != nil || received < 0 || total < 0 || (total > 0 && received > total) {
+			return nil
+		}
+		label := "正在下载 " + name + " 系统镜像"
+		switch fields[2] {
+		case "download":
+		case "verify":
+			label = "正在校验 " + name + " 系统镜像"
+		default:
+			return nil
+		}
+		return &SetupProgress{Phase: "image", Label: label, Received: &received, Total: total, System: fields[1], Operation: fields[2]}
+	}
+	if strings.HasPrefix(line, "CAGE_GUEST_STAGE ") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || guestProgressName(fields[1]) == "" {
+			return nil
+		}
+		p := &SetupProgress{System: fields[1]}
+		switch fields[2] {
+		case "restore":
+			p.Phase, p.Label = "packages", "正在安装 "+guestProgressName(fields[1])+" 系统"
+		case "media":
+			p.Phase, p.Label = "image", "正在下载并校验客机开发组件"
+		case "tools":
+			p.Phase, p.Label = "tools", "正在安装客机应用和开发工具"
+		case "services":
+			p.Phase, p.Label = "services", "正在完成客机配置"
+		default:
+			return nil
+		}
+		return p
+	}
 	if strings.HasPrefix(line, "CAGE_IMAGE_BYTES ") {
 		fields := strings.Fields(line)
 		if len(fields) != 3 {
@@ -26,7 +71,7 @@ func parseSetupProgress(line string) *SetupProgress {
 		if err != nil || te != nil || received < 0 || total < -1 || (total > 0 && received > total) {
 			return nil
 		}
-		return &SetupProgress{"image", "正在下载 Debian 13 镜像", &received, max(total, 0)}
+		return &SetupProgress{Phase: "image", Label: "正在下载 Debian 13 镜像", Received: &received, Total: max(total, 0)}
 	}
 	if strings.HasPrefix(line, "CAGE_TOOL_BYTES ") {
 		fields := strings.Fields(line)
@@ -62,6 +107,18 @@ func parseSetupProgress(line string) *SetupProgress {
 		return p
 	}
 	switch line {
+	case "下载 editor.tgz":
+		return &SetupProgress{Phase: "image", Label: "正在下载 macOS 网页编辑器", System: "macos"}
+	case "下载 playwright.tgz":
+		return &SetupProgress{Phase: "image", Label: "正在下载浏览器控制组件", System: "macos"}
+	case "下载 node.tgz":
+		return &SetupProgress{Phase: "image", Label: "正在下载 Node.js", System: "macos"}
+	case "下载 macfuse.dmg":
+		return &SetupProgress{Phase: "image", Label: "正在下载 macFUSE 文件共享组件", System: "macos"}
+	case "下载 claude.dmg":
+		return &SetupProgress{Phase: "image", Label: "正在下载 Claude Desktop", System: "macos"}
+	case "下载 chrome.dmg":
+		return &SetupProgress{Phase: "image", Label: "正在下载 Chrome 浏览器", System: "macos"}
 	case "CAGE_IMAGE_READY":
 		return &SetupProgress{Phase: "image", Label: "正在启动 Linux 基础环境"}
 	case "CAGE_IMAGE_VERIFY":
@@ -87,10 +144,15 @@ func parseSetupProgress(line string) *SetupProgress {
 	return nil
 }
 
+func guestProgressName(system string) string {
+	return map[string]string{"macos": "macOS", "windows-11": "Windows 11", "debian-12": "Debian 12", "debian-13": "Debian 13", "ubuntu-22.04": "Ubuntu 22.04", "ubuntu-24.04": "Ubuntu 24.04"}[system]
+}
+
 func (e *jobExecution) setSetupProgress(p *SetupProgress) {
 	e.owner.mu.Lock()
 	defer e.owner.mu.Unlock()
 	if e.id != "" && e.id == e.owner.state.ID && e.owner.state.Running {
 		e.owner.state.SetupProgress = p
+		e.progressUpdated = time.Now()
 	}
 }

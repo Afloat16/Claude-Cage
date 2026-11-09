@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -166,9 +167,6 @@ func (a *localAccount) trustedLogin(action, password, devices string) error {
 		}
 		defer clear(key)
 		a.nextAttempt = time.Time{}
-		if a.record.TrustedUnlock != nil {
-			return nil
-		}
 		secret := randomToken()
 		raw, err := hex.DecodeString(secret)
 		if err != nil {
@@ -186,6 +184,11 @@ func (a *localAccount) trustedLogin(action, password, devices string) error {
 		device.SealedKey = aead.Seal(nil, device.Nonce, key, []byte("trusted:"+device.ID))
 		record := *a.record
 		record.TrustedUnlock = &device
+		// The shared desktop grant replaces the older macOS automatic grant.
+		// Keep biometric unlock independent, and revoke both automatic paths
+		// when the user turns off Remember me.
+		record.Devices = maps.Clone(record.Devices)
+		delete(record.Devices, "automatic")
 		path := filepath.Join(devices, device.ID+".json")
 		if err = writePrivate(path, secret); err != nil {
 			return errors.New("无法保存本机信任凭据")
@@ -194,16 +197,22 @@ func (a *localAccount) trustedLogin(action, password, devices string) error {
 			_ = os.Remove(path)
 			return errors.New("本机信任未能保存")
 		}
+		previous := a.record.TrustedUnlock
 		a.record = &record
+		if previous != nil {
+			_ = os.Remove(filepath.Join(devices, previous.ID+".json"))
+		}
 	case "disable":
 		if a.record == nil || len(a.key) != 32 {
 			return errors.New("请先解锁 Cage")
 		}
-		if a.record.TrustedUnlock == nil {
+		if a.record.TrustedUnlock == nil && a.record.Devices["automatic"].ID == "" {
 			return nil
 		}
 		record := *a.record
 		record.TrustedUnlock = nil
+		record.Devices = maps.Clone(record.Devices)
+		delete(record.Devices, "automatic")
 		if err := writePrivate(a.path, &record); err != nil {
 			return errors.New("本机信任未能关闭")
 		}

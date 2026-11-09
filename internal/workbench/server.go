@@ -11,7 +11,9 @@ import (
 	"fmt"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/host"
+	"github.com/sylvinus/agent-vm/internal/hostimage"
 	"io"
 	"io/fs"
 	"log"
@@ -40,6 +42,18 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	macSetupProjectsChecked                          time.Time
+	macSetupProjectsAttempt                          time.Time
+	macosGuest                                       *guestos.MacOSProfile
+	macResources                                     macOSResourceObserver
+	windowsGuest                                     *guestos.WindowsProfile
+	windowsState                                     windowsGuestState
+	windowsProjectHistory                            map[string]string
+	clipboardFiles                                   map[string]clipboardFileSelection
+	clipboardRelease                                 func([]string)
+	clipboardCancel                                  context.CancelFunc
+	clipboardGuestSession                            string
+	phones                                           mobilePairing
 	instanceID                                       string
 	clientOnly                                       bool
 	desktopEntry                                     bool
@@ -60,6 +74,11 @@ type Server struct {
 	diagnosticCount                                  int
 	tickets                                          map[string]time.Time
 	browserControl                                   *browserClient
+	windowsBrowserControl                            *windowsBrowserClient
+	nativeDownloads                                  map[string]*nativeDownload
+	nativeDownloadSlots                              chan struct{}
+	nativeDownloadRevision                           uint64
+	windowsNetwork                                   *windowsHostNetwork
 	op                                               sync.Mutex
 	profile, configPath, exe, origin, token, session string
 	mu                                               sync.Mutex
@@ -67,12 +86,19 @@ type Server struct {
 	jobs                                             jobManager
 	ready                                            bool
 	location                                         *Location
-	networkError                                     string
+	exitProbeError                                   string
+	locationError                                    string
+	networkIntentError                               string
 	credentials                                      guestCredentials
 	terminals                                        terminalManager
+	mobileCLI                                        mobileCLIStore
+	conversationMu                                   sync.Mutex
+	mobileConnectMu                                  sync.Mutex
 	audioClients                                     int
 	projectShares                                    map[string]*projectShare
 	projectErrors                                    []projectShareError
+	clientMounts                                     map[string]*guestClientMount
+	clientWorkspace                                  string
 	safety                                           safetyState
 	recovery                                         networkRecovery
 	locations                                        map[string]Location
@@ -123,13 +149,16 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	if err := host.EnsurePrivateDir(profile); err != nil {
 		return err
 	}
-	lock, err := os.OpenFile(filepath.Join(profile, "control.lock"), os.O_CREATE|os.O_RDWR, 0600)
+	lock, err := openControllerLock(profile, os.O_CREATE|os.O_RDWR)
 	if err != nil {
 		return err
 	}
 	defer lock.Close()
-	if err = lockController(lock); err != nil {
-		return errors.New("此配置已有工作台服务正在运行")
+	if err = lockControllerForStart(lock); err != nil {
+		if controllerLockContended(err) {
+			return errors.New("此配置已有工作台服务正在运行")
+		}
+		return fmt.Errorf("无法锁定工作台控制文件: %w", err)
 	}
 	if err := host.ProtectFile(lock.Name()); err != nil {
 		return err
@@ -153,7 +182,7 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		return err
 	}
 	defer listener.Close()
-	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard()}}
+	s := &Server{profile: profile, configPath: configPath, exe: exe, clientOnly: clientOnly, origin: fmt.Sprintf("http://localhost:%d", port), token: randomToken(), session: randomToken(), preferences: Preferences{Keyboard: defaultKeyboard(), AutoTimezone: true, AutoLanguage: true}}
 	s.desktopEntry = fullConfigPath != ""
 	workload := !s.desktopEntry && !clientOnly
 	if s.desktopEntry {
@@ -167,6 +196,29 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	}
 	defer s.remote.close()
 	if workload {
+		if err = guestos.RecoverWindowsStorage(context.Background(), profile); err != nil {
+			return err
+		}
+		s.macosGuest, err = guestos.LoadMacOSProfile(profile)
+		if err != nil {
+			return err
+		}
+		s.windowsGuest, err = guestos.LoadWindowsProfile(profile)
+		if err != nil {
+			return err
+		}
+		if s.macosGuest != nil && s.windowsGuest != nil {
+			return errors.New("一个配置只能绑定一个客机系统")
+		}
+		if s.windowsGuest != nil {
+			pending, err := guestos.WindowsCloneCleanupPending(profile)
+			if err != nil {
+				return err
+			}
+			if pending {
+				s.windowsGuest = nil
+			}
+		}
 		s.instanceID, err = ensureRemoteInstance(profile)
 		if err != nil {
 			return err
@@ -178,14 +230,15 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 		defer s.account.lock()
 		defer func() { returned = errors.Join(returned, s.closeService()) }()
 		if b, e := os.ReadFile(filepath.Join(profile, "workbench.json")); e == nil {
+			// Existing profiles without this field used manual language settings.
+			s.preferences.AutoLanguage = false
 			_ = json.Unmarshal(b, &s.preferences)
 		}
 		if err = s.prepareEnvironment(); err != nil {
 			return err
 		}
-		if intentErr := s.restoreNetworkIntent(); intentErr != nil {
-			s.networkError = intentErr.Error()
-		}
+		// Invalid intent keeps the gate paused and its error visible in status.
+		s.restoreNetworkIntent()
 		if s.preferences.Keyboard == "" {
 			s.preferences.Keyboard = defaultKeyboard()
 		}
@@ -195,13 +248,19 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 			}
 		}
 		// A previously running VM cannot keep an unmanaged endpoint online.
-		if cfg, e := loadConfig(configPath); e != nil || cfg.RequireManagedProxy(profile) != nil {
+		if s.macosGuest != nil {
+			_ = s.closeProxyGate("控制服务已重新连接，外网等待重新检查")
+		} else if cfg, e := loadConfig(configPath); s.windowsGuest == nil && (e != nil || cfg.RequireManagedProxy(profile) != nil) {
 			_ = s.closeProxyGate("尚未配置有效节点，外网保持关闭")
 		}
-		if s.networkPaused {
+		if s.networkPaused && s.windowsGuest == nil {
 			_ = s.closeProxyGate("网络保持暂停，请手动恢复后再联网")
 		}
 		s.startMonitors()
+		if err = s.restorePhone(); err != nil {
+			s.phones.status = "无法恢复手机配对，请移除旧记录后重试"
+		}
+		defer s.stopPhone()
 	}
 	s.identity, err = currentController()
 	if err != nil {
@@ -253,6 +312,12 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
+	s.mobileCLIRoutes(mux)
+	s.mobileSurfaceRoutes(mux)
+	mux.HandleFunc("GET /api/mobile-pair", s.phoneStatus)
+	mux.HandleFunc("POST /api/mobile-pair", s.pairPhone)
+	mux.HandleFunc("DELETE /api/mobile-pair", s.removePhone)
+	mux.HandleFunc("POST /api/mobile/device", s.reportPhoneDevice)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { jsonReply(w, map[string]bool{"ready": true}) })
 	mux.HandleFunc("POST /api/launch", func(w http.ResponseWriter, r *http.Request) {
 		if !s.launcherAuthenticated(w, r) {
@@ -285,6 +350,8 @@ func (s *Server) handler() http.Handler {
 		jsonReply(w, map[string]bool{"ok": true})
 	})
 	mux.HandleFunc("GET /api/status", s.status)
+	mux.HandleFunc("GET /api/environment/initialization", s.initialization)
+	mux.HandleFunc("POST /api/environment/initialization", s.initialization)
 	mux.HandleFunc("GET /api/remote/manifest", s.remoteManifest)
 	mux.HandleFunc("GET /api/projects/directories", s.projectDirectories)
 	mux.HandleFunc("POST /api/input", s.remoteInput)
@@ -300,7 +367,13 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/account/{action}", s.accountAction)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("POST /api/projects/open", s.openProject)
+	mux.HandleFunc("POST /api/projects/client-share", s.guestClientShare)
+	mux.HandleFunc("GET /api/projects/client-share", s.guestClientShare)
 	mux.HandleFunc("GET /api/environment/versions", s.environmentVersions)
+	mux.HandleFunc("GET /api/environment/guest-systems", s.guestInstallation)
+	mux.HandleFunc("GET /api/environment/guest-systems/clone", s.hostClone)
+	mux.HandleFunc("DELETE /api/environment/guest-systems", s.guestInstallation)
+	mux.HandleFunc("POST /api/environment/guest-systems/activate", s.guestInstallation)
 	mux.HandleFunc("GET /api/environment/storage", s.environmentStorage)
 	mux.HandleFunc("POST /api/environment/storage", s.environmentStorage)
 	mux.HandleFunc("GET /api/environment/resources", s.resourceStatus)
@@ -310,8 +383,8 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/host/git", s.hostGit)
 	mux.HandleFunc("POST /api/host/git", s.enableHostGit)
 	mux.HandleFunc("GET /api/appearance", s.getAppearance)
-	mux.HandleFunc("GET /api/favorites", s.getFavorites)
-	mux.HandleFunc("POST /api/favorites", s.mutateFavorites)
+	mux.HandleFunc("GET /api/favorites", s.serveFavorites)
+	mux.HandleFunc("POST /api/favorites", s.serveFavorites)
 	mux.HandleFunc("POST /api/appearance", s.saveAppearance)
 	mux.HandleFunc("GET /api/appearance/codex", s.codexAppearance)
 	mux.HandleFunc("POST /api/settings/probe", s.probe)
@@ -327,10 +400,20 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/safety/check", s.safetyCheck)
 	mux.HandleFunc("POST /api/safety/close", s.pauseNetwork)
 	mux.HandleFunc("GET /api/safety/report", s.safetyExport)
+	mux.HandleFunc("GET /api/tailscale", s.tailnet)
+	mux.HandleFunc("POST /api/tailscale/{action}", s.tailnet)
 	mux.HandleFunc("GET /api/browser/tabs", s.browser)
 	mux.HandleFunc("GET /api/browser/events", s.browserEvents)
+	mux.HandleFunc("GET /api/browser/preferences", s.browserPreferences)
+	mux.HandleFunc("POST /api/browser/preferences", s.browserPreferences)
+	mux.HandleFunc("POST /api/browser/extensions/upload", s.browserExtensionUpload)
+	mux.HandleFunc("GET /api/client/browser-extensions", s.localBrowserExtensions)
+	mux.HandleFunc("POST /api/client/browser-extensions", s.localBrowserExtensions)
 	mux.HandleFunc("POST /api/browser/{action}", s.browser)
 	mux.HandleFunc("POST /api/input/image", s.imageInput)
+	mux.HandleFunc("POST /api/input/text", s.textInput)
+	mux.HandleFunc("POST /api/input/paste/start", s.pasteInputStart)
+	mux.HandleFunc("POST /api/input/paste/cancel", s.pasteInputCancel)
 	mux.HandleFunc("POST /api/input/files/{action}", s.fileInputAction)
 	mux.HandleFunc("POST /api/input/files/{target}/{id}", s.fileInputUpload)
 	mux.HandleFunc("GET /api/input/files/desktop/requests", s.desktopFileRequests)
@@ -345,7 +428,7 @@ func (s *Server) handler() http.Handler {
 			http.Error(w, "环境尚未就绪", 409)
 			return
 		}
-		jsonReply(w, map[string]string{"password": s.credentials.VNCPassword})
+		jsonReply(w, map[string]any{"password": s.credentials.VNCPassword, "display_scale": s.credentials.DisplayScale})
 	})
 	mux.HandleFunc("GET /api/vnc", s.vnc)
 	mux.HandleFunc("GET /api/claude-desktop", s.claudeDesktopStatus)
@@ -353,10 +436,23 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("GET /api/claude-desktop/vnc", s.claudeDesktopVNC)
 	mux.HandleFunc("POST /api/claude-desktop/resize", s.claudeDesktopResize)
 	mux.HandleFunc("POST /api/claude-desktop/{action}", s.claudeDesktopAction)
+	if s.macosGuest != nil {
+		mux.HandleFunc("POST /api/macos/first-setup", s.macOSLoginWindow)
+		mux.HandleFunc("POST /api/macos/login", s.macOSLoginWindow)
+		s.registerMacOSClaudeRoutes(mux)
+		s.registerMacOSBrowserRoutes(mux)
+		mux.HandleFunc("POST /api/macos/project-approval", s.macOSProjectApproval)
+		mux.HandleFunc("POST /api/macos/exit-policy", s.bindMacOSExit)
+	}
 	mux.HandleFunc("GET /api/terminals", s.listTerminals)
 	mux.HandleFunc("GET /api/audio", s.audio)
+	mux.HandleFunc("GET /api/clipboard", s.sharedClipboard)
+	mux.HandleFunc("POST /api/clipboard/files", s.clipboardArchive)
+	mux.HandleFunc("GET /api/clipboard/files/{id}", s.clipboardArchive)
+	mux.HandleFunc("DELETE /api/clipboard/files/{id}", s.clipboardArchive)
 	mux.HandleFunc("POST /api/terminals", s.newTerminal)
 	mux.HandleFunc("DELETE /api/terminals/{id}", s.closeTerminal)
+	mux.HandleFunc("POST /api/terminals/{id}/metadata", s.terminalSessionMetadata)
 	mux.HandleFunc("GET /api/terminals/{id}/stream", s.terminalStream)
 	web, _ := fs.Sub(assets, "web")
 	mux.Handle("GET /", http.FileServer(http.FS(web)))
@@ -370,7 +466,7 @@ func (s *Server) handler() http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Frame-Options", "DENY")
-		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://"+origin.Host+"; img-src 'self' data:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws://"+origin.Host+"; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		if (r.Method != "GET" && r.Method != "HEAD") || strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
 			if r.Header.Get("Origin") != s.origin {
 				http.Error(w, "Origin refused", 403)
@@ -398,7 +494,29 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 		}
-		if s.routeRemote(w, r) {
+		if s.windowsGuest != nil && !windowsWorkbenchRoute(r.URL.Path) {
+			s.windowsUnavailable(w)
+			return
+		}
+		if s.macosGuest != nil && (!macOSWorkbenchRoute(r.URL.Path) || s.macSetupPending() && !macOSSetupRoute(r.URL.Path)) {
+			http.Error(w, "此功能尚未接入 macOS 客机", http.StatusConflict)
+			return
+		}
+		if strings.HasPrefix(r.URL.Path, "/api/mobile/") {
+			// Device trust is scoped to this host. Never forward a paired phone
+			// into a different host selected by the desktop SSH client.
+			if s.desktopEntry && !s.clientOnly && s.remote != nil && s.remote.desktop != nil && r.Header.Get(connectionHeader) != "" {
+				// The desktop's own viewer pins the selected local workload's
+				// connection generation. routeRemote checks the acquired target.
+				if s.routeRemote(w, r) {
+					return
+				}
+			}
+			if s.clientOnly || s.desktopEntry {
+				http.Error(w, "请连接运行 Cage 环境的主机", http.StatusConflict)
+				return
+			}
+		} else if s.macosGuest == nil && s.windowsGuest == nil && s.routeRemote(w, r) {
 			return
 		}
 		ctx, finish, err := s.beginActivity(r.Context())
@@ -410,6 +528,14 @@ func (s *Server) handler() http.Handler {
 		r = r.WithContext(ctx)
 		accountRoute := r.URL.Path == "/api/account" || strings.HasPrefix(r.URL.Path, "/api/account/")
 		bootstrapRoute := r.URL.Path == "/api/session" || r.URL.Path == "/api/launch" || r.URL.Path == "/api/handoff" || r.URL.Path == "/api/remote/manifest"
+		var phoneRoom context.Context
+		if (s.windowsGuest != nil || s.macosGuest != nil) && strings.HasPrefix(r.URL.Path, "/api/") && !bootstrapRoute && !s.hasTrustedView(r) {
+			phoneRoom = s.nativePhoneRoom(r)
+			if phoneRoom == nil {
+				http.Error(w, "请通过本机 Cage 窗口或当前配对手机打开客机", http.StatusForbidden)
+				return
+			}
+		}
 		if strings.HasPrefix(r.URL.Path, "/api/") && !accountRoute && !bootstrapRoute && !strings.HasPrefix(r.URL.Path, "/api/diagnostics") && !(r.Method == "GET" && r.URL.Path == "/api/appearance") {
 			epoch, unlocked := s.account.accessFor(s.hasTrustedView(r))
 			if !unlocked {
@@ -417,9 +543,15 @@ func (s *Server) handler() http.Handler {
 				return
 			}
 			ctx, cancel := context.WithCancel(r.Context())
-
+			if strings.HasPrefix(r.URL.Path, "/api/mobile/") || strings.HasPrefix(r.URL.Path, "/api/cli/") {
+				ctx = context.WithValue(ctx, mobileEpochKey{}, epoch)
+			}
 			stop := context.AfterFunc(epoch, cancel)
 			defer func() { stop(); cancel() }()
+			if phoneRoom != nil {
+				stopPhone := context.AfterFunc(phoneRoom, cancel)
+				defer stopPhone()
+			}
 			r = r.WithContext(ctx)
 		}
 		defer interruptHTTPOnCancel(w, r)()
@@ -466,16 +598,19 @@ func jsonReply(w http.ResponseWriter, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 func requestError(w http.ResponseWriter, err error) {
-	diagnostics.Log("error", "api", err.Error())
+	diagnostics.Log("error", "api", fmt.Sprintf("%v; cause=%v", err, errors.Unwrap(err)))
 	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	if s.windowsGuest != nil {
+		s.refreshWindowsComponents()
+	}
 	projects, err := s.projectPaths()
 	if err != nil {
 		requestError(w, errors.New("无法读取项目列表，请检查项目配置"))
 		return
 	}
-	running := vmAlive(s.profile, s.environmentDir())
+	running := s.vmRunning()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	_, e := os.Stat(filepath.Join(s.profile, "previous-profile.json"))
@@ -483,7 +618,32 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	if len(s.projectErrors) > 0 {
 		projectError = "部分项目文件夹尚未连接，环境和浏览器可继续使用。"
 	}
-	jsonReply(w, map[string]any{"projects": projects, "ready": s.ready, "vm_running": running, "workspace": s.preferences.Workspace, "environment_workspace": s.preferences.Workspace == s.environmentDir(), "environment_directory": s.environmentDir(), "local_vm_storage": s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors, "keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(), "location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil, "safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError})
+	if m := s.clientMounts[s.clientWorkspace]; s.clientWorkspace != "" && (m == nil || !m.live()) {
+		projectError = "当前本机项目已断开，请重新共享或选择其他项目。"
+	}
+	view := map[string]any{
+		"projects": projects, "ready": s.ready, "vm_running": running,
+		"workspace": s.workspaceLocked(), "environment_workspace": s.workspaceLocked() == s.environmentDir(), "environment_directory": s.environmentDir(),
+		"local_vm_storage": s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors,
+		"keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
+		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
+		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
+	}
+	if s.windowsGuest != nil {
+		view["guest_system"] = guestos.Windows11
+		view["guest_capabilities"] = s.windowsCapabilitiesLocked()
+		view["location"] = nil
+		if s.safety.Gate == nil && view["network_error"] == "" {
+			view["network_error"] = "Windows 客机网络组件尚未连接，外网保持关闭"
+		}
+	} else if s.macosGuest != nil {
+		view["guest_system"] = guestos.MacOS
+	} else if system, err := s.installedLinuxSystem(); err != nil {
+		view["guest_system_error"] = err.Error()
+	} else if system != guestos.Debian13 {
+		view["guest_system"] = system
+	}
+	jsonReply(w, view)
 }
 func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 	c, err := loadConfig(s.configPath)
@@ -498,6 +658,12 @@ func (s *Server) getSettings(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) proposed(w http.ResponseWriter, r *http.Request) (savedProfile, bool) {
 	var input Settings
+	// Older clients omit preferences introduced after their release.
+	s.mu.Lock()
+	input.MobileRelay = s.preferences.MobileRelay
+	input.BalancedDisplay = s.preferences.BalancedDisplay
+	input.BrowserHomeURL = browserHomeURL(s.preferences)
+	s.mu.Unlock()
 	if !readJSON(w, r, &input) {
 		return savedProfile{}, false
 	}
@@ -523,16 +689,13 @@ func (s *Server) probe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	loc, err := probeLocation(r.Context(), v.Config)
+	if finishErr := s.finishLocationProbe(v.Config, loc, err); finishErr != nil {
+		requestError(w, finishErr)
+		return
+	}
 	if err != nil {
 		requestError(w, err)
 		return
-	}
-	current, _ := loadConfig(s.configPath)
-	if current.ProxyURL == v.Config.ProxyURL && current.DNSURL == v.Config.DNSURL {
-		s.mu.Lock()
-		s.location = &loc
-		s.networkError = ""
-		s.mu.Unlock()
 	}
 	jsonReply(w, loc)
 }
@@ -549,7 +712,12 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	if err == nil && old == v.Config && previous.AutoTimezone == v.Preferences.AutoTimezone && previous.AutoLanguage == v.Preferences.AutoLanguage && previous.Workspace != v.Preferences.Workspace {
 		kind = "project"
 	}
-	s.launch(w, kind, func() error { return s.apply(v, true) })
+	s.launch(w, kind, func() error {
+		s.mu.Lock()
+		v.Preferences.BrowserHomeURL = s.preferences.BrowserHomeURL
+		s.mu.Unlock()
+		return s.apply(v, true)
+	})
 }
 func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 	var v savedProfile
@@ -566,6 +734,57 @@ func (s *Server) restore(w http.ResponseWriter, r *http.Request) {
 	})
 }
 func (s *Server) start(w http.ResponseWriter, r *http.Request) {
+	var input guestInstallRequest
+	if r.ContentLength != 0 && !readJSON(w, r, &input) {
+		return
+	}
+	if s.windowsGuest != nil {
+		if input.System != "" && input.System != guestos.Windows11 {
+			http.Error(w, "此配置已绑定 Windows 客机", http.StatusConflict)
+			return
+		}
+		s.launch(w, "start", s.startWindowsGuest)
+		return
+	}
+	if s.macosGuest != nil {
+		if input.System != "" && input.System != guestos.MacOS {
+			http.Error(w, "此配置已绑定 macOS 客机", http.StatusConflict)
+			return
+		}
+		s.launch(w, "start", s.startMacOSGuest)
+		return
+	}
+	if input.System == guestos.MacOS || input.System == guestos.Windows11 || input.CloneKey != "" {
+		s.beginGuestInstall(w, r, input)
+		return
+	}
+	pending, err := guestos.LoadInstallation(s.profile)
+	if err != nil || (pending != nil && !hostimage.IsLinux(pending.System)) {
+		http.Error(w, "已有原生客户机安装，请继续原安装", http.StatusConflict)
+		return
+	}
+	if pending != nil && input.System != "" && pending.System != input.System {
+		http.Error(w, "此环境已绑定所选 Linux 系统，请继续原安装", http.StatusConflict)
+		return
+	}
+	if pending != nil {
+		input.System = pending.System
+		s.beginGuestInstall(w, r, input)
+		return
+	}
+	boundSystem, err := s.installedLinuxSystem()
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	if input.System != "" && input.System != boundSystem {
+		if canInstallCatalogLinux(input.System) {
+			s.beginGuestInstall(w, r, input)
+		} else {
+			http.Error(w, "当前环境无法启动所选客户机系统，请保留原环境并重新检查安装选择", http.StatusConflict)
+		}
+		return
+	}
 	s.launch(w, "start", func() error {
 		if err := s.prepareEnvironment(); err != nil {
 			return err
@@ -587,7 +806,13 @@ func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
 	if jobID != "" {
 		_ = cage.RequestJobStop(s.profile, jobID)
 	}
-	_ = s.pauseNetworkNow("正在停止环境")
+	if s.macosGuest != nil {
+		// Stopping the guest revokes its current grant. A user's saved pause
+		// remains distinct so the next Mac start can honor the same intent.
+		_ = s.revokeNetworkNow("正在停止环境", false)
+	} else if s.windowsGuest == nil {
+		_ = s.pauseNetworkNow("正在停止环境")
+	}
 	kind := "stop"
 	if logout {
 		kind = "logout"

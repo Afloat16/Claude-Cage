@@ -7,6 +7,7 @@ import (
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
+	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
 func (s *Server) localVMStorage() bool {
@@ -19,6 +20,10 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.Method == http.MethodGet {
+		if err := guestos.RecoverWindowsStorage(r.Context(), s.profile); err != nil {
+			requestError(w, err)
+			return
+		}
 		location, err := cage.GetStorageLocation(s.profile)
 		if err != nil {
 			requestError(w, err)
@@ -37,6 +42,9 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.launch(w, "storage", func() error {
+		if err := guestos.RecoverWindowsStorage(s.operationContext(), s.profile); err != nil {
+			return err
+		}
 		current, err := cage.GetStorageLocation(s.profile)
 		if err != nil {
 			return err
@@ -56,7 +64,11 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.setMessage("正在检查环境存储…")
-		_, err = cage.MoveStorage(s.operationContext(), s.profile, input.Directory, current, func(copied, total int64) {
+		var runtime cage.StorageRuntime
+		if s.windowsGuest != nil {
+			runtime = guestos.WindowsStorageRuntime(s.profile)
+		}
+		_, err = cage.MoveStorageWithRuntime(s.operationContext(), s.profile, input.Directory, current, runtime, func(copied, total int64) {
 			s.setMessage(fmt.Sprintf("正在迁移环境数据 · %.1f / %.1f GiB", float64(copied)/(1<<30), float64(total)/(1<<30)))
 		})
 		return err

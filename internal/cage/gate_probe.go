@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/miekg/dns"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/usererror"
 )
 
 // ProbeExitIP sends a fixed request through the configured proxy. It does not
@@ -35,14 +37,18 @@ func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 	req.Header.Set("User-Agent", "Cage-network-check/1")
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", errors.New("无法经指定代理读取检测出口")
+		diagnostics.Log("warn", "exit-probe", fmt.Sprintf("exit query transport: %v", err))
+		return "", usererror.Wrap("通过所选代理查询出口 IP", err, "请检查网络与代理中的节点是否可用，再重新检测；未能确认出口时，外网保持关闭。")
 	}
 	defer resp.Body.Close()
 	var data struct {
 		IP string `json:"ip"`
 	}
-	if resp.StatusCode != 200 || json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&data) != nil {
-		return "", errors.New("出口检测服务没有返回有效结果")
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("查询出口 IP 失败：检测服务返回 HTTP %d。请检查所选代理，稍后重新检测；外网保持关闭。", resp.StatusCode)
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 4096)).Decode(&data) != nil {
+		return "", errors.New("查询出口 IP 失败：检测服务没有返回有效的 IP 记录。请更换可用节点或稍后重新检测；外网保持关闭。")
 	}
 	ip, err := netip.ParseAddr(data.IP)
 	if err != nil || !ip.Is4() || !ip.IsGlobalUnicast() || ip.IsPrivate() {

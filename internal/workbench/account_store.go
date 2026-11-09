@@ -49,6 +49,9 @@ type localAccount struct {
 }
 
 type accountView struct {
+	MacOSGuestUser        string            `json:"macos_guest_user,omitempty"`
+	InitialMacSetup       bool              `json:"initial_mac_setup,omitempty"`
+	GuestSystem           string            `json:"guest_system,omitempty"`
 	TrustedLocal          bool              `json:"trusted_local,omitempty"`
 	TrustedLogin          bool              `json:"trusted_login,omitempty"`
 	Exists                bool              `json:"exists"`

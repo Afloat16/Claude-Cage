@@ -33,6 +33,12 @@ func run(args []string) error {
 		fmt.Println("Cage remote client " + version.Version + "\nCommands: desktop --json, serve, prepare-update. Workloads run on the selected remote host.")
 		return nil
 	}
+	if args[0] == "verify-web-assets" {
+		if len(args) != 1 {
+			return errors.New("verify-web-assets does not accept arguments")
+		}
+		return workbench.VerifyWebAssets()
+	}
 	config := os.Getenv(cage.ConfigEnv)
 	if config == "" {
 		home, err := os.UserHomeDir()
@@ -108,7 +114,12 @@ func run(args []string) error {
 			return err
 		}
 		return printJSON(map[string]string{"status": "ok"}, nil)
-	case "upload-files", "browser-file":
+	case "share-project":
+		if len(args) != 6 || args[1] != "--json" || args[2] != "--connection" || args[3] == "" || (args[4] != "read" && args[4] != "write") {
+			return errors.New("share-project --json --connection ID read|write DIRECTORY")
+		}
+		return printJSON(workbench.ShareNativeCloudProject(config, args[3], args[5], args[4] == "read"))
+	case "clipboard-files", "upload-files", "browser-file":
 		if len(args) < 4 || args[1] != "--json" {
 			return errors.New("invalid file command")
 		}
@@ -119,6 +130,12 @@ func run(args []string) error {
 			}
 			connection = args[3]
 			args = append(append([]string{}, args[:2]...), args[4:]...)
+		}
+		if args[0] == "clipboard-files" {
+			if len(args) < 4 {
+				return errors.New("clipboard-files --json --connection ID send|receive PATH...")
+			}
+			return printJSON(workbench.ClipboardFilesForConnection(config, connection, args[2], args[3:]))
 		}
 		if args[0] == "upload-files" {
 			if len(args) < 5 {

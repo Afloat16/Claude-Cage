@@ -71,7 +71,10 @@ func (s *Server) diagnosticExport(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		var err error
-		guest, err = s.guest(ctx, `sudo python3 - <<'CAGE_DIAGNOSTIC_JOURNAL'
+		if s.macosGuest != nil || s.windowsGuest != nil {
+			guest, err = s.nativeGuestDiagnostics(ctx)
+		} else {
+			guest, err = s.guest(ctx, `sudo python3 - <<'CAGE_DIAGNOSTIC_JOURNAL'
 import subprocess, sys
 result = subprocess.run(['journalctl','--namespace=cage','--no-pager','-o','short-iso','-n','150','--since','14 days ago'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=5, check=True)
 data = result.stdout
@@ -80,6 +83,7 @@ if len(data) > 49152:
     data = data.partition(b'\n')[2]
 sys.stdout.buffer.write(data)
 CAGE_DIAGNOSTIC_JOURNAL`)
+		}
 		if err != nil {
 			guest = nil
 			guestState = "guest collection failed"
@@ -166,6 +170,9 @@ func ExportDiagnosticsForConnection(configPath, connectionID, destination string
 	}
 	err = export()
 	if err == nil {
+		err = addDesktopDiagnosticFile(f, profile)
+	}
+	if err == nil {
 		err = f.Sync()
 	}
 	err = errors.Join(err, f.Close())
@@ -184,7 +191,8 @@ func ExportDiagnosticsForConnection(configPath, connectionID, destination string
 	return os.Rename(temp, destination)
 }
 
-const MaxDiagnosticBundle int64 = 48 << 20
+// Two independently bounded 40 MiB stores plus guest logs and ZIP metadata.
+const MaxDiagnosticBundle int64 = 96 << 20
 
 // Preserve streaming and WebSocket behavior while observing error statuses.
 type diagnosticResponse struct {

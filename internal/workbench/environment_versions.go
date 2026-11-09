@@ -44,6 +44,10 @@ type toolVersion struct {
 
 // Version commands run only for this explicit request, never in status polling.
 func (s *Server) environmentVersions(w http.ResponseWriter, r *http.Request) {
+	if s.macosGuest != nil || s.windowsGuest != nil {
+		s.nativeEnvironmentVersions(w, r)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	running := s.vmRunning()
@@ -97,7 +101,9 @@ CAGE_VERSIONS`)
 	requiredProxy := ""
 	if core, err := managedproxy.CorePath(); err == nil {
 		probeCtx, done := context.WithTimeout(ctx, 2*time.Second)
-		b, e := exec.CommandContext(probeCtx, core, "-v").Output()
+		cmd := exec.CommandContext(probeCtx, core, "-v")
+		hideCommand(cmd)
+		b, e := cmd.Output()
 		done()
 		if e == nil {
 			fields := strings.Fields(strings.SplitN(string(b), "\n", 2)[0])
@@ -116,13 +122,24 @@ CAGE_VERSIONS`)
 }
 
 func (s *Server) updateEnvironment(w http.ResponseWriter, r *http.Request) {
+	if err := s.nativeMaintenancePreflight(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	s.launch(w, "environment-update", s.synchronizeEnvironment)
 }
 func (s *Server) updateEnvironmentTools(w http.ResponseWriter, r *http.Request) {
+	if err := s.nativeMaintenancePreflight(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	s.launch(w, "environment-tools", s.upgradeEnvironmentTools)
 }
 
 func (s *Server) synchronizeEnvironment() error {
+	if s.macosGuest != nil || s.windowsGuest != nil {
+		return s.maintainNativeComponents(false)
+	}
 	if !s.vmRunning() {
 		return errors.New("请先启动 Cage 环境。")
 	}
@@ -154,6 +171,9 @@ func (s *Server) toolsNetworkAllowedLocked() bool {
 	return !s.closing
 }
 func (s *Server) upgradeEnvironmentTools() error {
+	if s.macosGuest != nil || s.windowsGuest != nil {
+		return s.maintainNativeComponents(true)
+	}
 	if !s.vmRunning() {
 		return errors.New("请先启动 Cage 环境。")
 	}

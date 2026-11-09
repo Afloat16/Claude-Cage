@@ -22,12 +22,35 @@ func TestServeShutdownHandoff(t *testing.T) {
 		}
 		return
 	}
+	for _, tc := range []struct {
+		name, saved        string
+		timezone, language bool
+	}{
+		{"fresh profile", "", true, true},
+		{"legacy missing fields", `{"keyboard":"native"}`, true, false},
+		{"saved manual choice", `{"auto_timezone":false,"auto_language":false}`, false, false},
+		{"saved automatic choice", `{"auto_timezone":true,"auto_language":true}`, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) { testServeShutdownHandoff(t, tc.saved, tc.timezone, tc.language) })
+	}
+}
+
+func testServeShutdownHandoff(t *testing.T, saved string, timezone, language bool) {
+	const helperConfig = "CAGE_TEST_SHUTDOWN_CONFIG"
 
 	// Keep both the profile and its sibling workspace under the test directory.
 	// With no VM record, node store or service record, Serve only initializes
 	// private files; its monitors and handoff cannot reach a running environment.
 	profile := filepath.Join(t.TempDir(), "profile")
 	configPath := filepath.Join(profile, "config.json")
+	if saved != "" {
+		if err := os.MkdirAll(profile, 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(profile, "workbench.json"), []byte(saved), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)
@@ -83,6 +106,14 @@ func TestServeShutdownHandoff(t *testing.T) {
 	}
 	if origin == "" || time.Now().After(deadline) {
 		t.Fatal("control service did not become ready")
+	}
+	preferencesData, err := os.ReadFile(filepath.Join(profile, "workbench.json"))
+	var preferences Preferences
+	if err != nil || json.Unmarshal(preferencesData, &preferences) != nil {
+		t.Fatalf("initialized preferences: %s, %v", preferencesData, err)
+	}
+	if preferences.AutoTimezone != timezone || preferences.AutoLanguage != language {
+		t.Fatalf("automatic defaults/override: timezone=%t language=%t", preferences.AutoTimezone, preferences.AutoLanguage)
 	}
 
 	lock, err := os.OpenFile(filepath.Join(profile, "control.lock"), os.O_RDWR, 0600)

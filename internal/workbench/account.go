@@ -7,6 +7,14 @@ import (
 func (s *Server) accountStatus(w http.ResponseWriter, r *http.Request) {
 	v := s.account.viewFor(s.hasTrustedView(r))
 	v.BackgroundRunning = s.vmRunning()
+	if s.macosGuest != nil {
+		v.GuestSystem = "macos"
+		v.InitialMacSetup = s.macSetupPending()
+		v.MacOSGuestUser = s.macosGuest.User
+	}
+	if s.windowsGuest != nil {
+		v.GuestSystem = "windows-11"
+	}
 	jsonReply(w, v)
 }
 

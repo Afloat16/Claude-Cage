@@ -13,12 +13,24 @@ import socketserver
 import subprocess
 import sys
 import threading
+import time
 import uuid
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 LIMIT = 2 * 1024 ** 3
 PORTAL = 'org.freedesktop.portal.FileChooser'
 ROOT = '/org/freedesktop/portal/desktop'
+
+
+def image_context():
+    result = subprocess.run(['/usr/local/bin/cage-native-input', '--request'],
+                            input=b'{"mode":"status"}\n', stdout=subprocess.PIPE,
+                            stderr=subprocess.DEVNULL, check=True, timeout=4)
+    value = json.loads(result.stdout)
+    context = value.get('context', '')
+    if value.get('available') is not True or not re.fullmatch('[a-f0-9]{32}', context):
+        raise ValueError('图片接收位置尚未聚焦，请点击输入框后重试')
+    return context
 
 
 class Broker:
@@ -31,23 +43,71 @@ class Broker:
         self.lock = threading.RLock()
 
     def start(self, kind='paste', multiple=True, **metadata):
-        if kind not in ('paste', 'drop', 'chooser', 'save'):
+        if kind not in ('paste', 'drop', 'image', 'chooser', 'save', 'open'):
             raise ValueError('文件传递方式无效')
+        if kind == 'image':
+            metadata['image_context'] = image_context()
+            multiple = False
         with self.lock:
             if len(self.requests) >= 32:
                 raise ValueError('请先完成已打开的文件窗口')
             key = str(uuid.uuid4())
             self.requests[key] = dict(id=key, kind=kind, multiple=multiple,
-                                      files=[], busy=False, **metadata)
+                                      files=[], busy=False, created=time.monotonic(), **metadata)
         return {'id': key}
 
     def snapshot(self):
         with self.lock:
+            for key, request in list(self.requests.items()):
+                if request['kind'] == 'open' and time.monotonic() - request['created'] > 60:
+                    self.complete_open(key, '本机文件操作已超时，请重新打开')
             return {'uploads': [dict(id=r['id'], multiple=r['multiple'],
                                      title=r.get('title', ''), target='desktop',
                                      directory=r.get('directory', False))
                                 for r in self.requests.values() if r['kind'] == 'chooser'],
-                    'downloads': self.downloads.snapshot() if self.downloads else []}
+                    'downloads': self.downloads.snapshot() if self.downloads else [],
+                    'opens': [{'id': r['id']} for r in self.requests.values()
+                              if r['kind'] == 'open' and not r['busy']]}
+
+    def open_path(self, path, action='open', **metadata):
+        if action not in ('open', 'reveal') or not isinstance(path, str) or not path or '\x00' in path:
+            raise ValueError('文件打开请求无效')
+        if path.startswith('file:'):
+            uri = urlsplit(path)
+            if uri.scheme != 'file' or uri.netloc not in ('', 'localhost') or uri.query or uri.fragment:
+                raise ValueError('请选择本机项目中的文件')
+            path = unquote(uri.path, errors='strict')
+        if not Path(path).is_absolute():
+            raise ValueError('文件打开请求需要绝对路径')
+        path = str(Path(path).resolve(strict=True))
+        return self.start('open', False, path=path, action=action, **metadata)
+
+    def claim_open(self, key):
+        with self.lock:
+            request = self.requests.get(key)
+            if not request or request['kind'] != 'open' or request['busy']:
+                return {'handled': True}
+            if time.monotonic() - request['created'] > 60:
+                self.complete_open(key, '本机文件操作已超时，请重新打开')
+                return {'handled': True}
+            request['busy'] = True
+            path = request['path']
+            if self.downloads:
+                try:
+                    path = self.downloads.host_visible_path(path)
+                except ValueError as error:
+                    return {'error': str(error)}
+            return {'id': key, 'path': path, 'action': request['action']}
+
+    def complete_open(self, key, error=''):
+        with self.lock:
+            request = self.requests.get(key)
+            if not request or request['kind'] != 'open':
+                return {'ok': True}
+            del self.requests[key]
+        if request.get('handle'):
+            self.deliver(request, None if error else [])
+        return {'ok': True}
 
     def get(self, key):
         if key not in self.requests:
@@ -96,7 +156,7 @@ class Broker:
     def finish(self, key):
         with self.lock:
             request = self.get(key)
-            if request['busy'] or not request['files']:
+            if request['kind'] == 'image' or request['busy'] or not request['files']:
                 raise ValueError('请先选择并传递文件')
             request['busy'] = True
         try:
@@ -110,6 +170,20 @@ class Broker:
         except Exception:
             self.cancel(key)
             raise
+
+    def finish_image(self, key):
+        with self.lock:
+            request = self.get(key)
+            if request['kind'] != 'image' or request['busy'] or len(request['files']) != 1:
+                raise ValueError('图片没有完整收到')
+            request['busy'] = True
+        try:
+            if image_context() != request['image_context']:
+                raise ValueError('图片接收位置已变化，请重新粘贴')
+            paste_files(request['files'], expected_context=request['image_context'])
+            return {'ok': True}
+        finally:
+            self.cancel(key)
 
     def cancel(self, key, respond=True):
         with self.lock:
@@ -193,6 +267,8 @@ class Handler(BaseHTTPRequestHandler):
                     result = broker.start(value.get('kind', 'paste'))
                 elif route.path == '/finish':
                     result = broker.finish(value.get('id', ''))
+                elif route.path == '/finish-image':
+                    result = broker.finish_image(value.get('id', ''))
                 elif route.path == '/cancel':
                     key = value.get('id', '')
                     if not re.fullmatch(r'[0-9a-f-]{36}', key):
@@ -200,6 +276,12 @@ class Handler(BaseHTTPRequestHandler):
                     result = broker.cancel(key)
                 elif route.path == '/directory':
                     result = broker.choose_directory(value.get('id', ''), value.get('path', ''))
+                elif route.path == '/open':
+                    result = broker.open_path(value.get('path', ''), value.get('action', 'open'))
+                elif route.path == '/open-claim':
+                    result = broker.claim_open(value.get('id', ''))
+                elif route.path == '/open-complete':
+                    result = broker.complete_open(value.get('id', ''), value.get('error', ''))
                 elif route.path == '/download-retry' and broker.downloads:
                     result = broker.downloads.retry(value.get('id', ''))
                 else:
@@ -373,14 +455,14 @@ class Portal:
             self.unregister(self.connection, object_id)
 
     def deliver(self, request, paths):
-        if request['kind'] not in ('chooser', 'save'):
+        if request['kind'] not in ('chooser', 'save', 'open'):
             paste_files(paths)
             return
         entries = []
-        if paths is not None:
+        if paths is not None and request['kind'] != 'open':
             uris = self.array('s', [self.new_string(Path(path).as_uri().encode()) for path in paths])
             entries.append(self.new_entry(self.new_string(b'uris'), self.new_variant(uris)))
-        response = self.tuple(self.new_uint(0 if paths is not None else 1), self.array('{sv}', entries))
+        response = self.tuple(self.new_uint(0 if paths is not None else (2 if request['kind'] == 'open' else 1)), self.array('{sv}', entries))
         if not self.emit(self.connection, request['sender'].encode(), request['handle'].encode(),
                          b'org.freedesktop.portal.Request', b'Response', response, None):
             raise ValueError('原文件窗口已关闭')
@@ -390,10 +472,11 @@ class Portal:
         bind(self.glib, 'g_main_loop_run', None, C.c_void_p)(self.loop)
 
 
-def paste_files(paths):
+def paste_files(paths, expected_context=None):
     process = subprocess.Popen([sys.executable, __file__, '--clipboard'], stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-    process.stdin.write(json.dumps(paths).encode())
+    value = paths if expected_context is None else dict(paths=paths, image_context=expected_context)
+    process.stdin.write(json.dumps(value).encode())
     process.stdin.close()
     try:
         ready, _, _ = select.select([process.stdout], [], [], 10)
@@ -405,7 +488,7 @@ def paste_files(paths):
         process.stdout.close()
 
 
-def clipboard(paths):
+def clipboard(paths, expected_context=None):
     gtk, gdk, glib = (C.CDLL(name) for name in ('libgtk-3.so.0', 'libgdk-3.so.0', 'libglib-2.0.so.0'))
     p = C.c_void_p
     if not bind(gtk, 'gtk_init_check', C.c_int, p, p)(None, None):
@@ -421,9 +504,18 @@ def clipboard(paths):
         _fields_ = [('target', C.c_char_p), ('flags', C.c_uint), ('info', C.c_uint)]
     provide_type = C.CFUNCTYPE(None, p, p, C.c_uint, p)
     clear_type = C.CFUNCTYPE(None, p, p)
-    names = [b'text/uri-list', b'x-special/gnome-copied-files']
-    uris = [Path(path).as_uri() for path in paths]
-    payloads = [('\r\n'.join(uris) + '\r\n').encode(), ('copy\n' + '\n'.join(uris)).encode()]
+    if expected_context is not None:
+        if len(paths) != 1 or image_context() != expected_context:
+            raise ValueError('图片接收位置已变化，请重新粘贴')
+        with open(paths[0], 'rb') as image:
+            data = image.read(20 * 1024 * 1024 + 1)
+        if len(data) > 20 * 1024 * 1024 or not data.startswith(b'\x89PNG\r\n\x1a\n'):
+            raise ValueError('PNG 图片无效')
+        names, payloads = [b'image/png'], [data]
+    else:
+        names = [b'text/uri-list', b'x-special/gnome-copied-files']
+        uris = [Path(path).as_uri() for path in paths]
+        payloads = [('\r\n'.join(uris) + '\r\n').encode(), ('copy\n' + '\n'.join(uris)).encode()]
     buffers = [C.create_string_buffer(data) for data in payloads]
     acknowledged = False
     @stop_type
@@ -441,12 +533,14 @@ def clipboard(paths):
     @clear_type
     def clear(_clipboard, _data):
         timeout(10000, stop, None)
-    targets = (Target * 2)(*(Target(name, 0, index) for index, name in enumerate(names)))
+    targets = (Target * len(names))(*(Target(name, 0, index) for index, name in enumerate(names)))
     get = bind(gtk, 'gtk_clipboard_get', p, p)
     own = bind(gtk, 'gtk_clipboard_set_with_data', C.c_int, p, C.POINTER(Target), C.c_uint, provide_type, clear_type, p)
-    if not own(get(atom(b'CLIPBOARD')), targets, 2, provide, clear, None):
+    if not own(get(atom(b'CLIPBOARD')), targets, len(names), provide, clear, None):
         raise RuntimeError('clipboard unavailable')
     flush()
+    if expected_context is not None and image_context() != expected_context:
+        raise ValueError('图片接收位置已变化，请重新粘贴')
     subprocess.run(['xdotool', 'key', '--clearmodifiers', 'ctrl+v'], check=True,
                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
     timeout(120000, stop, None)
@@ -470,7 +564,11 @@ def main():
             raise
         return
     if sys.argv[1:] == ['--clipboard']:
-        clipboard(json.load(sys.stdin))
+        value = json.load(sys.stdin)
+        if isinstance(value, dict):
+            clipboard(value['paths'], value['image_context'])
+        else:
+            clipboard(value)
         return
     runtime = Path(os.environ['XDG_RUNTIME_DIR'])
     directory = runtime / 'uploads'

@@ -3,6 +3,7 @@
 package workbench
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"runtime"
@@ -12,7 +13,8 @@ import (
 func lockController(f *os.File) error {
 	return syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 }
-func unlockController(f *os.File) error { return syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }
+func unlockController(f *os.File) error      { return syscall.Flock(int(f.Fd()), syscall.LOCK_UN) }
+func controllerLockContended(err error) bool { return errors.Is(err, syscall.EWOULDBLOCK) }
 func processExists(pid int) bool {
 	if pid <= 0 {
 		return false

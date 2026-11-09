@@ -24,6 +24,9 @@ func (s *Server) connectProject(path string, add bool) (string, error) {
 	if path == "" {
 		path = s.workspace()
 	}
+	if isClientMountPath(path) {
+		return s.clientMountWorkspace(path)
+	}
 	path, err := validateWorkspace(path, s.profile)
 	if err != nil {
 		return "", err
@@ -70,17 +73,43 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	workspace, err := s.connectProject(input.Workspace, input.Add)
+	if errors.Is(err, errMacOSProjectApproval) {
+		path, pathErr := validateWorkspace(input.Workspace, s.profile)
+		if pathErr == nil {
+			s.mu.Lock()
+			share := s.projectShares[path]
+			grant := ""
+			if share != nil {
+				grant = share.approval
+			}
+			s.mu.Unlock()
+			if grant != "" {
+				jsonReply(w, map[string]string{"workspace": path, "approval": grant})
+				return
+			}
+		}
+	}
 	if err != nil {
 		requestError(w, err)
 		return
 	}
-	if input.Activate {
+	if input.Activate && isClientMountPath(workspace) {
+		s.mu.Lock()
+		if m := s.clientMounts[workspace]; m == nil || !m.live() {
+			s.mu.Unlock()
+			requestError(w, errClientMountGone)
+			return
+		}
+		s.clientWorkspace = workspace
+		s.mu.Unlock()
+	} else if input.Activate {
 		preferences.Workspace = workspace
 		if err = writePrivate(filepath.Join(s.profile, "workbench.json"), preferences); err != nil {
 			requestError(w, err)
 			return
 		}
 		s.mu.Lock()
+		s.clientWorkspace = ""
 		s.preferences.Workspace = workspace
 		s.mu.Unlock()
 	}
@@ -95,10 +124,14 @@ type projectTransport struct {
 func (p projectTransport) Close() error { _ = p.ReadCloser.Close(); return p.WriteCloser.Close() }
 
 type projectShare struct {
-	cmd       *exec.Cmd
-	transport projectTransport
-	done      chan struct{}
-	once      sync.Once
+	cmd            *exec.Cmd
+	transport      projectTransport
+	done           chan struct{}
+	once           sync.Once
+	detach         func()
+	approval       string
+	approvalTimer  *time.Timer
+	windowsProject *windowsProjectBinding
 }
 
 func (p *projectShare) stop() {
@@ -113,10 +146,42 @@ func (p *projectShare) stop() {
 }
 
 func (p *projectShare) close() {
+	if p.approvalTimer != nil {
+		p.approvalTimer.Stop()
+	}
 	p.stop()
 	if p.done != nil {
 		<-p.done
 	}
+	if p.detach != nil {
+		p.detach()
+	}
+}
+
+// The local SFTP server owns the host authorization boundary for both macOS
+// and Linux mounts. The remote shell receives only that directory's byte stream.
+func startProjectTransport(cmd *exec.Cmd, path string) (*projectShare, error) {
+	output, err := cmd.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	input, err := cmd.StdinPipe()
+	if err != nil {
+		_ = output.Close()
+		return nil, err
+	}
+	share := &projectShare{cmd: cmd, transport: projectTransport{output, input}, done: make(chan struct{})}
+	if err = cmd.Start(); err != nil {
+		_ = share.transport.Close()
+		return nil, err
+	}
+	go func() {
+		defer close(share.done)
+		_ = reversesshfs.ServeConfined(share.transport, path, false, nil)
+		share.stop()
+		_ = cmd.Wait()
+	}()
+	return share, nil
 }
 
 // Called under the lifecycle lock. Each SFTP server is rooted in exactly the
@@ -137,9 +202,16 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	if err != nil {
 		return err
 	}
+	if s.windowsGuest != nil {
+		return s.ensureWindowsProjectShare(path)
+	}
+	if s.macosGuest != nil {
+		return s.ensureMacOSProjectShare(path)
+	}
 	if path == s.environmentDir() {
 		return nil
 	}
+
 	s.mu.Lock()
 	current := s.projectShares[path]
 	s.mu.Unlock()
@@ -172,28 +244,14 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	if err = probe.Close(); err != nil {
 		return err
 	}
-	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + " -o slave,allow_other,cache=no,nodev,nosuid"
+	// Present shared files as owned by the guest user. Host UID/GID values differ
+	// across platforms and otherwise make Git reject an explicitly shared repo.
+	script := "exec sshfs " + shellescape.Quote(":"+filepath.ToSlash(path)) + " " + quoted + ` -o slave,allow_other,cache=no,nodev,nosuid,uid="$(id -u)",gid="$(id -g)"`
 	cmd := s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", script)
-	output, err := cmd.StdoutPipe()
+	share, err := startProjectTransport(cmd, path)
 	if err != nil {
 		return err
 	}
-	input, err := cmd.StdinPipe()
-	if err != nil {
-		_ = output.Close()
-		return err
-	}
-	share := &projectShare{cmd: cmd, transport: projectTransport{output, input}, done: make(chan struct{})}
-	if err = cmd.Start(); err != nil {
-		_ = share.transport.Close()
-		return err
-	}
-	go func() {
-		defer close(share.done)
-		_ = reversesshfs.ServeConfined(share.transport, path, false, nil)
-		share.stop()
-		_ = cmd.Wait()
-	}()
 	for {
 		if _, err = s.guest(ctx, "mountpoint -q "+quoted+" && test \"$(cat "+shellescape.Quote(guestPath(probe.Name()))+")\" = "+shellescape.Quote(challenge)); err == nil {
 			break
@@ -249,7 +307,10 @@ func (s *Server) projectPaths() ([]string, error) {
 		return nil, err
 	}
 	paths := []string{s.environmentDir()}
-	for _, path := range append(saved.Paths, s.workspace()) {
+	s.mu.Lock()
+	current := s.preferences.Workspace
+	s.mu.Unlock()
+	for _, path := range append(saved.Paths, current) {
 		found := path == ""
 		for _, existing := range paths {
 			found = found || path == existing
@@ -258,12 +319,15 @@ func (s *Server) projectPaths() ([]string, error) {
 			paths = append(paths, path)
 		}
 	}
-	return paths, nil
+	return s.appendClientMounts(paths), nil
 }
 
 func (s *Server) projectWorkspace(path string) (string, error) {
 	if path == "" {
 		path = s.workspace()
+	}
+	if isClientMountPath(path) {
+		return s.clientMountWorkspace(path)
 	}
 	paths, err := s.projectPaths()
 	if err != nil {
@@ -302,7 +366,12 @@ func (s *Server) restoreProjectShares() {
 	if b, err := os.ReadFile(filepath.Join(s.profile, "projects.json")); err == nil {
 		_ = json.Unmarshal(b, &saved)
 	}
-	current := s.workspace()
+	if s.macosGuest != nil {
+		saved.Paths = append([]string{s.environmentDir()}, saved.Paths...)
+	}
+	s.mu.Lock()
+	current := s.preferences.Workspace
+	s.mu.Unlock()
 	if current != "" && current != s.environmentDir() {
 		found := false
 		for _, p := range saved.Paths {
@@ -325,6 +394,7 @@ func (s *Server) restoreProjectShares() {
 	s.mu.Unlock()
 }
 func (s *Server) closeProjectShares() {
+	s.closeClientMounts()
 	s.mu.Lock()
 	shares := s.projectShares
 	s.projectShares = nil
