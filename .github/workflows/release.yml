@@ -86,6 +86,7 @@ jobs:
   macos:
     needs: prepare
     uses: ./.github/workflows/macos-build.yml
+    secrets: inherit
     with:
       ref: ${{ needs.prepare.outputs.commit_sha }}
       release: true
@@ -93,6 +94,7 @@ jobs:
   windows:
     needs: prepare
     uses: ./.github/workflows/windows-build.yml
+    secrets: inherit
     with:
       ref: ${{ needs.prepare.outputs.commit_sha }}
       release: true

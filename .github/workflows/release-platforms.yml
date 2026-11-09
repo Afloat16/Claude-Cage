@@ -32,6 +32,7 @@ jobs:
     needs: validate
     if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/windows-build.yml
+    secrets: inherit
     with:
       ref: ${{ inputs.ref }}
       release: true

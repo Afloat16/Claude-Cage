@@ -8,7 +8,9 @@ trap 'rm -rf "$work"' EXIT
 mod=github.com/Code-Hex/vz/v3
 version=$(go list -m -f '{{.Version}}' "$mod")
 [[ $version == v3.7.1 ]] || { echo "Review the login view against VZ binding $version" >&2; exit 1; }
+go mod download "$mod"
 dir=$(go list -m -f '{{.Dir}}' "$mod")
+[[ -n "$dir" && -d "$dir" ]] || { echo 'VZ binding source is unavailable after download.' >&2; exit 1; }
 cp -R "$dir" "$work/vz"
 chmod -R u+w "$work/vz"
 cat > "$work/vz/cage_view_object_darwin.go" <<'GO'
