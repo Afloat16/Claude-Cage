@@ -137,6 +137,7 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startClaudeDesktop() error {
+	defer func() { s.desktopViews.reset(); s.desktopViews.background(s.changeDesktopVisibility) }()
 	s.desktopStatus.invalidate()
 	defer s.desktopStatus.invalidate()
 	s.setMessage("正在打开 Claude Desktop…")
@@ -264,6 +265,12 @@ func (s *Server) claudeDesktopVNC(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境尚未启动", 409)
 		return
 	}
+	release, err := s.acquireDesktopView()
+	if err != nil {
+		http.Error(w, "无法恢复 Claude Desktop 画面，请重新连接", http.StatusBadGateway)
+		return
+	}
+	defer release()
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	// No extra localhost port or public VNC listener on the host. SSH is bound

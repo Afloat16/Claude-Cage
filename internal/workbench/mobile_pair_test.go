@@ -152,6 +152,9 @@ func TestDesktopPhonePairingLifecycle(t *testing.T) {
 	legacy["BrowserAllowed"] = json.RawMessage("false")
 	legacy["DesktopAllowed"] = json.RawMessage("false")
 	newHost, restoredGate := grantedToolUpdateServer(t)
+	// This restored host uses a fake VM and guest frames, so no real X display
+	// exists. Its display effect has the same boolean contract as the first host.
+	newHost.desktopDisplayUpdate = func(bool) error { return nil }
 	if err := writePrivate(newHost.phoneFile(), legacy); err != nil {
 		t.Fatal(err)
 	}

@@ -73,13 +73,14 @@ func (p *mobilePairing) peerLocked() string {
 }
 
 type phoneSurfaceSession struct {
-	id, token  string
-	ctx        context.Context
-	cancel     context.CancelFunc
-	stopEpoch  func() bool
-	startJob   string
-	openInput  phoneSurfaceInput
-	readyUntil time.Time
+	releaseDisplay func()
+	id, token      string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	stopEpoch      func() bool
+	startJob       string
+	openInput      phoneSurfaceInput
+	readyUntil     time.Time
 }
 
 type phoneSurfaceInput struct {
@@ -189,6 +190,10 @@ func (s *Server) retirePhoneSurface(surface phoneSurface, b *phoneSurfaceSession
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	_, _, _ = s.phoneSurfaceGuest(ctx, surface, b.token, "close", input)
+	if b.releaseDisplay != nil {
+		b.releaseDisplay()
+		b.releaseDisplay = nil
+	}
 	if surface == phoneBrowser && state.nativeBrowser != nil {
 		state.nativeBrowser.close()
 		state.nativeBrowser = nil
@@ -354,6 +359,15 @@ func (s *Server) phoneSurfaceRequest(surface phoneSurface, w http.ResponseWriter
 			b.readyUntil = time.Now().Add(90 * time.Second)
 		}
 		state.session = b
+		if surface == phoneDesktop {
+			release, err := s.acquireDesktopView()
+			if err != nil {
+				s.retirePhoneSurface(surface, b)
+				http.Error(w, "无法恢复 Claude Desktop 画面，请重新打开", http.StatusBadGateway)
+				return
+			}
+			b.releaseDisplay = release
+		}
 		context.AfterFunc(sessionCtx, func() { state.op.Lock(); defer state.op.Unlock(); s.retirePhoneSurface(surface, b) })
 	}
 	ctx, cancel := context.WithCancel(r.Context())

@@ -42,6 +42,8 @@ type controlFile struct {
 	Controller ControllerIdentity `json:"controller"`
 }
 type Server struct {
+	desktopViews                                     desktopViewDemand
+	desktopDisplayUpdate                             func(bool) error
 	desktopStatus                                    desktopStatusCache
 	agentNativeQueue                                 agentNativeQueue
 	macSetupProjectsChecked                          time.Time

@@ -211,6 +211,7 @@ func (s *Server) attach() error {
 	s.ready = true
 	s.mu.Unlock()
 	s.restoreProjectShares()
+	s.desktopViews.background(s.changeDesktopVisibility)
 	return nil
 }
 func (s *Server) monitor(ctx context.Context) {
@@ -307,6 +308,7 @@ func (s *Server) runCage(args ...string) error {
 	return nil
 }
 func (s *Server) startEnvironment(syncTimezone bool) error {
+	s.desktopViews.reset()
 	s.desktopStatus.invalidate()
 	defer s.desktopStatus.invalidate()
 	if err := s.requireStorageReady(); err != nil {

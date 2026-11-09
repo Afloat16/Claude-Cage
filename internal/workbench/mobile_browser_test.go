@@ -28,7 +28,7 @@ func pairedHostRequest(s *Server, method, path, body string) *httptest.ResponseR
 }
 
 // Called with a real QR enrollment, relay tunnel, TLS peer and authenticated
-// workbench. Only the guest browser process is replaced inside this test.
+// workbench. Guest HTTP responses and the X display effect use bounded fixtures.
 func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobilelink.Client, gate *cage.EgressGate) {
 	t.Helper()
 	s.phones.mu.Lock()
@@ -42,6 +42,8 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 	openedURLs := make(chan string, 6)
 	const frameTag = "b542cd94286a2489bc2df1241b043c76"
 	var opens, desktopFrames atomic.Int32
+	var desktopVisible atomic.Bool
+	s.desktopDisplayUpdate = func(show bool) error { desktopVisible.Store(show); return nil }
 	var slowFrame, desktopDensity atomic.Bool
 	var desktopOpenStatus, desktopFrameStatus atomic.Int32
 	receiving := make(chan struct{})
@@ -85,6 +87,9 @@ func testPairedBrowser(t *testing.T, ctx context.Context, s *Server, phone *mobi
 			}
 		case "/phone-browser/close":
 		case "/phone-desktop/open":
+			if !desktopVisible.Load() {
+				t.Error("phone opened before its display lease restored the window")
+			}
 			if status := desktopOpenStatus.Load(); status != 0 {
 				return &http.Response{StatusCode: int(status), Header: make(http.Header), Body: io.NopCloser(strings.NewReader(""))}, nil
 			}
