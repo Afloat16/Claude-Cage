@@ -50,6 +50,9 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 			time.Sleep(time.Hour)
 		case "/tabs":
 			result = map[string]any{"active": "tab", "tabs": []any{}}
+			if workspace := os.Getenv("CAGE_BROWSER_EDITOR_WORKSPACE"); workspace != "" {
+				result = map[string]any{"active": "tab", "tabs": []any{map[string]any{"id": "tab", "kind": "editor", "workspace": workspace, "blocked": true}}}
+			}
 		case "/events":
 			result = map[string]any{"sequence": 2, "events": []any{}}
 			if request.Input.After == 2 {
