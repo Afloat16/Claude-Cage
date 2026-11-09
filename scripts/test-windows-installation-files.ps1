@@ -118,12 +118,15 @@ function Test-InstallerTransaction {
         if (Test-Path $key) {
             if ((Get-ItemProperty $key).InstallLocation -ne $target) { throw 'NSIS fixture registration changed owner; retained for inspection.' }
             Run-Fixture (Join-Path $target 'Uninstall.exe') @('/S')
-            $deadline = [DateTime]::UtcNow.AddSeconds(20)
-            while ((Test-Path -LiteralPath $target) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
+            # NSIS can return from its bootstrapper while the TEMP worker is
+            # still running. Its helper removes the target before NSIS clears
+            # registration and shortcuts, so target disappearance is not done.
+            $deadline = [DateTime]::UtcNow.AddSeconds(120)
+            while (((Test-Path -LiteralPath $target) -or (Test-Path $key) -or (Test-Path -LiteralPath $desktop) -or (Test-Path -LiteralPath $menu)) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 100 }
         }
     }
-    Check (!(Test-Path $key) -and !(Test-Path -LiteralPath $desktop) -and !(Test-Path -LiteralPath $menu)) 'NSIS fixture left registry or shortcut changes.'
-    Check (!(Test-Path -LiteralPath $target)) 'NSIS fixture did not uninstall its owned files.'
+    $remaining = @{target = (Test-Path -LiteralPath $target); registration = (Test-Path $key); desktopShortcut = (Test-Path -LiteralPath $desktop); startMenu = (Test-Path -LiteralPath $menu)}
+    Check (!($remaining.Values -contains $true)) ('NSIS fixture did not finish uninstalling owned artifacts: ' + ($remaining | ConvertTo-Json -Compress))
     Write-Output 'PASS: production NSIS silently installed/uninstalled its text-only fixture through PowerShell 5.1 transactions; no application or VM was started.'
 }
 try {
