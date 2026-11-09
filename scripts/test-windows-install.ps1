@@ -109,11 +109,15 @@ Assert-PersonalData
 $uninstall = Start-Process -FilePath (Join-Path $target 'Uninstall.exe') -ArgumentList @('/S') -PassThru
 if (-not $uninstall.WaitForExit(120000) -or $uninstall.ExitCode -ne 0) { throw 'Uninstall failed.' }
 # NSIS may relaunch its uninstaller from TEMP so that it can delete the original.
+# The launcher can disappear before the worker clears registration and shortcuts.
 $deadline = [DateTime]::UtcNow.AddSeconds(120)
-while ((Test-Path -LiteralPath (Join-Path $target 'Uninstall.exe')) -and [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 200 }
+while (((Test-Path -LiteralPath $target) -or (Test-Path $savedKey) -or
+        (Test-Path -LiteralPath $desktopShortcut) -or (Test-Path -LiteralPath $startMenuDirectory)) -and
+        [DateTime]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 200 }
 if (Test-Path -LiteralPath (Join-Path $target 'Cage.exe')) { throw 'Uninstall left Cage.exe behind.' }
 if (Test-Path -LiteralPath (Join-Path $target 'Uninstall.exe')) { throw 'Uninstall left its launcher behind.' }
 if (Test-Path -LiteralPath $target) { throw 'Uninstall left packaged files or directories that would block installation into the same folder.' }
+if (Test-Path $savedKey) { throw 'Uninstall left the Cage registration behind.' }
 Assert-PersonalData
 Assert-Shortcuts $false $false
 Write-Host 'Install, WebView2 workbench, reinstall, uninstall and user-data preservation passed. VM startup was not tested.'
