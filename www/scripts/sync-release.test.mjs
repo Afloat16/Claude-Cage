@@ -208,6 +208,7 @@ test('explicit RC manifest exposes signed Windows and all platforms with complet
     return new Response('', { headers: { 'content-length': String(url.includes('full-source') ? 700 * 1024 * 1024 : 100) } });
   });
   assert.equal(release.prerelease, true);
+  assert.equal(releaseAssets(release).guestSource.name, `cage-macos-guest-${version}-source.tar.gz`);
   const metadata = releaseMetadata(release, manifest);
   assert.equal(metadata.version, version);
   assert.equal(metadata.windowsDownloadURL, release.assets.find(asset => asset.name === names[1]).browser_download_url);

@@ -90,7 +90,8 @@ export function releaseAssets(release) {
   if (assets[1].size > 64 * 1024) throw new Error('Checksum file is too large');
   const windows = optionalAsset(release, `Cage-${version}-windows-amd64-setup.exe`);
   const linux = optionalAsset(release, `Cage-${version}-linux-amd64.deb`);
-  return { version, archive: assets[0], checksums: assets[1], source, windows, linux };
+  const guestSource = optionalAsset(release, `cage-macos-guest-${version}-source.tar.gz`);
+  return { version, archive: assets[0], checksums: assets[1], source, windows, linux, guestSource };
 }
 
 function optionalAsset(release, name) {
@@ -190,7 +191,7 @@ async function main() {
     });
     if (!release) throw new Error('No complete public Cage release is available');
   }
-  const { version, archive, source } = releaseAssets(release);
+  const { version, archive, source, guestSource } = releaseAssets(release);
   const text = await checksumText(release);
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
@@ -198,6 +199,7 @@ async function main() {
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);
+    if (guestSource) await download(guestSource, checksumFor(text, guestSource), values['archive-directory']);
     await writeFile(join(values['archive-directory'], 'SHA256SUMS'), text);
     for (const url of [metadata.windowsDownloadURL || metadata.windowsPreview?.downloadURL, metadata.linuxDownloadURL].filter(Boolean)) {
       const asset = release.assets.find(asset => asset.browser_download_url === url);
