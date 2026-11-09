@@ -262,11 +262,11 @@ export function ProxySettings({ status, onApplied, onConfirm, onDirty, initializ
   const route = routeDraft ?? savedRoute;
   const routeChanged = JSON.stringify(route) !== JSON.stringify(savedRoute);
   useEffect(() => {
-    onDirty?.(routeChanged);
+    onDirty?.(routeChanged || initializing && Boolean(form));
     return () => onDirty?.(false);
-  }, [onDirty, routeChanged]);
+  }, [onDirty, routeChanged, initializing, Boolean(form)]);
   if (!proxy)
-    return <div className="proxy-loading">{error || "正在读取代理配置…"}</div>;
+    return <div className="proxy-loading" role={error ? "alert" : "status"}>{error || "正在读取代理配置…"}</div>;
   const allNodes = proxy.sources.flatMap((s) =>
     s.nodes.map((n) => ({ ...n, source: s.name, sourceID: s.id })),
   );

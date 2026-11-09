@@ -86,3 +86,38 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     console.log(`PASS ${platform}: independent initialization, inline keyboard selection, back navigation, progress, refresh, retry, completion gate and reopen`);
   } finally { await browser.close(); }
 }
+
+{
+  let imported = false, applied = false;
+  const f = await createWorkbench({ initialization: { required: true, tracked: true }, beforeNavigate: async (page, state) => {
+    state.status.local_vm_storage = true;
+    await page.route("**/api/environment/storage", route => route.fulfill({ json: { directory: "/preview/cage-state", has_environment: false } }));
+    await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system: "macos" } }));
+    await page.route("**/api/proxy", route => route.fulfill({ json: { active: applied, selected: applied ? "node" : "", sources: imported ? [{ id: "source", name: "自有节点", nodes: [{ id: "node", name: "本机测试代理", type: "socks5" }] }] : [], port: 17896, core_available: true } }));
+    for (const action of ["import", "route"]) await page.route(`**/api/proxy/${action}`, route => {
+      if (action === "import") imported = true;
+      else applied = true;
+      state.status.job = { id: action, kind: "proxy", running: false, message: "已完成" };
+      return route.fulfill({ json: state.status.job });
+    });
+  } });
+  try {
+    const { page } = f;
+    await page.getByRole("button", { name: "下一步：配置代理" }).click();
+    const start = page.getByRole("button", { name: "开始安装", exact: true });
+    assert.ok(await start.isDisabled());
+    await page.getByRole("button", { name: "添加来源", exact: true }).click();
+    await page.getByRole("button", { name: "手动节点", exact: true }).click();
+    await page.getByLabel("来源名称", { exact: true }).fill("自有节点");
+    await page.getByLabel("节点名称", { exact: true }).fill("本机测试代理");
+    await page.getByLabel("服务器", { exact: true }).fill("127.0.0.1");
+    await page.getByRole("button", { name: "导入并验证", exact: true }).click();
+    await page.getByRole("tab", { name: "节点", exact: true }).click();
+    await page.getByRole("button", { name: "选择节点 本机测试代理", exact: true }).click();
+    await page.getByRole("button", { name: "应用代理", exact: true }).click();
+    await page.getByText("已完成", { exact: true }).waitFor();
+    await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button => button.textContent === '开始安装' && !button.disabled));
+    assert.deepEqual(f.errors, []);
+    console.log("PASS first proxy: manual import, node selection and explicit apply unlock installation inside initialization");
+  } finally { await f.browser.close(); }
+}

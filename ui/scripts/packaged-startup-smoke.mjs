@@ -54,8 +54,8 @@ try {
   await page.getByRole("button", { name: "下一步：配置代理", exact: true }).click();
   await page.getByRole("heading",{name:"连接你的网络代理",exact:true}).waitFor();
   assert.ok(await page.getByRole("button",{name:"开始安装",exact:true}).isDisabled(), "proxy must be applied before installation");
-  if(evidence) await page.screenshot({ path:path.join(evidence,"initialization-proxy.png") });
   await page.getByText("添加来源", { exact: true }).first().waitFor();
+  if(evidence) await page.screenshot({ path:path.join(evidence,"initialization-proxy.png") });
   assert.deepEqual(errors, []);
   console.log(JSON.stringify({ checks: ["standalone initialization after account setup", "VM stopped throughout", "no workbench navigation before initialization", "SSH-only alternative", "proxy required before installation", packaged ? "packaged helper bootstrap" : "development helper bootstrap", "real session and APIs", "embedded production UI loaded", "private profile onboarding", "launch ticket removed"], version: entry.controller.version }));
 } finally {

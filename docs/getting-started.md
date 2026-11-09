@@ -40,7 +40,7 @@
 
 ### 选择环境存储位置
 
-Windows 安装器中选择的是程序目录。如果希望镜像下载和虚拟磁盘都放在 D 盘，首次打开工作台后，点击“选择环境存储位置”，选一个专用空文件夹，例如 `D:\CageData`，点击“使用此位置”，再启动环境。macOS 和 Linux 的本机工作台也提供这个入口。Debian 环境默认设置下，虚拟磁盘在用户主目录的 `.claude-cage/state/lima`，镜像下载缓存在系统用户缓存目录下的 `lima`（Windows 为 `%LOCALAPPDATA%\lima`）。
+Windows 安装器中选择的是程序目录。如果希望镜像下载和虚拟磁盘都放在 D 盘，首次登录后在独立初始化界面的“系统与存储”中选择专用空文件夹，例如 `D:\CageData`，点击“使用此位置”，再配置代理并开始安装。macOS 和 Linux 使用相同流程。安装、必要授权与网络检查完成后才进入工作台；中断后重新打开仍可继续。Debian 环境默认设置下，虚拟磁盘在用户主目录的 `.claude-cage/state/lima`，镜像下载缓存在系统用户缓存目录下的 `lima`（Windows 为 `%LOCALAPPDATA%\lima`）。
 
 选择支持私有文件权限和稀疏文件的本地磁盘。Windows 可用 NTFS，Linux 可用 ext4、XFS 或 Btrfs。Mac 需要 APFS 卷并启用所有权。使用 Mac 外接盘时，在 Finder 的磁盘“显示简介”中取消“忽略此宗卷的所有权”。
 

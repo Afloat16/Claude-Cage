@@ -22,6 +22,7 @@ type initializationView struct {
 	Required bool `json:"required"`
 	Started  bool `json:"started"`
 	Tracked  bool `json:"tracked"`
+	Prepared bool `json:"prepared"`
 }
 
 func (s *Server) initializationState() (initializationView, error) {
@@ -34,7 +35,7 @@ func (s *Server) initializationState() (initializationView, error) {
 		if json.Unmarshal(data, &record) != nil || record.Version != 1 {
 			return initializationView{}, errors.New("初始化记录无法读取，请保留现有数据并导出诊断包")
 		}
-		return initializationView{Required: !record.Completed || s.macSetupPending(), Started: record.Started, Tracked: true}, nil
+		return initializationView{Required: !record.Completed || s.macSetupPending(), Started: record.Started, Tracked: true, Prepared: s.environmentPrepared()}, nil
 	}
 	if !errors.Is(err, os.ErrNotExist) {
 		return initializationView{}, err

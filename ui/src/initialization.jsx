@@ -67,6 +67,7 @@ function Initialization({ initial, onComplete }) {
   const pollNow = useRef(null);
   const activation = useRef(false);
   const actionPending = useRef(false);
+  const restored = useRef(false);
   const job = status?.job || {};
   const busy = submitting || Boolean(job.running);
   const network = networkState(status);
@@ -96,6 +97,10 @@ function Initialization({ initial, onComplete }) {
         if (results[1].status === "fulfilled") {
           const install = results[1].value;
           setPending(install?.pending || null);
+          if (!restored.current) {
+            restored.current = true;
+            if (initial.started && !initial.prepared && !account?.guest_system && !install?.pending && !next.job?.running && !next.job?.setup_progress && !next.ready) setStep("system");
+          }
           if (install?.activate && !activation.current) {
             activation.current = true;
             setStep("install");
@@ -167,7 +172,7 @@ function Initialization({ initial, onComplete }) {
   async function back() {
     if (step === "proxy" && proxyDirty && !await confirm({ title: "放弃尚未应用的代理修改？", body: "已经保存并应用的代理会保留，当前未应用的表单修改会丢弃。", confirm: "放弃修改" })) return;
     setProxyDirty(false);
-    setStep(step === "install" ? "proxy" : "system");
+    setStep(step === "install" ? "proxy" : pending || account?.guest_system ? "install" : "system");
   }
   const failed = Boolean(job.error || error);
   const progress = job.setup_progress && { ...job, setup_progress: job.setup_progress };
