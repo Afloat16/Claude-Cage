@@ -29,14 +29,14 @@ try {
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto(entry.url);
-  await page.getByRole("button", { name: "使用用户名和密码", exact: true }).click();
+  await page.getByRole("heading", { name: "注册 Cage 账户", exact: true }).waitFor();
   await page.getByLabel("用户名",{exact:true}).waitFor();
   const initial = await page.evaluate(async () => (await fetch("/api/client/local-status")).json());
   assert.ok(initial.known && initial.service_running && !initial.running, "opening the local home must not boot the VM");
   assert.equal(await page.getByRole("heading",{name:"选择工作环境"}).count(),0);
   if (evidence) await page.screenshot({ path:path.join(evidence,"desktop-first-open.png") });
   const password = randomBytes(24).toString("base64url");
-  await page.getByLabel("用户名",{exact:true}).fill("Packaged Smoke");
+  await page.getByLabel("用户名",{exact:true}).fill("packaged_smoke");
   await page.getByLabel("设置密码",{exact:true}).fill(password);
   await page.getByLabel("确认密码",{exact:true}).fill(password);
   const statusResponse = page.waitForResponse((response) => response.url().endsWith("/api/status") && response.ok());

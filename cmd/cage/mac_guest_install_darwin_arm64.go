@@ -34,6 +34,10 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 		return errors.New("客机初始密码需使用 8 至 256 个英文键盘可输入的字母、数字、空格或符号")
 	}
 	defer clear(pw)
+	ordinaryUser := os.Getenv("CAGE_MACOS_ACCOUNT")
+	if !guestos.ValidMacOSAccountName(ordinaryUser) {
+		return errors.New("请从 Cage 注册共用账密后继续安装 macOS 客机")
+	}
 	if !macGuestLoginAvailable() {
 		return errors.New("此 Cage 构建缺少虚拟 Mac 登录组件")
 	}
@@ -92,7 +96,6 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 	if err != nil {
 		return err
 	}
-	ordinaryUser := "cage"
 	if provision != "cageprovision" {
 		return errors.New("此开发客机的置备身份不匹配")
 	}
@@ -144,7 +147,7 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 	if err := auth.Run(); err != nil {
 		return errors.New("无法准备虚拟 Mac 账户")
 	}
-	cmd := guestCommand(ctx, `sudo -S -p '' /bin/sh -ec `+shellescape.Quote(`cd `+remote+`; exec 4<login-input; rm login-input; /usr/bin/perl ./native-component-manifest.pl source ./native-components.json .; /bin/bash ./provision-macos-workbench.sh `+remote+` `+i.ID.String()+` `+provision+` <&4; /usr/bin/perl ./native-component-manifest.pl publish ./native-components.json .`)+adminPassword)
+	cmd := guestCommand(ctx, `sudo -S -p '' /bin/sh -ec `+shellescape.Quote(`cd `+remote+`; exec 4<login-input; rm login-input; /usr/bin/perl ./native-component-manifest.pl source ./native-components.json .; /bin/bash ./provision-macos-workbench.sh `+remote+` `+i.ID.String()+` `+provision+` `+ordinaryUser+` <&4; /usr/bin/perl ./native-component-manifest.pl publish ./native-components.json .`)+adminPassword)
 	cmd.Stdout = os.Stdout
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("安装虚拟 Mac 应用失败，可在工作台继续安装：%w", err)

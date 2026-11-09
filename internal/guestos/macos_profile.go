@@ -26,6 +26,18 @@ type MacOSProfile struct {
 
 var macUser = regexp.MustCompile(`^[a-z][a-z0-9_]{0,30}$`)
 
+// New accounts must not collide with macOS or Cage's provisioning identities.
+func ValidMacOSAccountName(name string) bool {
+	if !macUser.MatchString(name) {
+		return false
+	}
+	switch name {
+	case "root", "daemon", "nobody", "guest", "cageprovision", "cagesetup":
+		return false
+	}
+	return true
+}
+
 func macMachineID(profile string) (string, error) {
 	path := filepath.Join(profile, "state", "lima", "mac", "vz-identifier")
 	info, err := os.Lstat(path)

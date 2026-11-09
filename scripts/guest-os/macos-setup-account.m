@@ -42,6 +42,81 @@ static BOOL disabled(ODRecord *record) {
     return !allowed && [error.domain isEqual:ODFrameworkErrorDomain] && error.code == kODErrorCredentialsAccountDisabled;
 }
 
+static NSString *readPassword(void) {
+    char buf[258] = {0};
+    require(fgets(buf,sizeof(buf),stdin) != NULL, "Missing virtual Mac password.");
+    size_t len = strcspn(buf,"\r\n");
+    require(len >= 8 && len <= 256 && buf[len] == '\n', "Invalid virtual Mac password.");
+    for (size_t i = 0; i < len; i++) require(buf[i] >= 32 && buf[i] <= 126, "Unsupported virtual Mac password character.");
+    NSString *pw = [[NSString alloc] initWithBytes:buf length:len encoding:NSUTF8StringEncoding];
+    memset_s(buf,sizeof(buf),0,sizeof(buf));
+    require(pw != nil, "Invalid password encoding.");
+    return pw;
+}
+
+static void updatePassword(ODRecord *record, NSString *old, NSString *target) {
+    if ([record verifyPassword:target error:NULL]) return;
+    require([record verifyPassword:old error:NULL] && [record changePassword:old toPassword:target error:NULL] &&
+        [record verifyPassword:target error:NULL], "Cannot synchronize the guest account password.");
+}
+
+// security -i accepts double-quoted tokens with escaped quotes/backslashes.
+// Its commands travel on a private pipe; no password enters process arguments.
+static NSString *securityToken(NSString *value) {
+    return [NSString stringWithFormat:@"\"%@\"", [[value stringByReplacingOccurrencesOfString:@"\\" withString:@"\\\\"]
+        stringByReplacingOccurrencesOfString:@"\"" withString:@"\\\""]];
+}
+
+static void synchronize(ODRecord *ordinary, ODRecord *setupRecord, NSDictionary *receipt, NSString *name) {
+    NSString *old = readPassword(), *target = readPassword();
+    NSString *home = [ordinary valuesForAttribute:kODAttributeTypeNFSHomeDirectory error:NULL].firstObject;
+    require([home isEqual:[@"/Users/" stringByAppendingString:name]], "Unexpected guest home directory.");
+    NSString *domain = @"/Library/Preferences/com.apple.loginwindow";
+    NSDictionary *preferences = [NSDictionary dictionaryWithContentsOfFile:[domain stringByAppendingString:@".plist"]];
+    require(!preferences[@"autoLoginUser"] || [preferences[@"autoLoginUser"] isEqual:name], "Automatic login belongs to another guest user.");
+    struct stat st;
+    require(lstat("/etc/kcpassword",&st) != 0 ? errno == ENOENT : S_ISREG(st.st_mode) && st.st_uid == 0,
+        "Invalid system automatic login file.");
+    // Keep the existing login keychain usable after the system account changes.
+    // Each step accepts the target password, so retries can finish partial work.
+    NSString *keychainPath = [home stringByAppendingString:@"/Library/Keychains/login.keychain-db"];
+    if (lstat(keychainPath.fileSystemRepresentation,&st) == 0) {
+        require(S_ISREG(st.st_mode), "Invalid guest login keychain.");
+        NSString *commands = [NSString stringWithFormat:@"set-keychain-password -o %@ -p %@ %@\nunlock-keychain -p %@ %@\n",
+            securityToken(old),securityToken(target),securityToken(keychainPath),securityToken(target),securityToken(keychainPath)];
+        NSPipe *input = [NSPipe pipe];
+        NSTask *security = [[NSTask alloc] init];
+        security.executableURL = [NSURL fileURLWithPath:@"/usr/bin/security"];
+        security.arguments = @[@"-i"];
+        security.standardInput = input;
+        security.standardOutput = security.standardError = [NSFileHandle fileHandleWithNullDevice];
+        require([security launchAndReturnError:NULL], "Cannot invoke the guest keychain tool.");
+        [input.fileHandleForWriting writeData:[commands dataUsingEncoding:NSUTF8StringEncoding]];
+        [input.fileHandleForWriting closeFile];
+        [security waitUntilExit];
+        require(security.terminationStatus == 0, "Cannot synchronize the guest login keychain; existing data was retained.");
+    } else require(errno == ENOENT, "Cannot inspect the guest login keychain.");
+    updatePassword(ordinary,old,target);
+    if ([receipt[@"state"] isEqual:@"ready"]) {
+        require(setupRecord && !disabled(setupRecord), "The initial setup account is unavailable.");
+        updatePassword(setupRecord,old,target);
+    }
+    unsigned char key[] = {0x7d,0x89,0x52,0x23,0xd2,0xbc,0xdd,0xea,0xa3,0xb9,0x1f};
+    NSMutableData *encoded = [[target dataUsingEncoding:NSUTF8StringEncoding] mutableCopy];
+    [encoded increaseLengthBy:1];
+    while (encoded.length % 12) [encoded increaseLengthBy:1];
+    unsigned char *bytes = encoded.mutableBytes;
+    for (NSUInteger i=0; i<encoded.length; i++) bytes[i] ^= key[i % sizeof(key)];
+    require([encoded writeToFile:@"/etc/kcpassword" options:NSDataWritingAtomic error:NULL] && chmod("/etc/kcpassword",0600) == 0,
+        "Cannot synchronize automatic login.");
+    // This call contains only the non-secret account name.
+    NSTask *task = [[NSTask alloc] init];
+    task.executableURL = [NSURL fileURLWithPath:@"/usr/bin/defaults"];
+    task.arguments = @[@"write", domain, @"autoLoginUser", @"-string", name];
+    require([task launchAndReturnError:NULL], "Cannot configure automatic login.");
+    [task waitUntilExit]; require(task.terminationStatus == 0, "Cannot persist automatic login user.");
+}
+
 static void retire(ODNode *node, ODRecord *admin, ODRecord *record) {
     if (member(admin, record)) require([admin removeMemberRecord:record error:NULL], "Cannot revoke setup administrator privileges.");
     require(!member(admin, record), "The setup user still has administrator privileges.");
@@ -66,8 +141,9 @@ static void retire(ODNode *node, ODRecord *admin, ODRecord *record) {
 
 int main(int argc, const char **argv) {
     @autoreleasepool {
-        BOOL prepare = argc == 3 && strcmp(argv[1], "prepare") == 0;
-        require(prepare || argc == 1, "Invalid first setup operation.");
+        BOOL prepare = (argc == 3 || argc == 4) && strcmp(argv[1], "prepare") == 0;
+        BOOL password = argc == 4 && strcmp(argv[1], "password") == 0;
+        require(prepare || password || argc == 1, "Invalid first setup operation.");
         char model[128] = {0};
         size_t size = sizeof(model);
         struct stat st;
@@ -92,18 +168,15 @@ int main(int argc, const char **argv) {
         } else require(errno == ENOENT && prepare, "Missing guest setup receipt.");
         ODNode *node = [ODNode nodeWithSession:[ODSession defaultSession] name:@"/Local/Default" error:NULL];
         ODRecord *admin = [node recordWithRecordType:kODRecordTypeGroups name:@"admin" attributes:nil error:NULL];
-        NSString *ordinaryName = @"cage";
-        ODRecord *ordinary = users(node, ordinaryName).firstObject;
-        require(node && admin && ordinary && !member(admin, ordinary), "The regular Cage user must not be a guest administrator.");
         ODRecord *record = users(node, setup).firstObject;
-        NSString *install = prepare ? @(argv[2]) : nil;
-        if (prepare) require([[NSUUID alloc] initWithUUIDString:install] != nil, "Invalid fresh guest installation ID.");
+        NSString *install = prepare || password ? @(argv[2]) : nil;
+        if (install) require([[NSUUID alloc] initWithUUIDString:install] != nil, "Invalid fresh guest installation ID.");
         NSMutableDictionary *receipt;
         if (data) {
             receipt = [NSJSONSerialization JSONObjectWithData:data options:NSJSONReadingMutableContainers error:NULL];
             require([receipt isKindOfClass:NSMutableDictionary.class] &&
                 [[NSUUID alloc] initWithUUIDString:receipt[@"guid"]] && [receipt[@"uid"] intValue] >= 502 &&
-                [[NSUUID alloc] initWithUUIDString:receipt[@"installation"]] && (!prepare || [receipt[@"installation"] isEqual:install]),
+                [[NSUUID alloc] initWithUUIDString:receipt[@"installation"]] && (!install || [receipt[@"installation"] isEqual:install]),
                 "The setup account belongs to a different installation.");
         } else {
             require(!record && !getpwnam("cagesetup"), "A user already has the setup name; no account was modified.");
@@ -111,8 +184,18 @@ int main(int argc, const char **argv) {
             while (uid < 1000 && getpwuid(uid)) uid++;
             require(uid < 1000, "No free local setup UID.");
             receipt = [@{@"installation":install, @"guid":NSUUID.UUID.UUIDString, @"uid":@(uid), @"state":@"creating"} mutableCopy];
-            save(receipt, file);
         }
+        NSString *ordinaryName = argc == 4 ? @(argv[3]) : receipt[@"user"] ?: @"cage";
+        NSRegularExpression *userPattern = [NSRegularExpression regularExpressionWithPattern:@"^[a-z][a-z0-9_]{0,30}$" options:0 error:NULL];
+        require([userPattern numberOfMatchesInString:ordinaryName options:0 range:NSMakeRange(0,ordinaryName.length)] == 1 &&
+            ![@[@"root",@"cagesetup",@"cageprovision"] containsObject:ordinaryName], "Invalid ordinary guest username.");
+        require(!data || [ordinaryName isEqual:receipt[@"user"] ?: @"cage"], "The receipt belongs to another ordinary account.");
+        ODRecord *ordinary = users(node, ordinaryName).firstObject;
+        require(node && admin && ordinary && !member(admin, ordinary), "The regular Cage user must not be a guest administrator.");
+        NSString *ordinaryGUID = [ordinary valuesForAttribute:kODAttributeTypeGUID error:NULL].firstObject;
+        require(ordinaryGUID && (!receipt[@"ordinary_guid"] || [receipt[@"ordinary_guid"] isEqual:ordinaryGUID]), "The ordinary guest account has changed.");
+        receipt[@"user"] = ordinaryName; receipt[@"ordinary_guid"] = ordinaryGUID;
+        if (prepare) save(receipt,file);
         NSString *uid = [receipt[@"uid"] stringValue];
         if (record) {
             NSString *guid = [record valuesForAttribute:kODAttributeTypeGUID error:NULL].firstObject;
@@ -122,15 +205,14 @@ int main(int argc, const char **argv) {
         }
         NSString *phase = receipt[@"state"];
         require([@[@"creating",@"ready",@"retiring",@"retired"] containsObject:phase], "Unknown guest setup state.");
+        if (password) {
+            require(![phase isEqual:@"creating"] && ![phase isEqual:@"retiring"], "Finish guest account preparation before changing its password.");
+            synchronize(ordinary,record,receipt,ordinaryName);
+            save(receipt,file); close(lock); return 0;
+        }
         if (prepare) {
             require([phase isEqual:@"creating"] || [phase isEqual:@"ready"], "Initial setup has already closed.");
-            char buf[258];
-            require(fgets(buf,sizeof(buf),stdin) != NULL, "Missing virtual Mac login password.");
-            size_t len = strcspn(buf,"\r\n");
-            require(len >= 8 && len <= 256, "Invalid virtual Mac login password.");
-            NSString *pw = [[NSString alloc] initWithBytes:buf length:len encoding:NSUTF8StringEncoding];
-            memset_s(buf,sizeof(buf),0,sizeof(buf));
-            require(pw != nil, "Invalid password encoding.");
+            NSString *pw = readPassword();
             if (!record) {
                 require([phase isEqual:@"creating"] && !getpwuid([receipt[@"uid"] intValue]), "Setup account disappeared or its UID is in use.");
                 record = [node createRecordWithRecordType:kODRecordTypeUsers name:setup attributes:@{

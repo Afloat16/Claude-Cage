@@ -15,8 +15,9 @@ IFS= read -r login_password
 cd /
 provision=$3
 [[ $provision == cageprovision ]]
-ordinary=cage
-full_name=cage
+ordinary=${4:-cage}
+[[ $ordinary =~ ^[a-z][a-z0-9_]{0,30}$ && $ordinary != root && $ordinary != cageprovision && $ordinary != cagesetup ]]
+full_name=$ordinary
 /usr/bin/dscl . -create "/Users/$provision" IsHidden 1
 claim=/var/db/cage-install-$ordinary
 if [[ ! -e $claim ]]; then
@@ -37,7 +38,7 @@ if ! printf '%s\n' "$login_password" | dscl /Local/Default -authonly $ordinary >
 fi
 install -d -m 755 /usr/local/libexec
 install -m 755 "$kit/cage-finish-initial-setup" /usr/local/libexec/cage-finish-initial-setup
-printf '%s\n' "$login_password" | /usr/local/libexec/cage-finish-initial-setup prepare "$2"
+printf '%s\n' "$login_password" | /usr/local/libexec/cage-finish-initial-setup prepare "$2" "$ordinary"
 install -m 755 "$kit/configure-macos-session.sh" /usr/local/libexec/cage-configure-session
 printf '%s\n' "$login_password" | /usr/local/libexec/cage-configure-session "$ordinary" "$2"
 unset login_password

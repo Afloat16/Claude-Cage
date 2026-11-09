@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { Check, ChevronLeft, LoaderCircle, ShieldCheck } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import { isRemoteClient } from "./client-context.mjs";
-import { useAccount } from "./account";
+import { MacOSAccountGate, useAccount } from "./account";
 import { GuestSystemPicker, HostCloneSummary, validGuestChoice } from "./guest-system-picker";
 import { InitializationStorage } from "./initialization-storage";
 import { ProxySettings } from "./proxy-settings";
@@ -41,10 +41,10 @@ export function InitializationGate({ children }) {
     return () => { live = false; };
   }, [remote, attempt, account?.initial_mac_setup]);
   if (remote) return children;
-  if (account?.initial_mac_setup) return <MacOSFirstSetup />;
+  if (account?.initial_mac_setup) return <MacOSAccountGate><MacOSFirstSetup /></MacOSAccountGate>;
   if (error) return <InitializationFrame><section className="initialization-content"><h1>继续准备 Cage</h1><p role="alert"><SafetyMessage message={error} /></p><button className="primary" onClick={() => retry(value => value + 1)}>重新连接</button><DiagnosticSettings /></section></InitializationFrame>;
   if (!state) return <InitializationFrame><section className="initialization-content"><h1>正在读取环境状态</h1><p role="status"><LoaderCircle size={18} className="spin" />正在检查已有配置和安装进度…</p></section></InitializationFrame>;
-  return state.required ? <Initialization initial={state} onComplete={() => setState({ required: false })} /> : children;
+  return state.required ? <MacOSAccountGate><Initialization initial={state} onComplete={() => setState({ required: false })} /></MacOSAccountGate> : children;
 }
 
 function Initialization({ initial, onComplete }) {

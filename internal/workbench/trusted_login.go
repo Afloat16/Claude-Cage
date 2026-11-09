@@ -105,6 +105,10 @@ func (s *Server) localTrustedLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer finish()
+	if in.Action == "create" {
+		jsonReply(w, trustedLoginReply{Error: "请先注册 Cage 用户名和密码，再开始安装"})
+		return
+	}
 	base, err := os.UserConfigDir()
 	if runtime.GOOS == "windows" {
 		base = os.Getenv("LOCALAPPDATA")

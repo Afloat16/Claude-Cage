@@ -25,7 +25,7 @@ export function MacOSFirstSetup() {
         const next = await api("/status");
         if (!active) return;
         setState(next);
-        if (!next.vm_running && !next.job?.running && !next.job?.error && !started.current) {
+        if ((!next.vm_running || account.macos_password_pending) && !next.job?.running && !next.job?.error && !started.current) {
           started.current = true;
           await api("/start", {guest_system:"macos"});
         }
@@ -92,8 +92,8 @@ export function MacOSFirstSetup() {
       <li>在 Cage 打开的「窗口录制」「辅助功能」设置里允许 <strong>Cage Guest Window</strong>。如果提示「退出并重新打开」，按提示操作。需要重新定位时，点击同名按钮。</li>
       <li>点击「文件系统扩展」，在客机设置中同时打开 <strong>macFUSE</strong> 和 <strong>macFUSE (local)</strong>。Cage 会自动验证并进入工作台。</li>
     </ol>
-    <p>授权时若要求管理员，用户名填 <strong>cagesetup</strong>，点选系统密码框后点击「填写授权密码」，再确认授权。辅助功能尚未开启时，可用「查看授权密码」。此管理员在完成后自动停用。</p>
-    {!state?.vm_running && <button className="primary" disabled={busy || !state || state.job?.running} onClick={() => act("start")}>启动虚拟 Mac</button>}
+    <p>授权时若要求管理员，用户名填 <strong>cagesetup</strong>，{account.macos_password_pending ? "密码正在等待同步，完成前可能仍需原客机密码。" : account.macos_credentials_ready ? "密码与 Cage 账户相同。" : "可点选系统密码框后点击「填写授权密码」。"}确认后继续授权。此管理员在完成后自动停用。</p>
+    {(!state?.vm_running || account.macos_password_pending) && <button className="primary" disabled={busy || !state || state.job?.running} onClick={() => act("start")}>{account.macos_password_pending ? "重试同步客机密码" : "启动虚拟 Mac"}</button>}
     {state?.vm_running && <MacOSLogin initialSetup autoOpen={Boolean(permissions.managed_credential)} managedCredential={permissions.managed_credential} disabled={!state.ready} setupActions={controls}
       setupHint={`Cage 自动登录 ${loginName}。管理员授权用 cagesetup；打开两个 macFUSE 开关后会自动继续。`}
       setupStatus={error || progress} setupError={Boolean(error)} />}

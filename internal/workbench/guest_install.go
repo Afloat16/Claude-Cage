@@ -188,6 +188,10 @@ func (s *Server) installedWindowsVMOwner(install guestos.Installation) (string, 
 }
 
 func (s *Server) beginGuestInstall(w http.ResponseWriter, r *http.Request, in guestInstallRequest) {
+	if in.System == guestos.MacOS && !s.account.view().MacOSCredentialsReady {
+		http.Error(w, "请先注册或确认 Cage 账密，再安装 macOS 客机", http.StatusConflict)
+		return
+	}
 	v, err := s.guestInstallView()
 	if err != nil {
 		requestError(w, err)
@@ -304,7 +308,7 @@ func (s *Server) beginGuestInstall(w http.ResponseWriter, r *http.Request, in gu
 				return err
 			}
 		}
-		var password string
+		var credential macGuestCredential
 		if install.System == guestos.MacOS {
 			saved, err := s.account.savedMacGuestPassword(s.operationContext(), install.ID)
 			if err != nil {
@@ -317,7 +321,7 @@ func (s *Server) beginGuestInstall(w http.ResponseWriter, r *http.Request, in gu
 			if saved == "" && !unstarted {
 				return errors.New("客机安装凭据缺失，请恢复加密保险箱；现有账户和磁盘已保留")
 			}
-			password, err = s.account.macGuestPassword(s.operationContext(), install.ID)
+			credential, err = s.account.macGuestCredentials(s.operationContext(), install.ID)
 			if err != nil {
 				return err
 			}
@@ -339,8 +343,8 @@ func (s *Server) beginGuestInstall(w http.ResponseWriter, r *http.Request, in gu
 		var cmd *exec.Cmd
 		if install.System == guestos.MacOS {
 			cmd = exec.CommandContext(s.operationContext(), s.exe, "guest-os", "macos", "install")
-			cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+s.configPath)
-			cmd.Stdin = strings.NewReader(password)
+			cmd.Env = append(os.Environ(), cage.ConfigEnv+"="+s.configPath, "CAGE_MACOS_ACCOUNT="+credential.Username)
+			cmd.Stdin = strings.NewReader(credential.Password)
 		} else {
 			cmd, err = guestos.WindowsInstallCommand(s.operationContext(), s.profile, filepath.Join(filepath.Dir(s.exe), "guest-os"), install)
 			if err != nil {

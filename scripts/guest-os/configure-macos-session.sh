@@ -5,10 +5,12 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 [[ $# == 2 && $EUID == 0 && $(uname -sm) == 'Darwin arm64' && $(sysctl -n hw.model) =~ ^VirtualMac[0-9]+,[0-9]+$ ]]
 user=$1
 installation=$2
-[[ $user == cage ]]
+[[ $user =~ ^[a-z][a-z0-9_]{0,30}$ && $user != root && $user != cageprovision && $user != cagesetup ]]
 [[ -f /var/db/cage-guest-os && ! -L /var/db/cage-guest-os && $(stat -f %u /var/db/cage-guest-os) == 0 && $(cat /var/db/cage-guest-os) == macos ]]
 receipt=/var/db/cage-initial-setup/account.json
 [[ -f $receipt && ! -L $receipt && $(stat -f %u "$receipt") == 0 && $(plutil -extract installation raw "$receipt") == "$installation" ]]
+bound_user=$(plutil -extract user raw "$receipt" 2>/dev/null || echo cage)
+[[ $bound_user == "$user" ]]
 phase=$(plutil -extract state raw "$receipt")
 [[ $phase == ready ]]
 [[ $(dscl . -read /Users/$user NFSHomeDirectory) == "NFSHomeDirectory: /Users/$user" && " $(id -Gn "$user") " != *' admin '* ]]

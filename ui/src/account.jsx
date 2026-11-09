@@ -140,6 +140,37 @@ export function AccountAvatar({ account, large = false }) {
   );
 }
 
+export function MacOSAccountGate({ children }) {
+  const { account, act } = useAccount();
+  const [name, setName] = useState(account?.macos_guest_user || account?.username || "");
+  const [password, setPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!account?.macos_account_host || account.macos_credentials_ready) return children;
+  async function submit(event) {
+    event.preventDefault();
+    if (busy) return;
+    if (password !== confirmation) { setError("两次密码不一致"); return; }
+    setBusy(true); setError("");
+    try { await act("prepare-macos", { username:name, password, confirm_password:confirmation }); setPassword(""); setConfirmation(""); }
+    catch (e) { setError(e.message); }
+    finally { setBusy(false); }
+  }
+  return <main className="account-gate"><div className="account-brand"><img src={logo} alt="" />Cage</div><section className="account-entry">
+    <h1>设置 Cage 与 macOS 共用账密</h1>
+    <p className="account-entry-intro">{account.trusted_local ? "先设置 Cage 用户名和密码，再继续客机安装。已有账户、文件和登录状态会保留。" : "输入当前 Cage 密码，确认用于 macOS 客机。已有客机保留用户名和用户目录。"}</p>
+    <form onSubmit={submit}><fieldset disabled={busy}>
+      <label className="account-field">用户名<input required value={name} onChange={event => setName(event.target.value)} maxLength={31} pattern="[a-z][a-z0-9_]{0,30}" readOnly={Boolean(account.macos_guest_user)} autoComplete="username" /></label>
+      <p className="field-help">小写字母开头，1–31 个小写字母、数字或下划线。密码使用 8–256 个英文键盘可输入的字符。</p>
+      <PasswordField label={account.trusted_local ? "设置密码" : "当前 Cage 密码"} value={password} onChange={setPassword} autoComplete={account.trusted_local ? "new-password" : "current-password"} />
+      <PasswordField label="确认密码" value={confirmation} onChange={setConfirmation} autoComplete={account.trusted_local ? "new-password" : "current-password"} />
+      {error && <p role="alert" className="account-error">{error}</p>}
+      <button className="primary account-submit" disabled={busy}>{busy ? "正在保存…" : "保存账密并继续"}</button>
+    </fieldset></form>
+  </section></main>;
+}
+
 function PasswordField({
   label,
   value,
@@ -184,7 +215,6 @@ export function AccountGate({ children }) {
   const [error, setError] = useState("");
   const automaticAttempt = useRef("");
   const gateAcknowledged = useRef(false);
-  const [passwordSetup, setPasswordSetup] = useState(false);
   const trustedAttempt = useRef(false);
   const enterTrusted = async (action) => {
     setBusy(true); setError("");
@@ -195,10 +225,9 @@ export function AccountGate({ children }) {
   useEffect(() => {
     if (account?.unlocked) { trustedAttempt.current = false; setRememberLogin(null); return; }
     if (!account || !localDesktop() || trustedAttempt.current || account.require_authentication) return;
-    const firstMacGuest = account.guest_system === "macos" && !account.exists;
-    if (!firstMacGuest && !(account.trusted_local || account.trusted_login)) return;
+    if (!(account.trusted_local || account.trusted_login)) return;
     trustedAttempt.current = true;
-    void enterTrusted(firstMacGuest ? "create" : "resume");
+    void enterTrusted("resume");
   }, [account?.unlocked, account?.exists, account?.guest_system, account?.trusted_local, account?.trusted_login, account?.require_authentication]);
   useEffect(() => {
     if (!account || account.unlocked || connectionError || gateAcknowledged.current || !nativeAvailable()) return;
@@ -279,14 +308,14 @@ export function AccountGate({ children }) {
         )}
         <h1>
           {creating
-            ? "让 Cage 成为你的工作空间"
+            ? "注册 Cage 账户"
             : account
               ? `欢迎回来，${account.username}`
               : "正在连接 Cage"}
         </h1>
         <p className="account-entry-intro">
           {creating
-            ? isRemoteClient() ? "在云端创建账户，保护这台主机上的工作与登录状态。" : localDesktop() && !passwordSetup ? "选择这台电脑的登录方式。" : "创建一个本地账户，收好你的工作与登录状态。"
+            ? isRemoteClient() ? "在云端创建账户，保护这台主机上的工作与登录状态。" : "先注册用户名和密码，再选择客机系统并安装环境。macOS 客机会使用同一套账密。"
             : account
               ? account.trusted_local ? "本机工作区" : "输入密码，继续你的工作。"
               : isRemoteClient() ? "正在读取云端账户…" : "正在读取本机账户…"}
@@ -297,38 +326,29 @@ export function AccountGate({ children }) {
             后台环境仍在运行，任务没有停止
           </div>
         )}
-        {localDesktop() && creating && (
-          <div className="account-trust-choice">
-            {!passwordSetup && <>
-              <p>信任此电脑后，下次使用当前系统用户打开 Cage 会直接进入。</p>
-              <button className="primary account-submit" disabled={busy} onClick={() => enterTrusted("create")}>信任此电脑并进入</button>
-            </>}
-            <button className="text-button" disabled={busy} onClick={() => setPasswordSetup(!passwordSetup)}>
-              {passwordSetup ? "返回本机免账号登录" : "使用用户名和密码"}
-            </button>
-          </div>
-        )}
         {account?.trusted_local && <div className="account-trust-choice">
           <p>{localDesktop() ? "使用当前系统用户的本机信任凭据进入工作区。" : "请回到受信任的桌面设置账户密码，再从此处登录。"}</p>
           {localDesktop() && <button className="quiet-button" disabled={busy} onClick={() => enterTrusted("resume")}>{busy ? "正在进入…" : "重新进入本机工作区"}</button>}
         </div>}
-        {(account?.trusted_local || (creating && localDesktop() && !passwordSetup)) && error && <p className="account-error" role="alert">{error}</p>}
-        {account && !account.trusted_local && (!creating || !localDesktop() || passwordSetup) && (
+        {account?.trusted_local && error && <p className="account-error" role="alert">{error}</p>}
+        {account && !account.trusted_local && (
           <form onSubmit={submit}>
             <fieldset disabled={busy}>
               {creating && (
-                <label className="account-field">
+                <><label className="account-field">
                   用户名
                   <input
                     autoFocus
                     autoComplete="username"
-                    maxLength={40}
+                    maxLength={account.macos_account_host ? 31 : 40}
+                    pattern={account.macos_account_host ? "[a-z][a-z0-9_]{0,30}" : undefined}
                     required
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    placeholder="你希望怎样被称呼"
+                    placeholder={account.macos_account_host ? "例如：shihao" : "你希望怎样被称呼"}
                   />
                 </label>
+                {account.macos_account_host && <p className="field-help">与 macOS 客机共用：小写字母开头，1–31 个小写字母、数字或下划线。</p>}</>
               )}
               <PasswordField
                 label={creating ? "设置密码" : "账户密码"}
@@ -344,6 +364,7 @@ export function AccountGate({ children }) {
                   autoComplete="new-password"
                 />
               )}
+              {creating && account.macos_account_host && <p className="field-help">密码使用 8–256 个英文键盘可输入的字母、数字、空格或符号。安装中断后继续使用这套账密。</p>}
               {(error || connectionError) && (
                 <p className="account-error" role="alert">
                   {error || connectionError}
@@ -396,7 +417,7 @@ export function AccountGate({ children }) {
           <LockKeyhole size={14} />
           {isRemoteClient() ? "账户资料保存在当前云端主机" : "账户资料仅保存在这台设备上"}
         </p>
-        {(!localDesktop() || passwordSetup || account?.exists) && !account?.trusted_local && <p className="account-recovery-note">
+        {!account?.trusted_local && <p className="account-recovery-note">
           {creating
             ? "密码至少 8 个字符，用于保护应用登录凭据。请妥善保存，当前不支持在线找回。"
             : isRemoteClient() ? "请输入云端 Cage 账户密码；当前不支持在线找回。" : "请输入本地账户密码；当前不支持在线找回。"}
@@ -587,7 +608,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
         setOldPassword("");
         setPassword("");
         setConfirmation("");
-        setMessage("密码已修改，应用登录状态保持不变");
+        setMessage(value.macos_password_pending ? "Cage 密码已修改。客机密码待同步，下次启动时自动重试；同步完成前客机可能仍需原密码。" : "密码已修改，应用登录状态保持不变");
       } else {
         setName(value.username);
         setAvatar(value.avatar || "");
@@ -614,6 +635,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
       )}
     </>
   );
+  if (account.macos_account_host && account.guest_system === "macos" && !account.macos_credentials_ready) return <MacOSAccountGate />;
   return (
     <div className="account-settings">
       <div className="section-title">
@@ -663,8 +685,10 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
               autoComplete="username"
               onChange={(e) => setName(e.target.value)}
               required
+              readOnly={account.macos_username_bound}
             />
           </label>
+          {account.macos_username_bound && <p className="field-help">用户名已用于 macOS 客机，保留该名称以继续使用原账户和文件。</p>}
           <button
             className="primary"
             disabled={!changed || !name.trim() || busy}
@@ -680,7 +704,7 @@ export function AccountSettings({ busy: environmentBusy, onDirty }) {
         <fieldset disabled={busy || environmentBusy}>
           <h4>账户密码</h4>
           <p className="field-help">
-            修改密码不会清除 Claude 的登录状态。{isRemoteClient() ? "密码用于解锁当前云端 Cage，没有在线找回。" : "密码仅用于本机解锁，没有在线找回。"}
+            修改密码不会清除 Claude 的登录状态。{account.macos_credentials_ready ? "Cage 与 macOS 客机共用密码；客机关闭时会在下次启动后同步。" : isRemoteClient() ? "密码用于解锁当前云端 Cage，没有在线找回。" : "密码用于本机解锁，没有在线找回。"}
           </p>
           {!account.trusted_local && <PasswordField
             label="当前密码"

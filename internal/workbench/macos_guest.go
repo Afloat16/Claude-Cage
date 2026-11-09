@@ -137,6 +137,9 @@ func (s *Server) startMacOSGuest() error {
 			return err
 		}
 	}
+	if err := s.syncMacGuestPassword(s.operationContext()); err != nil {
+		return err
+	}
 	if err := s.attachMacOSGuest(); err != nil {
 		return err
 	}

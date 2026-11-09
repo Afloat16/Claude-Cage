@@ -50,11 +50,11 @@ const unlock = async (enabled) => {
 };
 try {
   await restart();
-  await page.getByRole("button", { name: "使用用户名和密码", exact: true }).click();
+  await page.getByRole("heading", { name: "注册 Cage 账户", exact: true }).waitFor();
   await remember().waitFor();
   assert.equal(await remember().isChecked(), true);
   await remember().uncheck();
-  await page.getByLabel("用户名", { exact: true }).fill("Remember Live QA");
+  await page.getByLabel("用户名", { exact: true }).fill("remember_live_qa");
   await page.getByLabel("设置密码", { exact: true }).fill(password);
   await page.getByLabel("确认密码", { exact: true }).fill(password);
   const created = page.waitForResponse(r => r.url().endsWith("/api/client/trusted-login"));

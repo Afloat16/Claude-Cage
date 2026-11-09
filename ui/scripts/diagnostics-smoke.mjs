@@ -24,8 +24,8 @@ try {
   browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ acceptDownloads: true, viewport: { width: 1280, height: 900 } });
   await page.goto(entry.url);
-  await page.getByRole("button", { name: "使用用户名和密码", exact: true }).click();
-  await page.getByLabel("用户名", { exact: true }).fill("诊断验证账户");
+  await page.getByRole("heading", { name: "注册 Cage 账户", exact: true }).waitFor();
+  await page.getByLabel("用户名", { exact: true }).fill("diagnostics_qa");
   await page.getByLabel("设置密码", { exact: true }).fill("Test-only-password-8712");
   await page.getByLabel("确认密码", { exact: true }).fill("Test-only-password-8712");
   await page.getByRole("button", { name: "创建本地账户", exact: true }).click();

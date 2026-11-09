@@ -29,7 +29,6 @@ import { TailscalePanel } from "./tailscale";
 import { WorkspaceSidebar } from "./workspace-sidebar";
 import { useCLISessions, sessionsChanged } from "./cli-sessions";
 import { TerminalMenu } from "./terminal-menu";
-import { MacOSFirstSetup } from "./macos-first-setup";
 import { InitializationGate } from "./initialization";
 import { MacOSLogin } from "./macos-login";
 import { MacOSClaudeWindow } from "./macos-claude-window";
@@ -1897,10 +1896,6 @@ function App() {
     </SafetyChecklistContext.Provider>
   );
 }
-function GuestWorkspace() {
-  const { account } = useAccount();
-  return account?.initial_mac_setup ? <MacOSFirstSetup /> : <InitializationGate><App /></InitializationGate>;
-}
 export default function Workbench() {
-  return <AccountProvider><AppearanceProvider><AccountGate><GuestWorkspace /></AccountGate></AppearanceProvider></AccountProvider>;
+  return <AccountProvider><AppearanceProvider><AccountGate><InitializationGate><App /></InitializationGate></AccountGate></AppearanceProvider></AccountProvider>;
 }

@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -240,8 +241,19 @@ func TestTrustedLocalDesktopEntryAndWorkload(t *testing.T) {
 	d.active = &desktopTarget{id: d.generation, mode: "local", ctx: life, session: session}
 	body, _ := json.Marshal(trustedLoginRequest{Action: "create", ConnectionID: d.generation})
 	w := request(gateway, "POST", "/api/client/trusted-login", gateway.origin, string(body), true)
-	if w.Code != http.StatusOK {
-		t.Fatalf("trust creation through gateway: %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusConflict || workload.account.view().Exists {
+		t.Fatalf("fresh profile bypassed registration: %d %s", w.Code, w.Body.String())
+	}
+	// An existing trusted workspace still resumes after upgrading.
+	base, err := os.UserConfigDir()
+	if runtime.GOOS == "windows" {
+		base = os.Getenv("LOCALAPPDATA")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = workload.account.trustedLogin("create", "", filepath.Join(base, "Cage", "trusted-local")); err != nil {
+		t.Fatal(err)
 	}
 	read := gatewayRequest(gateway, "/api/account", d.generation)
 	var view accountView
