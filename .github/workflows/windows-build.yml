@@ -88,6 +88,19 @@ jobs:
           if-no-files-found: error
           overwrite: true
           retention-days: 14
+      - name: Preserve failed unsigned candidates for installation debugging
+        if: ${{ always() && job.status != 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}-${{ matrix.os }}-failed-candidate
+          path: |
+            _output/windows-amd64/app/**
+            _output/releases/*/windows/Cage-*-windows-amd64-setup-unsigned.exe
+            _output/releases/*/windows/SHA256SUMS
+          if-no-files-found: ignore
+          compression-level: 0
+          overwrite: true
+          retention-days: 14
       - name: Preserve public test reports
         if: always()
         uses: actions/upload-artifact@v4

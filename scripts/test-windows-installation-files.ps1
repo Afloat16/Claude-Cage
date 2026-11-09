@@ -63,6 +63,26 @@ function Commit([string]$Old, [string]$Stage, [string]$Receipt) {
     return $backup
 }
 try {
+    # A new install has no backup path or existing ownership manifest.
+    $scenario = Join-Path $root 'first-install'
+    $old = Join-Path $scenario 'empty-destination'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
+    [IO.Directory]::CreateDirectory($old) | Out-Null
+    App $stage 'fresh'
+    Invoke-Helper @('-Operation','prepare','-Source',$old,'-Target',$stage,'-Receipt',$receipt)
+    $transfer = Get-Content -LiteralPath $receipt -Raw | ConvertFrom-Json
+    Check (!$transfer.backupPath -and @($transfer.moves).Count -eq 0) 'First install invented a backup or personal file transfer.'
+    [IO.Directory]::Delete($old); [IO.Directory]::Move($stage, $old)
+    Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt)
+    Check (!(Test-Path -LiteralPath $receipt)) 'First install did not finish its transaction.'
+
+    $diagnostic = Join-Path $scenario 'diagnostic.json'
+    Write-File (Join-Path $old 'Cage.install-files.json') 'invalid-private-manifest'
+    Invoke-Helper @('-Operation','prepare','-Target',$old,'-Receipt',$receipt,'-Diagnostics',$diagnostic) 1
+    $text = Get-Content -LiteralPath $diagnostic -Raw
+    $failure = $text | ConvertFrom-Json
+    Check ($failure.operation -eq 'prepare' -and $failure.phase -eq 'reading_new_manifest' -and @($failure.errors).Count -gt 0) 'Helper omitted its safe failure classification.'
+    Check (!$text.Contains($root) -and !$text.Contains('invalid-private-manifest') -and !$text.Contains('message')) 'Helper diagnostic contains file paths or private error text.'
+
     foreach ($manifestState in @('current','missing','invalid')) {
         $scenario = Join-Path $root $manifestState
         $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'

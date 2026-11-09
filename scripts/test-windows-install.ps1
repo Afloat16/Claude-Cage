@@ -16,13 +16,26 @@ function Assert-PersonalData {
 }
 function Run-Installer {
     param([switch]$Update, [int]$ExpectedExitCode = 0, [string[]]$ShortcutOptions = @())
-    $arguments = @('/S')
+    $installationReport = Join-Path (Get-WindowsWorkbenchTestBase) ('cage-smoke-installation-' + [guid]::NewGuid().ToString('N') + '.json')
+    $arguments = @('/S', "/DIAGNOSTICS=$installationReport")
     if ($Update) { $arguments += '/UPDATE' }
     $arguments += $ShortcutOptions
     $arguments += "/D=$target"
     $process = Start-Process -FilePath $Installer -ArgumentList $arguments -PassThru
     if (-not $process.WaitForExit(300000)) { throw 'Installer exceeded five minutes.' }
-    if ($process.ExitCode -ne $ExpectedExitCode) { throw "Installer returned $($process.ExitCode), expected $ExpectedExitCode" }
+    if ($process.ExitCode -ne $ExpectedExitCode) {
+        foreach ($path in @($installationReport, "$installationReport.helper.json")) {
+            try {
+                if ((Test-Path -LiteralPath $path -PathType Leaf) -and (Get-Item -LiteralPath $path).Length -le 8192) {
+                    $value = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -AsHashtable
+                    $safe = @{phase = $value['phase']; status = $value['status']; helperExit = $value['helperExit']; operation = $value['operation']; pointerSize = $value['pointerSize']}
+                    if ($value['errors']) { $safe.errors = @($value['errors'] | Select-Object -First 4 | ForEach-Object { @{type = $_['type']; hresult = $_['hresult']} }) }
+                    Write-Host ('Cage installer diagnostic: ' + ($safe | ConvertTo-Json -Depth 4 -Compress))
+                }
+            } catch { Write-Warning 'The bounded installer diagnostic could not be read.' }
+        }
+        throw "Installer returned $($process.ExitCode), expected $ExpectedExitCode"
+    }
 }
 $desktopShortcut = Join-Path ([Environment]::GetFolderPath('DesktopDirectory')) 'Cage.lnk'
 $startMenuDirectory = Join-Path ([Environment]::GetFolderPath('Programs')) 'Cage'

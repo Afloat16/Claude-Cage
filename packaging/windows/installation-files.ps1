@@ -7,9 +7,29 @@ param(
     [string]$Receipt,
     [string]$Manifest,
     [string]$Backup,
+    [string]$Diagnostics,
     [switch]$LegacyTarget
 )
 $ErrorActionPreference = 'Stop'
+$diagnosticStep = 'initializing'
+trap {
+    $failure = $_
+    if ($Diagnostics) {
+        try {
+          if (!(Test-Path -LiteralPath $Diagnostics)) {
+            $chain = @()
+            $exception = $failure.Exception
+            for ($index = 0; $exception -and $index -lt 4; $index++) {
+                $chain += @{type = $exception.GetType().FullName; hresult = $exception.HResult}
+                $exception = $exception.InnerException
+            }
+            @{operation = $Operation; phase = $diagnosticStep; pointerSize = [IntPtr]::Size; errors = $chain} | ConvertTo-Json -Depth 4 |
+                Set-Content -LiteralPath $Diagnostics -Encoding UTF8
+          }
+        } catch { }
+    }
+    throw $failure
+}
 $manifestName = 'Cage.install-files.json'
 $identityName = 'Cage.install-id'
 
@@ -144,6 +164,7 @@ foreach ($rootPath in @($Target, $Source)) {
     }
 }
 if ($Operation -eq 'prepare') {
+    $diagnosticStep = 'reading_new_manifest'
     if (Test-Path -LiteralPath $Receipt) { throw ('仍有未完成的安装事务，请保留并检查回执：' + $Receipt) }
     $current = Read-FileManifest (Join-Path $Target $manifestName)
     $legacySnapshot = !$current.Count -and $LegacyTarget
@@ -152,6 +173,7 @@ if ($Operation -eq 'prepare') {
         try { $current[$identityName] = Stream-Hash $identity } finally { $identity.Dispose() }
     }
     if (!$current.Count) { throw '新程序缺少有效文件清单，安装已停止。' }
+    $diagnosticStep = 'reading_new_uninstaller'
     $uninstaller = Open-ReadLocked (Join-Path $Target 'Uninstall.exe')
     try { $current['Uninstall.exe'] = Stream-Hash $uninstaller } finally { $uninstaller.Dispose() }
     $transfers = [Collections.Generic.List[object]]::new()
@@ -160,6 +182,7 @@ if ($Operation -eq 'prepare') {
     $recovery = 'Cage-preserved-files/' + [guid]::NewGuid().ToString('N')
     $programDirectories = Directory-Paths @($current.Keys)
     if ($Source -and (Test-Path -LiteralPath $Source -PathType Container)) {
+        $diagnosticStep = 'scanning_previous_installation'
         $Source = [IO.Path]::GetFullPath($Source).TrimEnd([IO.Path]::DirectorySeparatorChar)
         $previous = Read-FileManifest (Join-Path $Source $manifestName)
         $previousDirectories = Directory-Paths @($previous.Keys)
@@ -220,8 +243,10 @@ if ($Operation -eq 'prepare') {
           }
         }
     }
+    $diagnosticStep = 'writing_new_manifest'
     $files = @($current.Keys | Sort-Object | ForEach-Object { @{ path = $_; sha256 = $current[$_] } })
     @{ version = 1; files = $files } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $Target $manifestName) -Encoding UTF8
+    $diagnosticStep = 'writing_transaction_receipt'
     $record = @{kind = 'cage-installation'; version = 1; installPath = $Source; stagePath = $Target; backupPath = $Backup; files = @($transfers); directories = $directories; moves = @($moves)}
     $encoding = [Text.UTF8Encoding]::new($true)
     [byte[]]$bytes = $encoding.GetPreamble() + $encoding.GetBytes(($record | ConvertTo-Json -Depth 6))
@@ -232,6 +257,7 @@ if ($Operation -eq 'prepare') {
         [IO.File]::Move($temporary, $Receipt)
     } finally { if (Test-Path -LiteralPath $temporary) { [IO.File]::Delete($temporary) } }
 } elseif ($Operation -in @('move','restore')) {
+    $diagnosticStep = 'moving_preserved_files'
     $transfer = Get-Content -LiteralPath $Receipt -Raw -Encoding UTF8 | ConvertFrom-Json
     $moves = @($transfer.moves)
     if ($Operation -eq 'restore') { [Array]::Reverse($moves) }
@@ -263,6 +289,7 @@ if ($Operation -eq 'prepare') {
         Write-Output ('同名修改或旧程序文件已保留在 ' + (Join-Path $Target 'Cage-preserved-files'))
     }
 } elseif ($Operation -eq 'cleanup') {
+    $diagnosticStep = 'verifying_previous_file_ownership'
     $transfer = Get-Content -LiteralPath $Receipt -Raw -Encoding UTF8 | ConvertFrom-Json
     $actual = @(Read-Tree $Source @($transfer.files.path) | Where-Object { !($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object { Relative-Path $Source $_.FullName })
     foreach ($entry in $transfer.files) {
@@ -284,6 +311,7 @@ if ($Operation -eq 'prepare') {
     } else { [IO.Directory]::Delete($Source) }
     Complete-Transfer
 } elseif ($Operation -eq 'complete') {
+    $diagnosticStep = 'completing_transaction_receipt'
     Complete-Transfer
 } else {
     # The payload list comes from this uninstaller's embedded build manifest.
