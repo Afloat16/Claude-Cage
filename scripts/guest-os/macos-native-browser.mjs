@@ -1,4 +1,4 @@
-// Started by Cage through the bound ordinary user's SSH connection.
+// The bound guest user's LaunchAgent owns the browser. SSH callers attach as clients.
 import { installMacOSCLIBrowser } from "./macos-cli-browser.mjs";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -120,7 +120,10 @@ if (process.argv[2] !== "--service") {
   let closeLogin;
   try { closeLogin = await installMacOSCLIBrowser(data, message => server.request(message)); }
   catch (error) { await server.close(); throw error; }
-  const shutdown = async () => { await server.close(); await closeLogin(); };
+  const shutdown = async () => {
+    try { await server.close(); }
+    finally { await closeLogin(); }
+  };
   process.once("SIGTERM", () => { void shutdown().catch(() => { process.exitCode = 1; }); });
   process.once("SIGINT", () => { void shutdown().catch(() => { process.exitCode = 1; }); });
 }

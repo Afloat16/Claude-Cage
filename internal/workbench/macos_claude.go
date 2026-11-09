@@ -56,6 +56,7 @@ type macOSWindowRequest struct {
 	Wait       bool               `json:"wait,omitempty"`
 	Binary     bool               `json:"binary,omitempty"`
 	ID         string             `json:"id,omitempty"`
+	IDs        []string           `json:"ids,omitempty"`
 	Kind       string             `json:"kind,omitempty"`
 	Transfer   string             `json:"transfer,omitempty"`
 	Sequence   int                `json:"sequence"`

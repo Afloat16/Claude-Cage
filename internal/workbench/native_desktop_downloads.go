@@ -117,6 +117,14 @@ func desktopDownloadFailure(reason string) error {
 		return errors.New("Claude Desktop 下载文件在传输中发生变化，请重新下载")
 	case "desktop_download_unavailable", "desktop_download_transfer_invalid":
 		return errors.New("Claude Desktop 下载文件已不可用，请确认客机已解锁后重新下载")
+	case "desktop_download_limit":
+		return errors.New("待保存的 Claude Desktop 文件过多，请先完成现有下载后重试")
+	case "file_open_target_changed":
+		return errors.New("文件或 Claude 窗口已变化，请回到原窗口重新打开文件")
+	case "file_open_request_invalid", "file_open_request_unavailable":
+		return errors.New("文件打开请求已失效，请确认客机已解锁后重新操作")
+	case "file_open_request_limit":
+		return errors.New("正在处理的文件打开请求过多，请稍后重试")
 	default:
 		return nil
 	}

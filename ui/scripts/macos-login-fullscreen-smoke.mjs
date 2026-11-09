@@ -95,6 +95,7 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 1920, height: 108
     assert.equal(inputs[1].x,Math.floor((x-pan.x)*1024/pan.width));
     assert.equal(inputs[1].y,Math.floor((y-pan.y)*640/pan.height));
     await input.press("Enter"); await waitInput(3); assert.equal(inputs[2].code,36);
+    assert.equal(await screen.isVisible(), true, "Return must wait for the guest to confirm login");
     await input.evaluate((el) => {
       const data=new DataTransfer(); data.setData("text/plain","Z7");
       el.dispatchEvent(new ClipboardEvent("paste",{bubbles:true,cancelable:true,clipboardData:data}));
@@ -120,4 +121,77 @@ for (const viewport of [{ width: 1280, height: 900 }, { width: 1920, height: 108
     assert.deepEqual(errors,[]);
     console.log(`${viewport.width}×${viewport.height}: default login crop, compact panel, coordinate mapping, fit, pan, paste, native close and completion passed.`);
   } catch (error) { console.error("page:",(await page.locator("body").innerText()).slice(0,700), "errors:", errors); throw error; } finally { await browser.close(); }
+}
+
+// Exercise the first-setup password button through the normal page entry.
+// Frame polling must preserve an operation error until a user action succeeds.
+{
+  let operationError = "请先点选系统授权窗口的密码框，再点击填写授权密码";
+  let frameError = "", frames = 0, latestFrame = "";
+  const fixture = await createWorkbench({
+    async beforeNavigate(page, state) {
+      Object.assign(state.account, {initial_mac_setup:true, guest_system:"macos", macos_guest_user:"cage"});
+      Object.assign(state.status, {ready:true, vm_running:true});
+      const images = await page.evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 160; canvas.height = 100;
+        const paint = canvas.getContext("2d");
+        return ["#526482", "#627492"].map(color => {
+          paint.fillStyle = color; paint.fillRect(0, 0, canvas.width, canvas.height);
+          return canvas.toDataURL("image/png").split(",")[1];
+        });
+      });
+      await page.route("**/api/macos/first-setup", async route => {
+        const request = route.request().postDataJSON();
+        if (request.action === "permissions") return route.fulfill({json:{screen:false, input:false, projects:false, managed_credential:true}});
+        if (request.action === "open") return route.fulfill({json:{session:"error-persistence-fixture"}});
+        if (request.action === "frame") {
+          frames++;
+          if (frameError) return route.fulfill({json:{error:frameError}});
+          latestFrame = images[frames % images.length];
+          return route.fulfill({json:{image:latestFrame}});
+        }
+        if (request.action === "fill-password") {
+          assert.equal(request.password, undefined, "browser supplied a credential");
+          return route.fulfill({json:operationError ? {error:operationError} : {}});
+        }
+        return route.fulfill({json:{}});
+      });
+    },
+  });
+  const {page, browser, errors} = fixture;
+  try {
+    const screen = page.getByRole("dialog", {name:"首次设置虚拟 Mac"});
+    const fill = screen.getByRole("button", {name:"填写授权密码", exact:true});
+    await screen.getByRole("img").waitFor();
+    await fill.click();
+    await screen.getByRole("alert").filter({hasText:operationError}).waitFor();
+    const observed = frames;
+    for (let attempts = 0; frames < observed + 2 && attempts < 150; attempts++)
+      await new Promise(resolve => setTimeout(resolve, 20));
+    assert.ok(frames >= observed + 2, "frame polling stopped after an input error");
+    await page.waitForFunction(image => document.querySelector(".mac-login-canvas img")?.src.endsWith(image), latestFrame);
+    assert.equal(await screen.getByRole("alert").isVisible(), true, "a successful frame erased the password error");
+    assert.equal(await screen.getByRole("alert").innerText(), operationError);
+
+    frameError = "授权画面暂时无法读取";
+    await page.waitForResponse(async response => response.url().endsWith("/api/macos/first-setup") &&
+      response.request().postDataJSON()?.action === "frame" && (await response.json()).error === frameError);
+    operationError = "";
+    await fill.click();
+    await screen.getByRole("alert").filter({hasText:frameError}).waitFor();
+    frameError = "";
+    await screen.getByRole("alert").waitFor({state:"hidden"});
+
+    operationError = "系统授权窗口或密码框已变化，填写已停止，请重新选择";
+    await fill.click();
+    await screen.getByRole("alert").filter({hasText:operationError}).waitFor();
+    await screen.getByRole("button", {name:"返回设置指引"}).click();
+    await screen.waitFor({state:"detached"});
+    await page.getByRole("button", {name:"打开客机系统设置", exact:true}).click();
+    await screen.getByRole("img").waitFor();
+    assert.equal(await screen.getByRole("alert").count(), 0, "reopening retained an old operation error");
+    assert.deepEqual(errors, []);
+    console.log("First-setup password error persistence, independent frame recovery and close/reopen cleanup passed.");
+  } finally { await browser.close(); }
 }

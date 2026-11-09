@@ -26,6 +26,7 @@ struct Request: Decodable {
     var refresh: Bool?
     var wait, binary: Bool?
     var id, kind: String?
+    var ids: [String]?
     var transfer: String?
     var sequence: Int?
     var path: String?
@@ -246,7 +247,7 @@ private func handle(_ input: Request, inputSession: MacWindowInputSession) async
         return await MacDesktopFiles.shared.cancel(input.id ?? "")
     case "files-poll":
         return try await MacDesktopFiles.shared.poll()
-    case "files-download-open", "files-download-read", "files-download-close", "files-download-retry":
+    case "files-download-open", "files-download-read", "files-download-close", "files-download-retry", "files-download-ack":
         return try MacDesktopDownloads.shared.read(input)
     case "files-open-claim", "files-open-complete":
         return try MacDesktopFiles.shared.openAction(input.id ?? "", complete: input.action == "files-open-complete")
@@ -255,20 +256,7 @@ private func handle(_ input: Request, inputSession: MacWindowInputSession) async
     case "setup-status":
         return ["screen": CGPreflightScreenCaptureAccess(), "input": AXIsProcessTrusted()]
     case "setup-password-focus":
-        guard AXIsProcessTrusted(), let app = NSWorkspace.shared.frontmostApplication,
-              app.bundleIdentifier == "com.apple.authorizationhost" else { return ["focused":false] }
-        var code: SecCode?
-        var rule: SecRequirement?
-        guard SecCodeCopyGuestWithAttributes(nil, [kSecGuestAttributePid as String:app.processIdentifier] as CFDictionary, [], &code) == errSecSuccess,
-              SecRequirementCreateWithString("anchor apple and identifier com.apple.authorizationhost" as CFString, [], &rule) == errSecSuccess,
-              let code, let rule, SecCodeCheckValidity(code, [], rule) == errSecSuccess else { return ["focused":false] }
-        var value: CFTypeRef?
-        let element = AXUIElementCreateApplication(app.processIdentifier)
-        guard AXUIElementCopyAttributeValue(element,kAXFocusedUIElementAttribute as CFString,&value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return ["focused":false] }
-        var subrole: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(value as! AXUIElement,kAXSubroleAttribute as CFString,&subrole) == .success else { return ["focused":false] }
-        return ["focused":subrole as? String == kAXSecureTextFieldSubrole]
+        return try MacSetupPassword.probe()
     case "setup-screen", "setup-input", "setup-projects":
         let pane: String
         if input.action == "setup-screen" {
@@ -453,6 +441,27 @@ private func respondConnection(_ fd: Int32, inputSession: MacWindowInputSession)
 @main
 struct ClaudeWindowService {
     static func main() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        if arguments == ["--setup-password-probe"] { MacSetupPassword.runStream() }
+        if arguments.count == 2 && ["--maintenance-open", "--maintenance-probe", "--maintenance-password-probe"].contains(arguments[0]) {
+            if arguments[0] == "--maintenance-password-probe" { MacMaintenance.runPasswordProbe(purpose: arguments[1]) }
+            let result: [String: Any]
+            do { result = try MacMaintenance.run(arguments[0] == "--maintenance-open" ? "open" : "probe", purpose: arguments[1]) }
+            catch { result = ["error": (error as? Failure)?.message ?? "maintenance_unavailable"] }
+            if let data = try? JSONSerialization.data(withJSONObject: result) {
+                FileHandle.standardOutput.write(data)
+                FileHandle.standardOutput.write(Data([10]))
+            }
+            return
+        }
+        if CommandLine.arguments.dropFirst() == ["--setup-password-self-test"] {
+            do { try MacSetupPassword.selfTest(); return }
+            catch { fputs("macOS setup password self-test failed\n", stderr); exit(1) }
+        }
+        if CommandLine.arguments.dropFirst() == ["--native-open-self-test"] {
+            do { try MacNativeOpen.selfTest(); return }
+            catch { fputs("macOS native open self-test failed (\((error as? Failure)?.message ?? "unknown error"))\n", stderr); exit(1) }
+        }
         if CommandLine.arguments.dropFirst() == ["--phone-self-test"] {
             do { try MacPhoneDesktop.selfTest(); return }
             catch { fputs("macOS phone desktop self-test failed\n", stderr); exit(1) }
@@ -472,6 +481,11 @@ struct ClaudeWindowService {
         free(sockets)
         GuestDiagnostic.record("window", "started")
         NSApplication.shared.setActivationPolicy(.accessory)
+        MacNativeOpen.shared.install()
+        Task { @MainActor in
+            do { try await MacNativeOpen.shared.prepareMetadata() }
+            catch { GuestDiagnostic.record("files", (error as? Failure)?.message ?? "file_open_metadata_failed") }
+        }
         DispatchQueue.global(qos: .userInitiated).async {
             let connections = DispatchSemaphore(value: 16)
             while true {

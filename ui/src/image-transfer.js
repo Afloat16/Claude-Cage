@@ -90,15 +90,15 @@ export function prepareClipboardPaste(target, id, { windowTarget, valid = () => 
   let disposed = false, sent = false;
   const destination = { target, id, pid: windowTarget?.pid, window: windowTarget?.window };
   const check = () => {
-    if (disposed || !valid()) throw new Error("图片接收位置已切换，请重新粘贴");
+    if (disposed || !valid()) throw new Error("粘贴接收位置已切换，请重新粘贴");
   };
   const prepared = api("/input/paste/start", destination).then(result => {
     if (result?.available !== true || typeof result.transfer !== "string" && typeof result.context !== "string")
-      throw new Error("客机尚未确认图片接收位置，请同步环境组件后重试");
+      throw new Error("客机尚未确认粘贴接收位置，请同步环境组件后重试");
     return { transfer: result.transfer, context: result.context };
   });
-  // The clipboard can turn out to contain text or files. The image-specific
-  // preparation error is observed only when this gesture supplies an image.
+  // Source reading starts independently. A sender using this binding observes
+  // preparation errors, and every content path disposes its preparation.
   void prepared.catch(() => {});
   const dispose = () => {
     if (disposed) return;
@@ -110,7 +110,7 @@ export function prepareClipboardPaste(target, id, { windowTarget, valid = () => 
       check();
       const binding = await prepared;
       check();
-      if (sent) throw new Error("本次图片已经提交，请核对接收结果");
+      if (sent) throw new Error("本次粘贴已经提交，请核对接收结果");
       sent = true;
       try { return await api(typeof payload.text === "string" ? "/input/text" : "/input/image", { ...payload, ...destination, ...binding }); }
       finally { dispose(); }

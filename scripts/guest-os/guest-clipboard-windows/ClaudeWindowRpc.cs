@@ -189,7 +189,7 @@ internal static class ClaudeWindowRpc
             {
                 if (!available()) throw new InvalidDataException("requires_gui_login");
                 var action = value["action"]?.GetValue<string>() ?? "";
-                if (action is "files-download-open" or "files-download-read" or "files-download-close" or "files-download-retry")
+                if (action is "files-download-open" or "files-download-read" or "files-download-close" or "files-download-retry" or "files-download-ack")
                 {
                     await Protocol.Write(stream, WindowsDesktopDownloads.Read(value), token); continue;
                 }
@@ -213,7 +213,7 @@ internal static class ClaudeWindowRpc
                 }
                 if(action=="files-poll" && executable is null)
                 {
-                    await Protocol.Write(stream,new JsonObject{["available"]=false,["uploads"]=new JsonArray(),["downloads"]=WindowsDesktopDownloads.Snapshot(),["opens"]=WindowsDesktopFiles.OpenSnapshot()},token);continue;
+                    await Protocol.Write(stream,new JsonObject{["available"]=false,["uploads"]=new JsonArray(),["downloads"]=WindowsDesktopDownloads.Snapshot(),["opens"]=WindowsDesktopFiles.OpenSnapshot(),["downloadAck"]=true},token);continue;
                 }
                 if (executable is null) throw new InvalidDataException("desktop_not_installed");
                 if (action == "start")
@@ -227,7 +227,7 @@ internal static class ClaudeWindowRpc
                     try { found = Find(executable); }
                     catch (InvalidDataException) { }
                     if (found is null)
-                        await Protocol.Write(stream,new JsonObject{["available"]=false,["uploads"]=new JsonArray(),["downloads"]=WindowsDesktopDownloads.Snapshot(),["opens"]=WindowsDesktopFiles.OpenSnapshot()},token);
+                        await Protocol.Write(stream,new JsonObject{["available"]=false,["uploads"]=new JsonArray(),["downloads"]=WindowsDesktopDownloads.Snapshot(),["opens"]=WindowsDesktopFiles.OpenSnapshot(),["downloadAck"]=true},token);
                     else
                     {
                         using var owner = found.Process;

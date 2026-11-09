@@ -261,7 +261,7 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 		client = newWindowsBrowserClient(ctx, s.profile)
 		release = client.close
 	}
-	defer release()
+	defer func() { release() }()
 	var current windowsWindowFrame
 	request := func(input map[string]any, output any) error {
 		var data []byte
@@ -307,6 +307,16 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 	if err := request(map[string]any{"action": "frame"}, &current); err != nil {
 		http.Error(w, err.Error(), 409)
 		return
+	}
+	if s.macosGuest != nil {
+		owner := client
+		client, release = owner.viewer(ctx)
+		if client != owner {
+			if err := request(map[string]any{"action": "frame"}, &current); err != nil {
+				http.Error(w, err.Error(), 409)
+				return
+			}
+		}
 	}
 	local, remote := net.Pipe()
 	defer local.Close()

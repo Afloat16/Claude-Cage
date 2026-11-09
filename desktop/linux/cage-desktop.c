@@ -62,6 +62,7 @@ typedef struct {
     GSubprocess *process;
     GCancellable *cancel;
     guint deadline;
+    gsize output_limit;
     BackendCallback callback;
     gpointer data;
 } Command;
@@ -156,7 +157,7 @@ static void command_finished(GObject *source, GAsyncResult *result, gpointer dat
     JsonObject *object = NULL;
     if (command->deadline) g_source_remove(command->deadline);
     if (g_subprocess_communicate_utf8_finish(G_SUBPROCESS(source), result, &output, NULL, &error)) {
-        if (!output || strlen(output) > 65536 || !json_parser_load_from_data(parser, output, -1, NULL) ||
+        if (!output || strlen(output) > command->output_limit || !json_parser_load_from_data(parser, output, -1, NULL) ||
             !JSON_NODE_HOLDS_OBJECT(json_parser_get_root(parser))) {
             g_set_error_literal(&error, G_IO_ERROR, G_IO_ERROR_INVALID_DATA, "Cage 后台未返回有效状态，请查看私有配置中的 logs/。");
         } else {
@@ -176,7 +177,7 @@ static void command_finished(GObject *source, GAsyncResult *result, gpointer dat
     g_object_unref(command->cancel);
     g_free(command);
 }
-static void backend_arguments(const char *const *args, guint seconds, BackendCallback callback, gpointer data) {
+static void backend_arguments_limited(const char *const *args, guint seconds, gsize output_limit, BackendCallback callback, gpointer data) {
     GError *error = NULL;
     GSubprocessLauncher *launcher = g_subprocess_launcher_new(G_SUBPROCESS_FLAGS_STDOUT_PIPE | G_SUBPROCESS_FLAGS_STDERR_SILENCE);
     g_subprocess_launcher_setenv(launcher, "CLAUDE_CAGE_CONFIG", app.profile, TRUE);
@@ -197,8 +198,12 @@ static void backend_arguments(const char *const *args, guint seconds, BackendCal
     command->cancel = g_cancellable_new();
     command->callback = callback;
     command->data = data;
+    command->output_limit = output_limit;
     command->deadline = g_timeout_add_seconds(seconds, command_timeout, command);
     g_subprocess_communicate_utf8_async(process, NULL, command->cancel, command_finished, command);
+}
+static void backend_arguments(const char *const *args, guint seconds, BackendCallback callback, gpointer data) {
+    backend_arguments_limited(args, seconds, 65536, callback, data);
 }
 static void backend(const char *action, const char *option, BackendCallback callback, gpointer data) {
     const char *args[] = {app.backend, action, "--json", option, NULL};
@@ -456,7 +461,7 @@ static void clipboard_cache_command(const char *action, const char *id, BackendC
     char *quoted = quote(id ? id : "");
     char *request = g_strdup_printf("{\"action\":\"%s\",\"cache_id\":%s}", action, quoted);
     const char *args[] = {app.backend, "clipboard-files", "--json", "cache", request, NULL};
-    backend_arguments(args, 10, callback, data);
+    backend_arguments_limited(args, 10, 30 << 20, callback, data);
     g_free(request); g_free(quoted);
 }
 static void clipboard_cache_ignored(JsonObject *object, const GError *error, gpointer data) { (void)object; (void)error; (void)data; }
@@ -565,7 +570,7 @@ static void clipboard_sync_provide(GtkClipboard *clipboard, GtkSelectionData *se
 static void clipboard_sync_clear(GtkClipboard *clipboard, gpointer data) { (void)clipboard; g_strfreev(data); }
 static void clipboard_files_received(JsonObject *object, const GError *error, gpointer data) {
     PendingReply *pending = data;
-    if (error) { reply_error(pending->reply, error->message); pending_free(pending); return; }
+    if (error) { clipboard_cache_command("list", "", clipboard_cache_loaded_reply, NULL); reply_error(pending->reply, error->message); pending_free(pending); return; }
     clipboard_cache_watch(); clipboard_cache_remember(object, TRUE);
     const char *cache = text_member(object, "cache_id");
     if (pending->generation != clipboard_generation || pending->revision != clipboard_current_revision()) { clipboard_cache_release(cache, pending); return; }
@@ -762,6 +767,13 @@ static gboolean bridge_received(WebKitUserContentManager *manager, JSCValue *val
             char *state = g_strdup_printf("{\"phase\":\"manual\",\"currentVersion\":%s,\"message\":%s}", version, message);
             reply_json(reply, context, state);
             g_free(state); g_free(version); g_free(message);
+        }
+    } else if (!strcmp(name, "desktopFileAction")) {
+        const char *id = text_member(request, "id"), *connection = text_member(request, "connection_id");
+        if (!g_uuid_string_is_valid(id)) reply_error(reply, "文件打开标识无效。");
+        else {
+            const char *args[] = {app.backend,"desktop-file","--json","--connection",*connection ? connection : "local",id,NULL};
+            backend_arguments(args,1800,browser_file_finished,pending_reply(reply,context));
         }
     } else if (!strcmp(name, "saveBrowserDownload") || !strcmp(name, "browserDownloadAction")) {
         const char *id = text_member(request, "id");

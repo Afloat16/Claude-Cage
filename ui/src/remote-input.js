@@ -313,11 +313,19 @@ export function installRemoteInput(
         await writeClipboard(content.text);
       }
       if (valid()) say("已复制到本机");
-    } catch {
+    } catch (error) {
       if (!valid()) return;
       if (typeof content.text === "string") onFallback(content.text, "请在这里复制到本机。");
-      else say("浏览器未允许写入图片剪贴板，请允许剪贴板访问后重试。");
+      else say(error.name === "NotAllowedError" ? "浏览器未允许写入图片剪贴板，请允许剪贴板访问后重试。" : error.message || "复制内容读取失败，请重试。");
     }
+  };
+  const waitForCopy = () => {
+    if (!copyRequested) return;
+    clearTimeout(copyTimer);
+    copyTimer = setTimeout(() => {
+      copyRequested = false;
+      onFallback(lastText, "未收到新的选中文本，可在这里复制 Cage 剪贴板。");
+    }, 1600);
   };
   const copy = (key = "c") => {
     if (disposed || !isActive()) return;
@@ -332,20 +340,19 @@ export function installRemoteInput(
         document.visibilityState !== "hidden" && document.hasFocus();
       return transport.runKeyAction(async sendKey => {
         const before = await caretRect?.();
-        const content = await copyText(async () => {
+        const sendCopy = async () => {
           if (!valid()) throw new Error("复制窗口已变化，请重新选择文本。");
           for (const value of shortcutKeys(key)) await sendKey(...value);
-        }, valid, { id, context, key });
+        };
+        const content = await copyText(sendCopy, valid, { id, context, key });
+        if (content === undefined) { await sendCopy(); waitForCopy(); return; }
         const after = await caretRect?.();
         if (before?.available && (!after?.available || before.context !== after.context)) throw new Error("复制位置已变化，请重新选择文本。");
         if (valid()) await receiveCopy({ ...content, id, context });
       }).catch(error => { if (valid()) say(error.message || "未收到新的选中文本，请重新选择后复制。"); });
     }
     chord(key);
-    copyTimer = setTimeout(() => {
-      copyRequested = false;
-      onFallback(lastText, "未收到新的选中文本，可在这里复制 Cage 剪贴板。");
-    }, 1600);
+    waitForCopy();
   };
   const paste = (text) => {
     if (disposed) return;

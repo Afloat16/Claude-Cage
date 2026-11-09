@@ -268,7 +268,7 @@ internal sealed class ClipboardAgent : Control
         _ = child.StandardError.BaseStream.CopyToAsync(Stream.Null);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
         using var cancellation = timeout.Token.Register(() => { try { child.Kill(true); } catch { } });
-        var result = await Protocol.Read(child.StandardOutput.BaseStream, Protocol.PathLimit, timeout.Token) ?? throw new IOException("clipboard_cache_failed");
+        var result = await Protocol.Read(child.StandardOutput.BaseStream, Protocol.WireLimit, timeout.Token) ?? throw new IOException("clipboard_cache_failed");
         await child.WaitForExitAsync(timeout.Token);
         if (child.ExitCode != 0) throw new IOException("clipboard_cache_failed");
         return result;
@@ -281,13 +281,13 @@ internal sealed class ClipboardAgent : Control
         {
             if (!copiesLoaded)
             {
-                copiesLoaded = true;
                 var previous = await Cache("list");
                 foreach (var item in previous["selections"]!.AsArray())
                 {
                     var id = item!["cache_id"]!.GetValue<string>();
                     copies.TryAdd(id, new CachedCopy(id, Protocol.Paths(item["paths"]), false));
                 }
+                copiesLoaded = true;
             }
             foreach (var copy in copies.Values.ToArray())
             {
@@ -332,9 +332,10 @@ internal sealed class ClipboardAgent : Control
         var reader = Guid.NewGuid();
         if (paths != null) await GUI(() => { fileReaders[reader] = paths; return true; });
         string[]? created = null;
+        Process? child = null;
         try
         {
-            using var child = StartHelper(operation);
+            child = StartHelper(operation);
             using var cancellation = token.Register(() => { try { child.Kill(true); } catch { } });
             if (paths != null) await JsonSerializer.SerializeAsync(child.StandardInput.BaseStream, paths, cancellationToken: token);
             child.StandardInput.Close();
@@ -347,26 +348,40 @@ internal sealed class ClipboardAgent : Control
         }
         catch
         {
-            if (created != null) await GUI(() => { RetireCopies(created); return true; });
+            if (child != null && !child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); }
+            await GUI(() => { if (created != null) RetireCopies(created); else copiesLoaded = false; return true; });
             throw;
         }
-        finally { await GUI(() => { fileReaders.Remove(reader); CollectCopies(); return true; }); }
+        finally { child?.Dispose(); await GUI(() => { fileReaders.Remove(reader); CollectCopies(); return true; }); }
     }
     internal async Task Import(Stream stream, CancellationToken token)
     {
+        var capturedSubscriber = await GUI(() => subscriber);
+        var capturedSession = SessionEpoch;
         using var child = StartHelper("import");
         using var cancellation = token.Register(() => { try { child.Kill(true); } catch { } });
-        await Protocol.ReceiveFrames(stream, child.StandardInput.BaseStream, token); child.StandardInput.Close();
-        var result = await Protocol.Read(child.StandardOutput.BaseStream, Protocol.PathLimit, token) ?? throw new IOException("file_helper_failed");
-        var paths = Protocol.Paths(result["paths"]);
-        await GUI(() => { RememberCopy(result); return true; });
+        string[]? paths = null;
         try
         {
+            await Protocol.ReceiveFrames(stream, child.StandardInput.BaseStream, token); child.StandardInput.Close();
+            var result = await Protocol.Read(child.StandardOutput.BaseStream, Protocol.PathLimit, token) ?? throw new IOException("file_helper_failed");
+            paths = Protocol.Paths(result["paths"]);
+            await GUI(() => { RememberCopy(result); return true; });
             await child.WaitForExitAsync(token);
             if (child.ExitCode != 0) throw new IOException("file_helper_failed");
-            await GUI(() => { SessionGuard.Assert(); Approve(paths); return true; });
+            await GUI(() => {
+                SessionGuard.Assert();
+                if (SessionEpoch != capturedSession || capturedSubscriber != null && subscriber != capturedSubscriber) throw new IOException("clipboard_session_changed");
+                Approve(paths); return true;
+            });
             await Protocol.Write(stream, new() { ["paths"] = JsonSerializer.SerializeToNode(paths) }, token);
-        } catch { await GUI(() => { RetireCopies(paths); return true; }); throw; }
+        }
+        catch
+        {
+            if (!child.HasExited) { child.Kill(true); await child.WaitForExitAsync(); }
+            await GUI(() => { if (paths != null) RetireCopies(paths); else copiesLoaded = false; CollectCopies(); return true; });
+            throw;
+        }
     }
     internal async Task Export(Stream stream, JsonNode? selection, CancellationToken token)
     {

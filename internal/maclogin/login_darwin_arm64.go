@@ -58,14 +58,26 @@ type request = guestos.MacLoginRequest
 type reply = guestos.MacLoginReply
 
 type loginSession struct {
-	profile  string
-	token    string
-	expires  time.Time
-	screenID string
-	setup    bool
+	profile                  string
+	token                    string
+	expires                  time.Time
+	screenID                 string
+	setup                    bool
+	maintenance              string
+	maintenanceFrame         string
+	maintenanceMachineID     string
+	maintenanceAdministrator string
+	passwordSelection        passwordSelection
 }
 
 func (s *loginSession) currentScreen() string {
+	if s.maintenance != "" {
+		surface, err := s.maintenanceProbe(false)
+		if err != nil {
+			return ""
+		}
+		return "maintenance-" + surface.Session
+	}
 	// Check via the separate provisioning account. Guest development files
 	// and the standard user's shell initialization cannot grant this view.
 	bound, err := guestos.LoadMacOSProfile(s.profile)
@@ -78,7 +90,11 @@ func (s *loginSession) currentScreen() string {
 		}
 		return "setup-" + bound.SetupID
 	}
-	args, err := guestos.MacOSSSHArgs(s.profile, "cage")
+	user, err := guestos.MacOSProvisionUser(s.profile)
+	if err != nil {
+		return ""
+	}
+	args, err := guestos.MacOSSSHArgs(s.profile, user)
 	if err != nil {
 		return ""
 	}
@@ -114,9 +130,17 @@ func (s *loginSession) close() {
 	s.token = ""
 	s.screenID = ""
 	s.setup = false
+	s.maintenance = ""
+	s.maintenanceFrame = ""
+	s.maintenanceMachineID = ""
+	s.maintenanceAdministrator = ""
+	s.passwordSelection = passwordSelection{}
 }
 
 func (s *loginSession) handle(in request) reply {
+	if in.Maintenance != "" || (s.maintenance != "" && in.Action != "open") {
+		return s.handleMaintenance(in)
+	}
 	if in.Action == "finish" && in.Setup {
 		bound, err := guestos.LoadMacOSProfile(s.profile)
 		if err != nil || bound == nil || bound.SetupID == "" {
@@ -152,14 +176,8 @@ func (s *loginSession) handle(in request) reply {
 	}
 	switch in.Action {
 	case "fill-password":
-		sequence, valid := passwordKeys(in.Password)
-		if !s.setup || !valid || !s.authorizationDialog() {
-			return reply{Error: "请先打开系统授权对话框，并选中密码输入框"}
-		}
-		for _, key := range sequence {
-			if !bool(C.cageLoginKey(C.int(key.code), C.bool(key.shift))) {
-				return reply{Error: "授权密码未能填写，请重试"}
-			}
+		if err := s.fillSetupPassword(in.Password); err != nil {
+			return reply{Error: err.Error()}
 		}
 	case "frame":
 		var n C.int
@@ -174,20 +192,22 @@ func (s *loginSession) handle(in request) reply {
 		}
 		return reply{Image: C.GoBytes(p, n), MIME: "image/jpeg"}
 	case "click":
+		s.passwordSelection = passwordSelection{}
 		if in.X < 0 || in.Y < 0 || in.X >= 1024 || in.Y >= 640 || !bool(C.cageLoginClick(C.int(in.X), C.int(in.Y))) {
 			return reply{Error: "无效的登录位置"}
 		}
+		if s.setup {
+			s.selectPasswordPosition(in.X, in.Y)
+		}
 	case "key":
+		s.passwordSelection = passwordSelection{}
 		// ANSI printable keys, Return, Tab, Escape and Backspace. No global shortcuts.
 		setupNavigation := s.setup && (in.Code >= 123 && in.Code <= 126 || in.Code == 116 || in.Code == 121)
 		if in.Code < 0 || (in.Code > 53 && !setupNavigation) || !bool(C.cageLoginKey(C.int(in.Code), C.bool(in.Shift))) {
 			return reply{Error: "不支持此登录按键"}
 		}
-		if in.Code == 36 && !s.setup {
-			s.close()
-			return reply{Closed: true}
-		}
 	case "scroll":
+		s.passwordSelection = passwordSelection{}
 		if !s.setup || in.X < 0 || in.Y < 0 || in.X >= 1024 || in.Y >= 640 ||
 			in.DeltaX < -512 || in.DeltaX > 512 || in.DeltaY < -512 || in.DeltaY > 512 ||
 			!bool(C.cageLoginScroll(C.int(in.X), C.int(in.Y), C.int(in.DeltaX), C.int(in.DeltaY))) {
@@ -197,26 +217,6 @@ func (s *loginSession) handle(in request) reply {
 		return reply{Error: "未知的登录操作"}
 	}
 	return reply{}
-}
-
-func (s *loginSession) authorizationDialog() bool {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	bound, err := guestos.LoadMacOSProfile(s.profile)
-	if err != nil || bound == nil {
-		return false
-	}
-	args, err := guestos.MacOSSSHArgs(s.profile, bound.User)
-	if err != nil {
-		return false
-	}
-	cmd := exec.CommandContext(ctx, "/usr/bin/ssh", append(args, "-T", "cage-macos", "--", `printf '%s\n' '{"action":"setup-password-focus"}' | /usr/bin/nc -U "$HOME/Library/Caches/dev.cage.GuestClaudeWindow/window.sock"`)...)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
-	data, err := cmd.Output()
-	var result struct {
-		Focused bool `json:"focused"`
-	}
-	return err == nil && json.Unmarshal(data, &result) == nil && result.Focused
 }
 
 func run(ctx context.Context, machine *apple.VirtualMachine, dir string) error {
@@ -264,7 +264,13 @@ func run(ctx context.Context, machine *apple.VirtualMachine, dir string) error {
 			_ = conn.SetDeadline(time.Now().Add(10 * time.Second))
 			var input request
 			if json.NewDecoder(io.LimitReader(conn, 4096)).Decode(&input) == nil {
-				_ = json.NewEncoder(conn).Encode(s.handle(input))
+				if input.Maintenance != "" {
+					_ = conn.SetDeadline(time.Now().Add(15 * time.Second))
+				}
+				result := s.handle(input)
+				if err := json.NewEncoder(conn).Encode(result); err != nil && result.Session != "" {
+					s.close()
+				}
 			}
 			_ = conn.Close()
 		}

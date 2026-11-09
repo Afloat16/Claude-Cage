@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/sylvinus/agent-vm/internal/clipboardfiles"
 )
@@ -33,22 +32,30 @@ func run(args []string, input io.Reader, output io.Writer) error {
 		}
 		return json.NewEncoder(output).Encode(result)
 	}
+	var store clipboardfiles.CacheStore
+	if args[0] != "export" {
+		var err error
+		store, err = clipboardfiles.UserCacheStore()
+		if err != nil {
+			return err
+		}
+	}
 	if args[0] == "save" {
 		if len(args) != 2 {
 			return errors.New("file name required")
 		}
-		path, err := clipboardfiles.Save(&framedInput{reader: input}, args[1])
+		selection, err := store.Save(&framedInput{reader: input}, args[1])
 		if err != nil {
 			return err
 		}
-		return returnCachedPaths(output, []string{path})
+		return returnCachedSelection(output, store, selection)
 	}
 	if args[0] == "import" {
-		paths, err := clipboardfiles.Read(input)
+		selection, err := store.Read(input)
 		if err != nil {
 			return err
 		}
-		return returnCachedPaths(output, paths)
+		return returnCachedSelection(output, store, selection)
 	}
 	var paths []string
 	if len(args) == 2 && args[1] != "--paths-stdin" {
@@ -63,35 +70,25 @@ func run(args []string, input io.Reader, output io.Writer) error {
 	}
 	switch args[0] {
 	case "link-cached":
-		linked, err := clipboardfiles.LinkCachedFiles(paths)
+		linked, err := store.LinkCachedFiles(paths)
 		if err != nil {
 			return err
 		}
-		return returnCachedPaths(output, linked)
+		return returnCachedSelection(output, store, linked)
 	case "export":
 		return clipboardfiles.Write(output, paths)
 	case "copy":
-		copied, err := clipboardfiles.Copy(paths)
+		copied, err := store.Copy(paths)
 		if err != nil {
 			return err
 		}
-		return returnCachedPaths(output, copied)
+		return returnCachedSelection(output, store, copied)
 	default:
 		return errors.New("guest file operation invalid")
 	}
 }
 
-func returnCachedPaths(output io.Writer, paths []string) error {
-	store, err := clipboardfiles.UserCacheStore()
-	if err != nil {
-		_ = os.RemoveAll(filepath.Dir(paths[0]))
-		return err
-	}
-	selection, err := store.Register(paths)
-	if err != nil {
-		_ = os.RemoveAll(filepath.Dir(paths[0]))
-		return err
-	}
+func returnCachedSelection(output io.Writer, store clipboardfiles.CacheStore, selection clipboardfiles.CachedSelection) error {
 	if err := json.NewEncoder(output).Encode(selection); err != nil {
 		_ = store.Release(selection.ID)
 		return err

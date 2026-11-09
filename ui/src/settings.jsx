@@ -31,6 +31,7 @@ import { EnvironmentVersions } from "./environment-versions";
 import { EnvironmentStorage } from "./environment-storage";
 import { ResourceSettings } from "./resources";
 import { DiagnosticSettings } from "./diagnostics.jsx";
+import { MacOSLogin } from "./macos-login";
 import { AccountSettings } from "./account";
 import { ClaudeAccountsPanel } from "./claude-accounts";
 const sections = [
@@ -94,7 +95,7 @@ export function SettingsPanel({
       : draft[k] !== current[k],
   );
   const busy =
-    Boolean(status.job?.running) || probing || submitting || Boolean(jobId);
+    Boolean(status.job?.running) || Boolean(status.storage_recovery?.required) || probing || submitting || Boolean(jobId);
   const update = (key, value) => {
     setDraft((p) => ({ ...p, [key]: value }));
     if (["dns_url"].includes(key)) setProbe(null);
@@ -251,7 +252,7 @@ export function SettingsPanel({
               await onClaudeLogin(id);
               onClose();
             }} />}
-          <fieldset className="settings-fields" disabled={busy}>
+          <fieldset className="settings-fields" disabled={busy && !(section === "project" && status.storage_recovery?.required)}>
             {section === "mobile" && (isRemoteClient()
               ? <section className="section-title"><h3>连接这台电脑</h3><p>请先切换到这台电脑的本机环境，再生成或管理手机配对码。</p></section>
               : <MobilePairSettings relay={draft.mobile_relay ?? ""} savedRelay={current.mobile_relay ?? ""} onChange={value => update("mobile_relay",value)} onConfirm={onConfirm} />)}
@@ -599,8 +600,17 @@ export function SettingsPanel({
                 <p className="footnote">
                   切换项目只改变新终端和文件编辑器的起始位置；已有终端、网页和登录态会保留。
                 </p>
-                <EnvironmentVersions status={status} onConfirm={onConfirm} />
-                <ResourceSettings status={status} onConfirm={onConfirm} onDirtyChange={setResourceDirty} />
+                {!status.storage_recovery?.required && <EnvironmentVersions status={status} onConfirm={onConfirm} />}
+                {status.guest_system === "macos" && <section aria-label="客机系统权限">
+                  <h4>客机系统权限</h4>
+                  <p className="field-help">在受限的客机系统设置窗口中完成授权，Cage 会自动检查并重新连接项目。</p>
+                  <div className="project-recovery-actions">
+                    <MacOSLogin maintenance="projects" label="文件共享权限" disabled={!status.ready || busy} />
+                    <MacOSLogin maintenance="screen" label="屏幕录制权限" disabled={!status.ready || busy} />
+                    <MacOSLogin maintenance="input" label="辅助功能权限" disabled={!status.ready || busy} />
+                  </div>
+                </section>}
+                {!status.storage_recovery?.required && <ResourceSettings status={status} onConfirm={onConfirm} onDirtyChange={setResourceDirty} />}
  <DiagnosticSettings />
                 {status.can_restore && (
                   <button

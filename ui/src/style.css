@@ -2716,5 +2716,6 @@ svg {
 .environment-storage .field-help code { overflow-wrap: anywhere; }
 .environment-storage .storage-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .environment-storage .storage-actions button:disabled { opacity: 1; color: var(--muted); background: var(--chrome); }
+.environment-storage .storage-repair-help { margin: 8px 0 0; }
 .environment-storage > [role="status"] { margin: 12px 0 20px; overflow-wrap: anywhere; }
 .start-project-box .storage-entry { justify-self: start; margin: 0 16px 8px; }

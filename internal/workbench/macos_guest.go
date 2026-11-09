@@ -27,7 +27,7 @@ func macOSWorkbenchRoute(path string) bool {
 		return id == "requests" || id == "open" || browserFileID.MatchString(id)
 	}
 	switch path {
-	case "/api/macos/first-setup", "/api/appearance/codex", "/api/macos/project-approval", "/api/macos/exit-policy", "/api/macos/login":
+	case "/api/macos/first-setup", "/api/appearance/codex", "/api/macos/project-approval", "/api/macos/exit-policy", "/api/macos/login", "/api/macos/maintenance":
 		return true
 	}
 	return strings.HasPrefix(path, "/api/macos/claude/") || strings.HasPrefix(path, "/api/macos-browser/")
@@ -114,6 +114,8 @@ func (s *Server) attachMacOSGuest() error {
 		if checkAfterReconnect {
 			_, _ = s.submitJob("network-recovery", s.checkNetworkIfWanted)
 		}
+	} else if err == nil && !s.macSetupPending() {
+		s.retryMacOSProjectShares(ctx)
 	}
 	return err
 }

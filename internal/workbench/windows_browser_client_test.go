@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -115,6 +116,9 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 			}
 			result = map[string]any{"data": base64.StdEncoding.EncodeToString(downloaded[start : start+remaining]), "sequence": request.Input.Sequence + 1, "eof": start+remaining == len(downloaded)}
 		}
+		if os.Getenv("CAGE_BROWSER_PERSISTENT_FIXTURE") == "1" {
+			result.(map[string]any)["service"] = map[string]any{"version": 1, "persistent": true}
+		}
 		data, _ := json.Marshal(result)
 		_, _ = os.Stdout.Write(append(data, '\n'))
 	}
@@ -214,5 +218,36 @@ func TestNativeBrowserEventsPreserveCopyContextAndSequence(t *testing.T) {
 		if !bytes.Contains(data, []byte(value)) {
 			t.Fatalf("copy event lost %q", value)
 		}
+	}
+}
+
+func TestNativeBrowserViewerOwnershipUsesServiceCapability(t *testing.T) {
+	for _, persistent := range []bool{false, true} {
+		t.Run(fmt.Sprint(persistent), func(t *testing.T) {
+			client := fixtureWindowsBrowserClient(t)
+			client.ownsBrowser = true
+			start := client.start
+			client.start = func(ctx context.Context) (*exec.Cmd, error) {
+				cmd, err := start(ctx)
+				if persistent {
+					cmd.Env = append(cmd.Env, "CAGE_BROWSER_PERSISTENT_FIXTURE=1")
+				}
+				return cmd, err
+			}
+			if _, err := client.request(t.Context(), "GET", "/tabs", nil); err != nil {
+				t.Fatal(err)
+			}
+			viewer, release := client.viewer(t.Context())
+			if (viewer != client) != persistent {
+				t.Fatal("viewer ownership did not follow guest capability")
+			}
+			if _, err := viewer.request(t.Context(), "GET", "/tabs", nil); err != nil {
+				t.Fatal(err)
+			}
+			release()
+			if _, err := client.request(t.Context(), "GET", "/tabs", nil); err != nil {
+				t.Fatalf("closing a viewer closed the owning connection: %v", err)
+			}
+		})
 	}
 }

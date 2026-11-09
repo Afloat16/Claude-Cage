@@ -55,9 +55,11 @@ if($service){
     $existing=Get-CimInstance Win32_Service -Filter ("Name='"+$name+"'")
     if($existing.PathName -cne $binary -or $existing.StartName -notin @('LocalSystem','NT AUTHORITY\SYSTEM')){throw 'An unrelated service already uses this name.'}
 }
-# Verify the retained VM before stopping the existing helper. Prepare uses the
-# checked protected copy in the installing administrator's token.
-$raw=& $payload.FullName prepare --vm-id $VMId.ToString('D') --host-sid $HostSID
+# Existing installations retain their protected authority and recovery journal.
+# They can repair a stopped helper while its bound data volume is disconnected.
+# Fresh registration verifies the actual VM using the protected payload copy.
+$operation=if(Test-Path -LiteralPath $bindingPath){'binding'}else{'prepare'}
+$raw=& $payload.FullName $operation --vm-id $VMId.ToString('D') --host-sid $HostSID
 if($LASTEXITCODE -ne 0){throw 'The exact VM/disk binding could not be verified.'}
 $binding=$raw|ConvertFrom-Json
 if($binding.version -ne 1 -or [guid]$binding.vm_id -ne $VMId -or $binding.host_sid -cne $HostSID){throw 'The prepared manager binding does not match.'}

@@ -67,7 +67,9 @@ func (s *Server) diagnosticExport(w http.ResponseWriter, r *http.Request) {
 	defer s.diagnosticMu.Unlock()
 	guestState := "environment unavailable"
 	var guest []byte
-	if s.vmRunning() {
+	if s.storageRecoveryStatus().Required {
+		guestState = "environment storage recovery pending"
+	} else if s.vmRunning() {
 		ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		defer cancel()
 		var err error

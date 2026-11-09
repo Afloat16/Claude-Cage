@@ -1,7 +1,7 @@
 import { createTailnetClient } from "./tailnet-client.mjs";
 // The GUI-session broker owns this process. Playwright uses inherited DevTools
 // pipes; neither the controller nor DevTools opens a guest network listener.
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { constants, createReadStream, existsSync } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -98,8 +98,8 @@ export function browserExecutable() {
   throw failure("browser_unavailable", "请先在 Windows 客机安装受支持的 Chrome 或 Edge");
 }
 
-// Test dependencies are explicit. Production never falls back to headless mode,
-// another OS, an arbitrary executable from PATH, or the user's existing profile.
+// Tests provide their dependencies explicitly. Production uses the selected
+// guest's browser mode, fixed executable, and Cage-owned profile.
 export function createNativeBrowserService(options = {}) {
   const mac = options.platform === "darwin";
   const directory = options.directory ?? path.join(process.env.LOCALAPPDATA || path.join(homedir(), "AppData", "Local"), "Cage", "Browser");
@@ -113,6 +113,8 @@ export function createNativeBrowserService(options = {}) {
   const tabs = new Map(), byPage = new WeakMap(), sessions = new Map(), frameSessions = new WeakMap(), internalPages = new WeakSet();
   const captures = new Map();
   const events = [], transfers = new Map(), privateContexts = new Set(), editorConnections = new Map(), logins = new Map();
+  const clipboardCopies = new Map();
+  let clipboardHelper, copyVersion = 0, pendingCopy, copying;
   let eventSequence = 0, uploads, downloads, clipboard, pointer, composition, clipboardAvailable = false, cookieActions, extensions, controller, internalCreation, vault;
   let stateVersion = 0, snapshotVersion = -1, snapshotAt = 0, snapshotCache;
   let rfbTarget = "", rfbMask = 0, lastClick, rfbPointer;
@@ -124,6 +126,131 @@ export function createNativeBrowserService(options = {}) {
   function emit(type, value) {
     events.push({ sequence: ++eventSequence, type, value });
     while (events.length > 64 || JSON.stringify(events).length > 350000) events.shift();
+  }
+
+  function invalidateCopies() {
+    copyVersion++;
+    pendingCopy = undefined;
+    for (const copy of clipboardCopies.values()) void rm(copy.file, { force: true }).catch(() => {});
+    clipboardCopies.clear();
+  }
+
+  function copyTarget(proof) {
+    const tab = target(proof);
+    if (closing || tab.copyContext !== proof.context || proof.version !== copyVersion)
+      throw failure("copy_changed", "复制来源已切换，请重新复制");
+    return tab;
+  }
+
+  async function privateClipboardPage() {
+    if (closing) throw failure("copy_unavailable", "浏览器已关闭");
+    if (!clipboardHelper) {
+      clipboardHelper = (async () => {
+        const isolated = await owner.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
+        privateContexts.add(isolated);
+        isolated.on("close", () => { privateContexts.delete(isolated); clipboardHelper = undefined; });
+        try {
+          const page = await isolated.newPage();
+          await page.route("http://cage-clipboard.localhost/", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Cage clipboard</title>" }));
+          await page.goto("http://cage-clipboard.localhost/", { waitUntil: "domcontentloaded" });
+          return page;
+        } catch (error) { await isolated.close(); throw error; }
+      })();
+    }
+    return clipboardHelper;
+  }
+
+  async function readPrivateClipboard() {
+    const helper = await privateClipboardPage();
+    const value = await helper.evaluate(async ({ imageLimit, textLimit }) => {
+      const items = await navigator.clipboard.read();
+      const mime = items.some(item => item.types.includes("image/png")) ? "image/png" : "text/plain";
+      const item = items.find(item => item.types.includes(mime));
+      if (!item) throw new Error("Clipboard format unavailable");
+      const blob = await item.getType(mime);
+      if (blob.size > (mime === "image/png" ? imageLimit : textLimit)) throw new Error("Clipboard size exceeded");
+      if (mime === "text/plain") return { text: await blob.text() };
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = reject;
+        reader.onload = () => resolve({ png: reader.result.slice(reader.result.indexOf(",") + 1) });
+        reader.readAsDataURL(blob);
+      });
+    }, { imageLimit, textLimit });
+    return value;
+  }
+
+  async function copiedPayload(proof, value) {
+    copyTarget(proof);
+    const payload = { id: proof.id, context: proof.context, document: proof.document };
+    if (typeof value.text === "string" && Buffer.byteLength(value.text) <= textLimit && Buffer.byteLength(JSON.stringify(value.text)) <= chunkSize)
+      return { ...payload, text: value.text };
+    const mime = typeof value.text === "string" ? "text/plain" : "image/png";
+    const bytes = Buffer.from(mime === "text/plain" ? value.text : value.png, mime === "text/plain" ? "utf8" : "base64");
+    if (bytes.length > (mime === "text/plain" ? textLimit : imageLimit)) throw failure("copy_limit", "复制内容超过大小限制");
+    if (mime === "image/png" && (bytes.length < 33 || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || bytes.toString("ascii", 12, 16) !== "IHDR" ||
+        !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20) || bytes.readUInt32BE(16) * bytes.readUInt32BE(20) > 40_000_000))
+      throw failure("copy_image_invalid", "复制的 PNG 图片无效");
+    const id = randomUUID(), file = path.join(uploadDirectory, "clipboard", id);
+    await mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await writeFile(file, bytes, { mode: 0o600, flag: "wx" });
+    try { copyTarget(proof); }
+    catch (error) { await rm(file, { force: true }); throw error; }
+    clipboardCopies.set(id, { ...proof, reference: id, file, mime, size: bytes.length, created: Date.now() });
+    return { ...payload, clipboard: { id, mime, size: bytes.length } };
+  }
+
+  function observeCopy(value) {
+    if (closing) return;
+    const tab = tabs.get(value.id);
+    if (value.id !== active || tab?.copyContext !== value.context) return;
+    if (!mac) { emit("clipboard", { ...value, document: tab.document }); return; }
+    if (tab.explicitCopyContext === value.context) { tab.copyCompletion?.(value); return; }
+    invalidateCopies();
+    pendingCopy = { value, proof: { id: tab.id, context: value.context, document: tab.document, version: copyVersion } };
+    if (copying) return;
+    copying = (async () => {
+      while (pendingCopy) {
+        const current = pendingCopy;
+        pendingCopy = undefined;
+        try {
+          const value = current.value.changed ? await readPrivateClipboard() : current.value;
+          emit("clipboard", await copiedPayload(current.proof, value));
+        } catch {
+          try { copyTarget(current.proof); emit("clipboard", { id: current.proof.id, context: current.proof.context, document: current.proof.document, error: "copy_failed" }); }
+          catch {}
+        }
+      }
+    })().finally(() => { copying = undefined; });
+  }
+
+  async function copyAction(tab, input, action, signal) {
+    if (!tokenPattern.test(input.context || "")) throw failure("invalid_input", "复制上下文无效");
+    const document = tab.document;
+    await privateClipboardPage();
+    await tab.page.bringToFront();
+    target({ id: tab.id, document });
+    invalidateCopies();
+    tab.copyContext = input.context;
+    tab.explicitCopyContext = input.context;
+    await clipboard.setContext(tab.id, input.context);
+    const proof = { id: tab.id, context: input.context, document, version: copyVersion };
+    let timeout;
+    const completed = new Promise((resolve, reject) => {
+      tab.copyCompletion = resolve;
+      timeout = setTimeout(() => reject(failure("copy_unavailable", "未收到新的复制内容，请重新选择后复制")), 5000);
+    });
+    completed.catch(() => {});
+    try {
+      signal?.throwIfAborted();
+      await tab.page.keyboard.press(action === "cut" ? "Meta+X" : "Meta+C");
+      await completed;
+      signal?.throwIfAborted();
+      copyTarget(proof);
+      const value = await readPrivateClipboard();
+      signal?.throwIfAborted();
+      return await copiedPayload(proof, value);
+    } finally { clearTimeout(timeout); tab.copyCompletion = undefined; }
   }
   function remember() {
     if (!context || closing) return;
@@ -243,6 +370,7 @@ export function createNativeBrowserService(options = {}) {
     page.on("close", () => {
       void stopCapture(page);
       tabs.delete(id); clipboard?.detachTab(id); uploads?.cancelTab(id);
+      if (active === id) invalidateCopies();
       if (vault) for (const [sid, entry] of vault.sessions) if (entry.tab === id) vault.sessions.delete(sid);
       if (active === id) active = [...tabs.keys()].at(-1) || "";
       if (pointer?.id === id) pointer = undefined;
@@ -253,6 +381,7 @@ export function createNativeBrowserService(options = {}) {
     });
     page.on("framenavigated", frame => {
       if (frame === page.mainFrame()) {
+        if (active === id) invalidateCopies();
         if (tab.kind !== "editor") {
           try {
             const address = new URL(page.url()), project = /^([a-f0-9]{16}(?:[a-f0-9]{8})?)\.cage-editor\.localhost$/.exec(address.hostname)?.[1];
@@ -353,10 +482,7 @@ export function createNativeBrowserService(options = {}) {
       context.setDefaultTimeout(7000); owner = context.browser();
       if (!owner) throw failure("browser_unavailable", "Windows 客机浏览器控制连接未就绪");
       browserCDP = await owner.newBrowserCDPSession();
-      clipboard = new modules.BrowserClipboard(cdp, value => {
-        const tab = tabs.get(value.id);
-        if (value.id === active && tab?.copyContext === value.context) emit("clipboard", { ...value, document: tab.document });
-      });
+      clipboard = new modules.BrowserClipboard(cdp, observeCopy, { includeChanges: mac });
       clipboardAvailable = true;
       if (modules.BrowserVault) vault = new modules.BrowserVault({ cdp, active: () => active, tab: id => { const tab = tabs.get(id); return tab ? { ...tab, url: tab.page.url() } : undefined; } });
       cookieActions = modules.browserCookies;
@@ -452,7 +578,7 @@ export function createNativeBrowserService(options = {}) {
   }
   async function activate(id) {
     const tab = tabs.get(id); if (!tab) throw failure("target_changed", "Tab no longer exists");
-    if (active !== id) { pointer = undefined; composition = undefined; tab.geometry = token(); }
+    if (active !== id) { invalidateCopies(); pointer = undefined; composition = undefined; tab.geometry = token(); }
     if (split && ![split.left, split.right].includes(id)) { split = undefined; await applyViewport(); }
     active = id; await tab.page.bringToFront(); changed(); return { ok: true };
   }
@@ -530,13 +656,28 @@ export function createNativeBrowserService(options = {}) {
     await syncNativeFrontTab();
     const tab = target({ id: active });
     const tree = await cdp("Page.getFrameTree", {}, tab.session);
-    const isolated = await cdp("Page.createIsolatedWorld", { frameId: tree.frameTree.frame.id, worldName: "cage-native-paste-proof" }, tab.session);
-    const result = await cdp("Runtime.evaluate", { expression: `(() => { let e=Object.getOwnPropertyDescriptor(Document.prototype,'activeElement').get.call(document); while(e){const root=Object.getOwnPropertyDescriptor(Element.prototype,'shadowRoot').get.call(e); if(!root)break; const next=Object.getOwnPropertyDescriptor(ShadowRoot.prototype,'activeElement').get.call(root);if(!next)break;e=next;}return e; })()`, contextId: isolated.executionContextId, objectGroup: "cage-paste-proof" }, tab.session);
-    try {
-      if (!result.result?.objectId) throw failure("target_changed", "Input target changed");
-      const node = await cdp("DOM.describeNode", { objectId: result.result.objectId }, tab.session);
-      return { focus: `${tab.document}:${isolated.executionContextId}:${node.node.backendNodeId}` };
-    } finally { await cdp("Runtime.releaseObjectGroup", { objectGroup: "cage-paste-proof" }, tab.session); }
+    const roots = new Map([[tree.frameTree.frame.id, tab.session]]);
+    for (const session of new Set(tab.page.frames().map(frame => frameSessions.get(frame)))) {
+      if (!session || session === tab.session) continue;
+      const child = await cdp("Page.getFrameTree", {}, session).catch(() => null);
+      if (child) roots.set(child.frameTree.frame.id, session);
+    }
+    const nodes = [], visited = new Set();
+    let frameId = tree.frameTree.frame.id, session = tab.session;
+    while (frameId) {
+      if (visited.has(frameId)) throw failure("target_changed", "Input target changed");
+      visited.add(frameId);
+      session = roots.get(frameId) || session;
+      const isolated = await cdp("Page.createIsolatedWorld", { frameId, worldName: "cage-native-paste-proof" }, session);
+      try {
+        const result = await cdp("Runtime.evaluate", { expression: `(() => { let e=Object.getOwnPropertyDescriptor(Document.prototype,'activeElement').get.call(document); while(e){const root=Object.getOwnPropertyDescriptor(Element.prototype,'shadowRoot').get.call(e); if(!root)break; const next=Object.getOwnPropertyDescriptor(ShadowRoot.prototype,'activeElement').get.call(root);if(!next)break;e=next;}return e; })()`, contextId: isolated.executionContextId, objectGroup: "cage-paste-proof" }, session);
+        if (!result.result?.objectId) throw failure("target_changed", "Input target changed");
+        const { node } = await cdp("DOM.describeNode", { objectId: result.result.objectId }, session);
+        nodes.push(`${frameId}:${isolated.executionContextId}:${node.backendNodeId}`);
+        frameId = node.frameId;
+      } finally { await cdp("Runtime.releaseObjectGroup", { objectGroup: "cage-paste-proof" }, session); }
+    }
+    return { focus: `${tab.document}:${nodes.join("/")}` };
   }
   function point(input, size = viewport) {
     if (![input.x, input.y].every(v => Number.isFinite(v) && v >= 0 && v <= 1)) throw failure("invalid_input", "指针位置无效");
@@ -604,6 +745,10 @@ export function createNativeBrowserService(options = {}) {
       const request = uploads.request(transfer.id), tab = tabs.get(request.tabId);
       if (request !== transfer.request || active !== request.tabId || tab?.document !== transfer.document) throw failure("target_changed", "文件接收网页已切换，请返回原网页重试");
     }
+    if (transfer.copy) {
+      copyTarget(transfer.copy);
+      if (clipboardCopies.get(transfer.copy.reference) !== transfer.copy) throw failure("copy_changed", "复制内容已过期，请重新复制");
+    }
     return transfer;
   }
   async function closeTransfer(id) {
@@ -621,6 +766,10 @@ export function createNativeBrowserService(options = {}) {
           input.mime && !["image/png", "text/plain"].includes(input.mime))
         throw failure("image_target_invalid", "图片目标或大小无效");
       const document = tab.document, geometry = tab.geometry;
+      if (mac) {
+        invalidateCopies(); tab.copyContext = "";
+        await clipboard.setContext(tab.id, "");
+      }
       const focus = await nativeFocusProof();
       signal?.throwIfAborted();
       if (target(input) !== tab || tab.document !== document || tab.geometry !== geometry) throw failure("image_target_changed", "Image target changed");
@@ -656,29 +805,29 @@ export function createNativeBrowserService(options = {}) {
       let text;
       if (transfer.mime === "text/plain") {
         text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        if (mac) {
+          const helper = await privateClipboardPage();
+          signal?.throwIfAborted();
+          await helper.evaluate(text => navigator.clipboard.writeText(text), text);
+        }
       } else {
         if (bytes.length < 33 || !bytes.subarray(0, 8).equals(Buffer.from([137,80,78,71,13,10,26,10])) || bytes.toString("ascii", 12, 16) !== "IHDR" ||
             !bytes.readUInt32BE(16) || !bytes.readUInt32BE(20) || bytes.readUInt32BE(16) * bytes.readUInt32BE(20) > 40_000_000)
           throw failure("image_invalid", "PNG 图片无效");
         // A private, local helper origin writes Chromium's clipboard. The site
         // receives an ordinary paste event without gaining clipboard permissions.
-        const isolated = await owner.newContext({ permissions: ["clipboard-write"] });
-        try {
-          const helper = await isolated.newPage();
-          await helper.route("http://cage-image.localhost/", route => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>Cage image input</title>" }));
-          await helper.goto("http://cage-image.localhost/", { waitUntil: "domcontentloaded" });
-          signal?.throwIfAborted();
-          await helper.evaluate(async encoded => {
-            const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
-            await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
-          }, bytes.toString("base64"));
-        } finally { await isolated.close(); }
+        const helper = await privateClipboardPage();
+        signal?.throwIfAborted();
+        await helper.evaluate(async encoded => {
+          const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": new Blob([bytes], { type: "image/png" }) })]);
+        }, bytes.toString("base64"));
       }
       await tab.page.bringToFront();
       if (target({ id: transfer.id, document: transfer.document }) !== tab || tab.geometry !== transfer.geometry || (await nativeFocusProof()).focus !== transfer.focus)
         throw failure("image_target_changed", "Image target changed");
       signal?.throwIfAborted();
-      if (text !== undefined) await tab.page.keyboard.insertText(text);
+      if (text !== undefined && !mac) await tab.page.keyboard.insertText(text);
       else await tab.page.keyboard.press(mac ? "Meta+V" : "Control+V");
       transfers.delete(input.transfer);
       return { ok: true };
@@ -704,12 +853,21 @@ export function createNativeBrowserService(options = {}) {
         transfers.set(transferID, transfer); return { transfer: transferID };
       }
       if (input.direction === "download") {
-        const source = downloads.sourceFile(input.id), file = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+        const copy = clipboardCopies.get(input.id);
+        if (copy || input.context || input.document || input.tab) {
+          if (!copy || input.tab !== copy.id || input.context !== copy.context || input.document !== copy.document) throw failure("copy_changed", "复制来源已切换，请重新复制");
+          copyTarget(copy);
+        }
+        const source = copy ? copy.file : downloads.sourceFile(input.id), file = await open(source, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
         const info = await file.stat();
         if (!info.isFile()) { await file.close(); throw failure("download_unavailable", "下载文件不可用"); }
-        const record = downloads.snapshot().find(d => d.id === input.id);
-        transfers.set(transferID, { direction: "download", id: input.id, file, length: info.size, received: 0, sequence: 0, used: Date.now() });
-        return { transfer: transferID, size: info.size, name: record.name };
+        if (copy) {
+          try { copyTarget(copy); if (info.size !== copy.size) throw failure("copy_changed", "复制内容已变化"); }
+          catch (error) { await file.close(); throw error; }
+        }
+        const name = copy ? "clipboard." + (copy.mime === "image/png" ? "png" : "txt") : downloads.snapshot().find(d => d.id === input.id).name;
+        transfers.set(transferID, { direction: "download", id: input.id, copy, file, length: info.size, received: 0, sequence: 0, used: Date.now() });
+        return { transfer: transferID, size: info.size, name, ...(copy ? { mime: copy.mime } : {}) };
       }
       throw failure("invalid_input", "文件传递方向无效");
     }
@@ -730,6 +888,7 @@ export function createNativeBrowserService(options = {}) {
       }
       if (action === "file-read" && transfer.direction === "download") {
         const data = Buffer.alloc(chunkSize), { bytesRead } = await transfer.file.read(data, 0, data.length, transfer.received);
+        if (transfer.copy) checkTransfer(input);
         transfer.received += bytesRead; transfer.sequence++;
         const eof = transfer.received === transfer.length;
         if (!bytesRead && !eof) throw failure("download_unavailable", "下载文件没有完整返回");
@@ -1037,8 +1196,10 @@ export function createNativeBrowserService(options = {}) {
     if (action === "forward") { await page.goForward({ waitUntil: "commit", timeout: 8000 }); return { ok: true }; }
     if (action === "copy-context") {
       if (!tokenPattern.test(input.context || "")) throw failure("invalid_input", "Copy target changed");
+      if (tab.copyContext !== input.context) { invalidateCopies(); tab.explicitCopyContext = undefined; }
       tab.copyContext = input.context; await clipboard.setContext(tab.id, input.context); return { ok: true };
     }
+    if (mac && (action === "copy" || action === "cut")) return copyAction(tab, input, action, signal);
     if (action === "insert-text") {
       if (typeof input.text !== "string" || !input.text || Buffer.byteLength(input.text) > 8192) throw failure("invalid_input", "Input target or text is invalid");
       await page.bringToFront(); signal?.throwIfAborted(); await page.keyboard.insertText(input.text); return { ok: true };
@@ -1075,13 +1236,20 @@ export function createNativeBrowserService(options = {}) {
     if (closing) return closing;
     remember();
     closing = (async () => {
+      invalidateCopies();
       for (const id of transfers.keys()) await closeTransfer(id);
+      await copying;
       for (const privateContext of privateContexts) await privateContext.close().catch(() => {});
       for (const login of logins.values()) clearTimeout(login.expiry);
       await persistQueue.catch(() => {}); await context?.close().catch(() => {});
     })(); return closing;
   }
-  const expiry = setInterval(() => { for (const [id, t] of transfers) if (Date.now() - t.used > 120000) void closeTransfer(id); }, 10000);
+  const expiry = setInterval(() => {
+    for (const [id, t] of transfers) if (Date.now() - t.used > 120000) void closeTransfer(id);
+    for (const [id, copy] of clipboardCopies) if (Date.now() - copy.created > 120000) {
+      clipboardCopies.delete(id); void rm(copy.file, { force: true }).catch(() => {});
+    }
+  }, 10000);
   expiry.unref();
   return { request, releaseInput, close: async () => { tailnet.close(); clearInterval(expiry); await close(); } };
 }

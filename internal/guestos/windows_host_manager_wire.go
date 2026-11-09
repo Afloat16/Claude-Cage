@@ -38,7 +38,6 @@ type windowsHostStorageRequest struct {
 	SourceVolume uint32 `json:"source_volume,omitempty"`
 	SourceFileID uint64 `json:"source_file_id,omitempty"`
 	Disk         string `json:"disk,omitempty"`
-	Directory    string `json:"directory,omitempty"`
 }
 
 type windowsHostStorageState struct {
@@ -54,7 +53,7 @@ func validWindowsStorageID(id string) bool {
 
 func (r windowsHostStorageRequest) validate() error {
 	if r.Action == "status" {
-		if r.ID == "" && r.SourceVolume == 0 && r.SourceFileID == 0 && r.Disk == "" && r.Directory == "" {
+		if r.ID == "" && r.SourceVolume == 0 && r.SourceFileID == 0 && r.Disk == "" {
 			return nil
 		}
 		return errors.New("invalid_request")
@@ -64,11 +63,11 @@ func (r windowsHostStorageRequest) validate() error {
 	}
 	switch r.Action {
 	case "begin", "commit", "rollback":
-		if r.Disk != "" || r.Directory != "" {
+		if r.Disk != "" {
 			return errors.New("invalid_request")
 		}
 	case "attach":
-		if r.Disk == "" || r.Directory == "" || len(r.Disk) > 32700 || len(r.Directory) > 32700 || strings.ContainsAny(r.Disk+r.Directory, "\x00\r\n") {
+		if r.Disk == "" || len(r.Disk) > 32700 || strings.ContainsAny(r.Disk, "\x00\r\n") {
 			return errors.New("invalid_request")
 		}
 	default:

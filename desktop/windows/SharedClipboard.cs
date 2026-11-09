@@ -33,7 +33,7 @@ internal static class SharedClipboard
     private static async Task<JsonElement> Cache(string action, string id = "")
     {
         var request = JsonSerializer.Serialize(new { action, cache_id = id });
-        var result = await Backend.Json(["clipboard-files", "--json", "cache", request], CancellationToken.None, TimeSpan.FromSeconds(10));
+        var result = await Backend.Json(["clipboard-files", "--json", "cache", request], CancellationToken.None, TimeSpan.FromSeconds(10), outputLimit: 30 << 20);
         if (result.Exit != 0) throw new IOException("clipboard_cache_operation_failed");
         return result.Data;
     }
@@ -60,10 +60,10 @@ internal static class SharedClipboard
         {
             if (!loaded)
             {
-                loaded = true;
                 var result = await Cache("list");
                 foreach (var item in result.GetProperty("selections").EnumerateArray())
                     copies.TryAdd(item.Text("cache_id"), item.GetProperty("paths").EnumerateArray().Select(path => path.GetString()!).ToArray());
+                loaded = true;
             }
             foreach (var copy in copies.ToArray())
             {
@@ -127,17 +127,22 @@ internal static class SharedClipboard
 
     public static async Task<object> Write(JsonElement request, CancellationToken token)
     {
+        _ = Revision;
         var currentGeneration = generation;
         string[]? paths = null;
         var cache = "";
         if (request.Text("files") is { Length: > 0 } id)
         {
             if (!Guid.TryParse(id, out _)) throw new InvalidDataException("剪贴板文件标识无效");
-            var response = await Backend.Json(["clipboard-files", "--json", "--connection", request.Text("connection_id"), "receive", id], token, TimeSpan.FromMinutes(30));
-            if (response.Exit != 0) throw new IOException(response.Data.Text("message"));
-            paths = response.Data.GetProperty("paths").EnumerateArray().Select(value => value.GetString()!).ToArray();
-            cache = response.Data.Text("cache_id");
-            if (cache.Length != 0) { copies[cache] = paths; pending.Add(cache); }
+            try
+            {
+                var response = await Backend.Json(["clipboard-files", "--json", "--connection", request.Text("connection_id"), "receive", id], token, TimeSpan.FromMinutes(30));
+                if (response.Exit != 0) throw new IOException(response.Data.Text("message"));
+                paths = response.Data.GetProperty("paths").EnumerateArray().Select(value => value.GetString()!).ToArray();
+                cache = response.Data.Text("cache_id");
+                if (cache.Length != 0) { copies[cache] = paths; pending.Add(cache); }
+            }
+            catch { loaded = false; throw; }
         }
         try
         {

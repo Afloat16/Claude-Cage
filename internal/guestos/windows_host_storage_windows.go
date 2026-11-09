@@ -20,26 +20,30 @@ import (
 	"golang.org/x/sys/windows"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
-	"github.com/sylvinus/agent-vm/internal/paths"
 )
 
 //go:embed windows_storage.ps1
 var windowsStorageScript string
 
 type windowsHostStorageJournal struct {
-	ID        string                     `json:"id"`
-	Phase     string                     `json:"phase"`
-	Before    WindowsHostManagerBinding  `json:"before"`
-	OldDisk   string                     `json:"old_disk"`
-	OldLayout windowsVMStorageLayout     `json:"old_layout"`
-	After     *WindowsHostManagerBinding `json:"after,omitempty"`
-	NewLayout *windowsVMStorageLayout    `json:"new_layout,omitempty"`
-	Directory windowsStorageDisk         `json:"directory"`
-	Backup    string                     `json:"backup"`
+	ID                  string                     `json:"id"`
+	Phase               string                     `json:"phase"`
+	Before              WindowsHostManagerBinding  `json:"before"`
+	OldDisk             string                     `json:"old_disk"`
+	OldLayout           windowsVMStorageLayout     `json:"old_layout"`
+	After               *WindowsHostManagerBinding `json:"after,omitempty"`
+	NewLayout           *windowsVMStorageLayout    `json:"new_layout,omitempty"`
+	Backup              string                     `json:"backup"`
+	RegistrationStarted bool                       `json:"registration_started,omitempty"`
 }
 
 func (server *windowsHostManagerServer) storageJournalPath() string {
 	return filepath.Join(filepath.Dir(WindowsHostManagerBindingPath(server.binding.VMID)), "storage.json")
+}
+
+func (server *windowsHostManagerServer) storageRegistrationLayout() windowsVMStorageLayout {
+	root := filepath.Join(filepath.Dir(server.storageJournalPath()), "machine")
+	return windowsVMStorageLayout{Configuration: filepath.Join(root, "configuration"), Snapshots: filepath.Join(root, "snapshots"), Paging: filepath.Join(root, "paging")}
 }
 
 func (server *windowsHostManagerServer) loadStorageJournal() (*windowsHostStorageJournal, error) {
@@ -61,7 +65,12 @@ func (server *windowsHostManagerServer) loadStorageJournal() (*windowsHostStorag
 	if decoder.Decode(&journal) != nil || decoder.Decode(new(any)) != io.EOF || !validWindowsStorageID(journal.ID) ||
 		journal.Before.VMID != server.binding.VMID || journal.Before.HostSID != server.binding.HostSID ||
 		journal.Phase != "pending" && journal.Phase != "commit" && journal.Phase != "rollback" ||
-		(journal.After == nil) != (journal.NewLayout == nil) {
+		journal.NewLayout == nil || *journal.NewLayout != server.storageRegistrationLayout() || journal.Backup != filepath.Join(filepath.Dir(path), "storage-backup-"+journal.ID) ||
+		journal.Before.DiskVolume == 0 || journal.Before.DiskFileID == 0 {
+		return nil, errors.New("binding_invalid")
+	}
+	if journal.After != nil && (journal.After.VMID != server.binding.VMID || journal.After.HostSID != server.binding.HostSID ||
+		journal.After.DiskVolume == 0 || journal.After.DiskFileID == 0) {
 		return nil, errors.New("binding_invalid")
 	}
 	return &journal, nil
@@ -212,7 +221,8 @@ func (server *windowsHostManagerServer) storageRequest(ctx context.Context, inpu
 			return nil, err
 		}
 		backup := filepath.Join(filepath.Dir(server.storageJournalPath()), "storage-backup-"+input.ID)
-		journal = &windowsHostStorageJournal{ID: input.ID, Phase: "pending", Before: server.binding, OldDisk: oldDisk, OldLayout: layout, Backup: backup}
+		registration := server.storageRegistrationLayout()
+		journal = &windowsHostStorageJournal{ID: input.ID, Phase: "pending", Before: server.binding, OldDisk: oldDisk, OldLayout: layout, NewLayout: &registration, Backup: backup}
 		if err = managerWriteStorageJSON(server.storageJournalPath(), server.binding.HostSID, journal); err != nil {
 			return nil, err
 		}
@@ -225,6 +235,9 @@ func (server *windowsHostManagerServer) storageRequest(ctx context.Context, inpu
 		if err := server.ensureStorageBackup(ctx, journal); err != nil {
 			return nil, err
 		}
+		if err := server.prepareStorageRegistration(ctx, journal); err != nil {
+			return nil, err
+		}
 	case "attach":
 		if err := server.attachStorage(ctx, journal, input, conn); err != nil {
 			return nil, err
@@ -235,6 +248,30 @@ func (server *windowsHostManagerServer) storageRequest(ctx context.Context, inpu
 		}
 	}
 	return server.storageState(journal, input.Action), nil
+}
+
+// Registration belongs to the fixed system helper. Keeping it on the system
+// volume lets rollback reattach the original VHDX even when the target volume
+// disappears. VM identity and the exported recovery metadata remain available.
+func (server *windowsHostManagerServer) prepareStorageRegistration(ctx context.Context, journal *windowsHostStorageJournal) error {
+	root := filepath.Dir(journal.NewLayout.Configuration)
+	if err := os.Mkdir(root, 0700); err == nil {
+		if err := managerProtectStoragePath(root, server.binding.HostSID); err != nil {
+			return err
+		}
+	} else if !errors.Is(err, os.ErrExist) {
+		return err
+	}
+	if err := managerProtected(root, server.binding.HostSID); err != nil {
+		return err
+	}
+	if !journal.RegistrationStarted {
+		journal.RegistrationStarted = true
+		if err := managerWriteStorageJSON(server.storageJournalPath(), server.binding.HostSID, journal); err != nil {
+			return err
+		}
+	}
+	return server.applyStorage(ctx, journal, journal.Before, *journal.NewLayout)
 }
 
 func (server *windowsHostManagerServer) ensureStorageBackup(ctx context.Context, journal *windowsHostStorageJournal) error {
@@ -336,6 +373,7 @@ func managerPinStorageParents(path string) (func(), error) {
 		for _, handle := range handles {
 			windows.CloseHandle(handle)
 		}
+		handles = nil
 	}
 	var parents []string
 	for parent := filepath.Dir(path); ; parent = filepath.Dir(parent) {
@@ -351,7 +389,7 @@ func managerPinStorageParents(path string) (func(), error) {
 			closeAll()
 			return nil, err
 		}
-		handle, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+		handle, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 		if err != nil {
 			closeAll()
 			return nil, err
@@ -364,26 +402,6 @@ func managerPinStorageParents(path string) (func(), error) {
 		}
 	}
 	return closeAll, nil
-}
-
-func managerProtectVMMetadata(handle windows.Handle, sid string, release bool) error {
-	owner, access := "SY", "FRFX"
-	if release {
-		owner, access = sid, "FA"
-	}
-	sd, err := windows.SecurityDescriptorFromString("O:" + owner + "G:SYD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;" + access + ";;;" + sid + ")")
-	if err != nil {
-		return err
-	}
-	ownerSID, _, err := sd.Owner()
-	if err != nil {
-		return err
-	}
-	acl, _, err := sd.DACL()
-	if err != nil {
-		return err
-	}
-	return windows.SetSecurityInfo(handle, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, ownerSID, nil, acl, nil)
 }
 
 func managerStorageObject(handle windows.Handle, directory bool) (windowsStorageDisk, error) {
@@ -430,6 +448,9 @@ func managerGrantVMDisk(handle windows.Handle, id uuid.UUID) error {
 }
 
 func (server *windowsHostManagerServer) attachStorage(ctx context.Context, journal *windowsHostStorageJournal, input windowsHostStorageRequest, conn net.Conn) error {
+	if !journal.RegistrationStarted {
+		return errors.New("invalid_request")
+	}
 	if err := server.ensureStorageBackup(ctx, journal); err != nil {
 		return err
 	}
@@ -443,38 +464,20 @@ func (server *windowsHostManagerServer) attachStorage(ctx context.Context, journ
 		return err
 	}
 	defer diskParents()
-	dirHandle, directory, err := managerOpenStorageDestination(conn, input.Directory, server.binding.HostSID, true)
-	if err != nil {
-		return err
-	}
-	defer windows.CloseHandle(dirHandle)
-	directoryParents, err := managerPinStorageParents(directory.Path)
-	if err != nil {
-		return err
-	}
-	defer directoryParents()
-	if cage.StoragePathsOverlap(directory.Path, disk.Path) || disk.Volume == journal.Before.DiskVolume && disk.FileID == journal.Before.DiskFileID {
+	if disk.Volume == journal.Before.DiskVolume && disk.FileID == journal.Before.DiskFileID {
 		return errors.New("invalid_request")
 	}
 	if journal.After == nil {
-		entries, err := os.ReadDir(directory.Path)
-		if err != nil || len(entries) != 0 {
-			return errors.New("destination_not_empty")
-		}
 		after := journal.Before
 		after.DiskPath, after.DiskVolume, after.DiskFileID = disk.Path, disk.Volume, disk.FileID
-		layout := windowsVMStorageLayout{Configuration: filepath.Join(directory.Path, "configuration"), Snapshots: filepath.Join(directory.Path, "snapshots"), Paging: filepath.Join(directory.Path, "paging")}
-		journal.After, journal.NewLayout, journal.Directory = &after, &layout, directory
+		journal.After = &after
 		if err = managerWriteStorageJSON(server.storageJournalPath(), server.binding.HostSID, journal); err != nil {
 			return err
 		}
-	} else if journal.After.DiskPath != disk.Path || journal.After.DiskVolume != disk.Volume || journal.After.DiskFileID != disk.FileID || journal.Directory != directory {
+	} else if journal.After.DiskPath != disk.Path || journal.After.DiskVolume != disk.Volume || journal.After.DiskFileID != disk.FileID {
 		return errors.New("vm_changed")
 	}
 	if err = managerGrantVMDisk(diskHandle, server.binding.VMID); err != nil {
-		return err
-	}
-	if err = managerProtectVMMetadata(dirHandle, server.binding.HostSID, false); err != nil {
 		return err
 	}
 	if err = server.applyStorage(ctx, journal, *journal.After, *journal.NewLayout); err != nil {
@@ -488,7 +491,7 @@ func (server *windowsHostManagerServer) applyStorage(ctx context.Context, journa
 	if err != nil {
 		return err
 	}
-	handle, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	handle, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return err
 	}
@@ -511,7 +514,11 @@ func (server *windowsHostManagerServer) applyStorage(ctx context.Context, journa
 	var result struct {
 		Applied bool `json:"applied"`
 	}
-	if err = managerStorageCommand(ctx, server.binding.VMID, "apply", map[string]any{"old": journal.OldLayout, "next": journal.NewLayout, "target": layout, "old_disk": journal.OldDisk, "source_disk": journal.Before.DiskPath, "new_disk": journal.After.DiskPath, "disk": binding.DiskPath}, &result); err != nil || !result.Applied {
+	newDisk := journal.Before.DiskPath
+	if journal.After != nil {
+		newDisk = journal.After.DiskPath
+	}
+	if err = managerStorageCommand(ctx, server.binding.VMID, "apply", map[string]any{"old": journal.OldLayout, "next": journal.NewLayout, "target": layout, "old_disk": journal.OldDisk, "source_disk": journal.Before.DiskPath, "new_disk": newDisk, "disk": binding.DiskPath}, &result); err != nil || !result.Applied {
 		return errors.Join(err, errors.New("storage_operation_failed"))
 	}
 	return managerRequireStopped(ctx, binding)
@@ -541,8 +548,8 @@ func (server *windowsHostManagerServer) finishStorage(ctx context.Context, journ
 			return err
 		}
 	} else {
-		if journal.After != nil {
-			if err := server.applyStorage(ctx, journal, journal.Before, journal.OldLayout); err != nil {
+		if journal.RegistrationStarted {
+			if err := server.applyStorage(ctx, journal, journal.Before, *journal.NewLayout); err != nil {
 				return err
 			}
 		} else if err := managerRequireStopped(ctx, journal.Before); err != nil {
@@ -550,28 +557,6 @@ func (server *windowsHostManagerServer) finishStorage(ctx context.Context, journ
 		}
 		if err := server.saveStorageBinding(journal.Before); err != nil {
 			return err
-		}
-		if journal.After != nil {
-			// Return the verified metadata directory to its original owner after
-			// Hyper-V moves back. Cleanup then runs with that user's permissions.
-			real, err := paths.Resolve(journal.Directory.Path)
-			if err == nil && strings.EqualFold(real, journal.Directory.Path) {
-				name, _ := windows.UTF16PtrFromString(real)
-				handle, openErr := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES|windows.WRITE_DAC|windows.WRITE_OWNER, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
-				if openErr != nil {
-					return openErr
-				}
-				defer windows.CloseHandle(handle)
-				identity, identityErr := managerStorageObject(handle, true)
-				if identityErr != nil || identity != journal.Directory {
-					return errors.New("vm_changed")
-				}
-				if err := managerProtectVMMetadata(handle, server.binding.HostSID, true); err != nil {
-					return err
-				}
-			} else if !errors.Is(err, os.ErrNotExist) {
-				return errors.New("vm_changed")
-			}
 		}
 	}
 	journal.Phase = action

@@ -75,18 +75,23 @@ const setupKeys = {ArrowLeft:123, ArrowRight:124, ArrowDown:125, ArrowUp:126, Pa
 const guestWidth = 1024;
 const guestHeight = 640;
 
-function closeSession(session, endpoint) {
-  if (session) api(endpoint, { action: "close", session }).catch(() => {});
+function closeSession(session, endpoint, maintenance) {
+  if (session) api(endpoint, { action: "close", session, ...(maintenance ? { maintenance } : {}) }).catch(() => {});
 }
 
-export function MacOSLogin({ disabled, initialSetup = false, setupActions, setupHint, setupStatus, setupError, autoOpen = false, managedCredential = false }) {
-  const endpoint = initialSetup ? "/macos/first-setup" : "/macos/login";
+export function MacOSLogin({ disabled, initialSetup = false, maintenance = "", label, setupActions, setupHint, setupStatus, setupError, autoOpen = false, managedCredential = false, onSessionClosed, onSettings }) {
+  const endpoint = initialSetup ? "/macos/first-setup" : maintenance ? "/macos/maintenance" : "/macos/login";
+  const scope = maintenance ? { maintenance } : {};
   const [opened, setOpened] = useState(false);
   const [session, setSession] = useState("");
   const [frame, setFrame] = useState("");
   const [message, setMessage] = useState("");
+  const [frameError, setFrameError] = useState("");
+  const [recovery, setRecovery] = useState("");
+  const [administrator, setAdministrator] = useState("");
+  const [frameTarget, setFrameTarget] = useState(null);
   const [authorizationPassword, setAuthorizationPassword] = useState("");
-  const [zoomed, setZoomed] = useState(!initialSetup);
+  const [zoomed, setZoomed] = useState(!initialSetup && !maintenance);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [aspect, setAspect] = useState(guestWidth / guestHeight);
   const lease = useRef(null);
@@ -99,24 +104,29 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
   const drag = useRef(null);
   const dragged = useRef(false);
   const autoOpened = useRef(false);
+  const shown = useRef({ region: [0, 0, guestWidth, guestHeight], geometry: "" });
 
   const fitWidth = Math.min(size.width, size.height * aspect);
   // Keep a 320 × 200 logical region around the account controls visible.
-  const imageWidth = !zoomed ? fitWidth : initialSetup ? fitWidth * 2 :
+  const imageWidth = !zoomed ? fitWidth : initialSetup || maintenance ? fitWidth * 2 :
     Math.min(size.width * guestWidth / 320, size.height * aspect * guestHeight / 200);
   const imageHeight = imageWidth / aspect;
   const hasFrame = Boolean(frame);
+  const visibleMessage = message || frameError;
 
   function end(show = "") {
     if (!lease.current) return;
     const old = lease.current;
     lease.current = null;
-    closeSession(old.session, endpoint);
+    closeSession(old.session, endpoint, maintenance);
     setOpened(false);
     setSession("");
     setFrame("");
+    setFrameTarget(null);
+    shown.current = { region: [0, 0, guestWidth, guestHeight], geometry: "" };
     setAuthorizationPassword("");
     setMessage(show);
+    setFrameError("");
   }
 
   async function open() {
@@ -125,15 +135,18 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
     lease.current = next;
     chain.current = Promise.resolve();
     setMessage("");
-    setZoomed(!initialSetup);
+    setFrameError("");
+    setRecovery("");
+    setZoomed(!initialSetup && !maintenance);
     setOpened(true);
     try {
-      const r = await api(endpoint, { action: "open" });
+      const r = await api(endpoint, { action: "open", ...scope });
       if (lease.current !== next) {
-        closeSession(r.session, endpoint);
+        closeSession(r.session, endpoint, maintenance);
         return;
       }
-      if (!r.session) throw new Error(r.error || "暂时无法打开客机登录界面");
+      if (!r.session) { setRecovery(r.recovery || ""); throw new Error(r.error || "暂时无法打开客机登录界面"); }
+      setAdministrator(r.administrator || "");
       next.session = r.session;
       setSession(r.session);
     } catch (e) {
@@ -156,7 +169,7 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
 
   useEffect(() => () => {
     if (lease.current) {
-      closeSession(lease.current.session, endpoint);
+      closeSession(lease.current.session, endpoint, maintenance);
       lease.current = null;
     }
   }, []);
@@ -193,7 +206,7 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
   useLayoutEffect(() => {
     if (!opened || !stage.current) return;
     stage.current.scrollLeft = zoomed ? Math.max(0, (imageWidth - size.width) / 2) : 0;
-    stage.current.scrollTop = zoomed ? Math.max(0, imageHeight * 0.85 - size.height * 0.5) : 0;
+    stage.current.scrollTop = zoomed ? Math.max(0, imageHeight * (maintenance ? 0.5 : 0.85) - size.height * 0.5) : 0;
   }, [opened, hasFrame, zoomed, imageWidth, imageHeight, size.width, size.height]);
 
   useEffect(() => {
@@ -202,11 +215,17 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
     let alive = true;
     const poll = async () => {
       try {
-        const r = await api(endpoint, { action: "frame", session });
+        const r = await api(endpoint, { action: "frame", session, ...scope });
         if (!alive || lease.current?.session !== session) return;
-        if (r.closed) return end();
-        if (r.image) setFrame(`data:${r.mime === "image/jpeg" ? "image/jpeg" : "image/png"};base64,${r.image}`);
-        if (r.error) setMessage(r.error);
+        if (r.closed) { setRecovery(r.recovery || ""); end(r.error || ""); onSessionClosed?.(); return; }
+        if (r.image) {
+          if (maintenance && (!r.geometry || !Array.isArray(r.region) || r.region.length !== 4 || !r.region.every(Number.isInteger)))
+            throw new Error("客机维护画面缺少窗口定位，请更新组件后重试");
+          setFrameTarget(maintenance ? { geometry: r.geometry, region: r.region } : null);
+          setFrame(`data:${r.mime === "image/jpeg" ? "image/jpeg" : "image/png"};base64,${r.image}`);
+          setFrameError("");
+        }
+        if (r.error) setFrameError(r.error);
         timer = setTimeout(poll, 550);
       } catch (e) {
         if (alive && lease.current?.session === session) end(e.message);
@@ -219,12 +238,14 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
   function enqueue(action, data) {
     const owner = lease.current;
     if (!owner?.session) return;
+    const geometry = shown.current.geometry;
+    if (maintenance && !geometry) { setMessage("请等待授权窗口画面后再操作"); return; }
     chain.current = chain.current.then(async () => {
       if (lease.current !== owner) return;
-      const r = await api(endpoint, { action, session: owner.session, ...data });
+      const r = await api(endpoint, { action, session: owner.session, ...scope, ...(maintenance ? { geometry } : {}), ...data });
       if (lease.current !== owner) return;
-      if (r.closed) end();
-      else if (r.error) setMessage(r.error);
+      if (r.closed) { end(r.error || ""); onSessionClosed?.(); }
+      else setMessage(r.error || "");
     }).catch((e) => { if (lease.current === owner) end(e.message); });
   }
 
@@ -234,14 +255,18 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
     if (!rect || !rect.width || !rect.height || e.clientX < rect.left || e.clientX >= rect.right ||
         e.clientY < rect.top || e.clientY >= rect.bottom) return;
     keyboard.current?.focus({ preventScroll: true });
+    const [x, y, width, height] = shown.current.region;
     enqueue("click", {
-      x: Math.floor((e.clientX - rect.left) * guestWidth / rect.width),
-      y: Math.floor((e.clientY - rect.top) * guestHeight / rect.height),
+      x: x + Math.floor((e.clientX - rect.left) * width / rect.width),
+      y: y + Math.floor((e.clientY - rect.top) * height / rect.height),
     });
   }
 
   function guestKey(e) {
-    const code = keys[e.code] ?? (initialSetup ? setupKeys[e.code] : undefined);
+    if (maintenance && (e.metaKey || e.ctrlKey) && !e.altKey && e.code === "KeyA") {
+      e.preventDefault(); enqueue("select-all", {}); return;
+    }
+    const code = keys[e.code] ?? (initialSetup || maintenance ? setupKeys[e.code] : undefined);
     if (e.metaKey || e.ctrlKey || e.altKey || code === undefined) return;
     e.preventDefault();
     enqueue("key", { code, shift: e.shiftKey });
@@ -249,7 +274,7 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
 
   useEffect(() => {
     const element = stage.current;
-    if (!opened || !initialSetup || !element) return;
+    if (!opened || (!initialSetup && !maintenance) || !element) return;
     const scroll = (event) => {
       const rect = imageRef.current?.getBoundingClientRect();
       if (!rect?.width || !rect.height || event.clientX < rect.left || event.clientX >= rect.right ||
@@ -257,16 +282,17 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
       event.preventDefault();
       const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? rect.height : 1;
       const bounded = (delta, scale) => Math.max(-512, Math.min(512, Math.round(delta * unit * scale)));
+      const [x, y, width, height] = shown.current.region;
       enqueue("scroll", {
-        x: Math.floor((event.clientX - rect.left) * guestWidth / rect.width),
-        y: Math.floor((event.clientY - rect.top) * guestHeight / rect.height),
-        delta_x: bounded(event.deltaX, guestWidth / rect.width),
-        delta_y: bounded(event.deltaY, guestHeight / rect.height),
+        x: x + Math.floor((event.clientX - rect.left) * width / rect.width),
+        y: y + Math.floor((event.clientY - rect.top) * height / rect.height),
+        delta_x: bounded(event.deltaX, width / rect.width),
+        delta_y: bounded(event.deltaY, height / rect.height),
       });
     };
     element.addEventListener("wheel", scroll, { passive: false });
     return () => element.removeEventListener("wheel", scroll);
-  }, [opened, initialSetup, session]);
+  }, [opened, initialSetup, maintenance, session]);
 
   function changeZoom(zoom) {
     setZoomed(zoom);
@@ -274,10 +300,12 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
   }
 
   return <>
-    <button ref={opener} disabled={disabled || opened} onClick={open}>{initialSetup ? "打开客机系统设置" : "登录客机账户"}</button>
+    <button type="button" ref={opener} disabled={disabled || opened} onClick={open}>{label || (initialSetup ? "打开客机系统设置" : maintenance ? "打开客机授权设置" : "登录客机账户")}</button>
     {!opened && message && <span role="status">{message}</span>}
+    {!opened && ["environment-update", "environment-restart"].includes(recovery) && onSettings &&
+      <button type="button" onClick={onSettings}>{recovery === "environment-update" ? "查看环境组件" : "打开环境设置"}</button>}
     {opened && createPortal(
-      <div className="mac-login-fullscreen" data-mode={initialSetup ? "setup" : "login"} role="dialog" aria-modal="true" aria-label={initialSetup ? "首次设置虚拟 Mac" : "登录虚拟 Mac"}
+      <div className="mac-login-fullscreen" data-mode={initialSetup ? "setup" : maintenance ? "maintenance" : "login"} role="dialog" aria-modal="true" aria-label={initialSetup ? "首次设置虚拟 Mac" : maintenance ? "恢复客机系统权限" : "登录虚拟 Mac"}
         onKeyDownCapture={(e) => {
           if (e.key === "F6") {
             e.preventDefault();
@@ -292,21 +320,31 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
         }}>
         <div className="mac-login-panel">
         {!initialSetup && <header className="mac-login-heading">
-          <h2>登录 macOS 客机</h2>
-          <p>输入客机账户密码，按回车登录。</p>
+          <h2>{maintenance ? "恢复客机系统权限" : "登录 macOS 客机"}</h2>
+          <p>{maintenance ? "在当前系统设置窗口中完成授权。切换到其他客机应用或锁定后，画面会结束。" : "输入客机账户密码，按回车登录。"}</p>
         </header>}
         <div className="mac-login-tools" role="toolbar" aria-label="画面工具">
           <button ref={back} onClick={() => end()}><ArrowLeft size={16} aria-hidden="true" />{initialSetup ? "返回设置指引" : "返回工作台"}</button>
-          <button aria-pressed={!zoomed} onClick={() => changeZoom(false)}><Maximize size={16} aria-hidden="true" />{initialSetup ? "适配" : "完整画面"}</button>
-          <button aria-pressed={zoomed} onClick={() => changeZoom(true)}><ZoomIn size={16} aria-hidden="true" />{initialSetup ? "放大" : "登录区域"}</button>
+          <button aria-pressed={!zoomed} onClick={() => changeZoom(false)}><Maximize size={16} aria-hidden="true" />{initialSetup || maintenance ? "适配" : "完整画面"}</button>
+          <button aria-pressed={zoomed} onClick={() => changeZoom(true)}><ZoomIn size={16} aria-hidden="true" />{initialSetup || maintenance ? "放大" : "登录区域"}</button>
           {initialSetup && setupActions}
           {initialSetup && managedCredential && <button disabled={!session} onClick={() => enqueue("fill-password",{})}>填写授权密码</button>}
-          {(!initialSetup || managedCredential) && <button onClick={async () => {
-            try { const result = await api(endpoint,{action:"show-password"}); setAuthorizationPassword(result.password); }
-            catch (e) { setMessage(e.message); }
+          {!maintenance && (!initialSetup || managedCredential) && <button onClick={async () => {
+            const owner = lease.current;
+            try {
+              const result = await api(endpoint,{action:"show-password"});
+              if (lease.current !== owner) return;
+              setAuthorizationPassword(result.password); setMessage("");
+            }
+            catch (e) { if (lease.current === owner) setMessage(e.message); }
           }}>{initialSetup ? "查看授权密码" : "查看客机密码"}</button>}
           {authorizationPassword && <span className="mac-login-password">{authorizationPassword}<button onClick={() => setAuthorizationPassword("")}>隐藏</button></span>}
         </div>
+        {maintenance && <div className="mac-setup-hint">
+          {maintenance === "projects" && <p>进入「文件系统扩展」，同时启用 macFUSE 和 macFUSE (local)。授权后 Cage 会自动检查并重新连接项目。</p>}
+          {administrator && <p>系统要求管理员时，用户名填写 {administrator}。选中系统授权窗口的密码框后，点击「填写管理员密码」，再由你确认授权。</p>}
+          {administrator && <button type="button" onClick={() => enqueue("fill-password", {})}>填写管理员密码</button>}
+        </div>}
         {initialSetup && setupHint && <div className="mac-setup-hint">
           <p>{setupHint}</p>
           <p role={setupError ? "alert" : "status"}>{setupStatus} 查看完整步骤或进入工作台时，点击「返回设置指引」。</p>
@@ -353,17 +391,18 @@ export function MacOSLogin({ disabled, initialSetup = false, setupActions, setup
           {frame && <div className="mac-login-canvas" style={{
             width: Math.max(size.width, imageWidth), height: Math.max(size.height, imageHeight),
           }}>
-            <img ref={imageRef} alt={initialSetup ? "Apple 客机首次系统设置" : "Apple 客机登录屏幕"} draggable={false} src={frame}
+            <img ref={imageRef} key={maintenance ? frameTarget?.geometry : undefined} alt={initialSetup ? "Apple 客机首次系统设置" : maintenance ? "客机系统设置或授权窗口" : "Apple 客机登录屏幕"} draggable={false} src={frame}
               style={{ width: imageWidth, height: imageHeight }}
               onLoad={(e) => {
                 if (e.currentTarget.naturalHeight) setAspect(e.currentTarget.naturalWidth / e.currentTarget.naturalHeight);
+                if (maintenance && frameTarget) shown.current = frameTarget;
               }} onClick={sendClick} />
           </div>}
         </div>
-        {(message || !frame) && <p className="mac-login-status" role={message ? "alert" : "status"}>
-          {message || (initialSetup ? "正在读取客机首次设置画面…" : "正在确认客机登录画面…")}
+        {(visibleMessage || !frame) && <p className="mac-login-status" role={visibleMessage ? "alert" : "status"}>
+          {visibleMessage || (initialSetup ? "正在读取客机首次设置画面…" : maintenance ? "正在确认系统授权窗口…" : "正在确认客机登录画面…")}
         </p>}
-        {!initialSetup && <p className="mac-login-help">拖动画面可查看其他账户或提示</p>}
+        {!initialSetup && !maintenance && <p className="mac-login-help">拖动画面可查看其他账户或提示</p>}
         </div>
       </div>, document.body)}
   </>;

@@ -36,7 +36,7 @@ func (s *Server) pasteInputStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.fileTargetReady(input.Target, input.ID) {
-		http.Error(w, "图片接收位置已关闭，请重新点击输入框", http.StatusConflict)
+		http.Error(w, "粘贴接收位置已关闭，请重新点击输入框", http.StatusConflict)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
@@ -50,7 +50,7 @@ func (s *Server) pasteInputStart(w http.ResponseWriter, r *http.Request) {
 		result, err := s.guestFiles(ctx, "desktop", "POST", "/start", bytes.NewReader(body), "")
 		id, _ := result["id"].(string)
 		if err != nil || !browserFileID.MatchString(id) {
-			http.Error(w, "图片目标未能绑定，请重新点击输入框；旧客机需要先同步环境组件", http.StatusConflict)
+			http.Error(w, "粘贴目标未能绑定，请重新点击输入框。旧客机需要先同步环境组件", http.StatusConflict)
 			return
 		}
 		jsonReply(w, map[string]any{"available": true, "transfer": id})
@@ -62,7 +62,7 @@ func (s *Server) pasteInputStart(w http.ResponseWriter, r *http.Request) {
 			Transfer string `json:"transfer"`
 		}
 		if err != nil || json.Unmarshal(data, &result) != nil || !validInputToken(result.Transfer) {
-			http.Error(w, "图片目标未能绑定，请重新点击输入框；旧客机需要先同步环境组件", http.StatusConflict)
+			http.Error(w, "粘贴目标未能绑定，请重新点击输入框。旧客机需要先同步环境组件", http.StatusConflict)
 			return
 		}
 		jsonReply(w, map[string]any{"available": true, "transfer": result.Transfer})

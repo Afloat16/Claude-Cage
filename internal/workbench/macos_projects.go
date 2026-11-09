@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
 
 	"al.essio.dev/pkg/shellescape"
 )
@@ -25,9 +26,27 @@ func macOSProjectPath(user, hostDirectory string) string {
 // A mount which is ready in FSKit can still be unreadable by the guest app.
 // Keep the live restricted connection while macOS waits for the user's folder
 // approval; do not accept an APFS directory or a stale mount as this project.
-var errMacOSProjectApproval = errors.New("请在虚拟 Mac 的项目授权窗口中选中此项目，然后重新打开")
+var errMacOSProjectApproval = &projectShareError{Recovery: "project-approval", Message: "请在 Cage 显示的客机授权窗口中允许此项目，然后验证授权。"}
 
 const macProjectAgent = "/Applications/CageProjectAccess.app/Contents/MacOS/CageProjectAccess"
+const macProjectLoginCheck = `test "$(/usr/bin/stat -f %u /dev/console)" = "$(/usr/bin/id -u)" && /bin/launchctl print "gui/$(/usr/bin/id -u)" >/dev/null 2>&1`
+
+func macOSProjectPrepareError(err error) error {
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		switch exit.ExitCode() {
+		case 73:
+			return &projectShareError{Recovery: "guest-login", Message: "请先登录虚拟 Mac 的客机账户。登录完成后，Cage 会自动连接项目。"}
+		case 74, 79:
+			return &projectShareError{Recovery: "environment-update", Message: "客机项目共享组件尚未就绪。请同步环境组件，完成后重新连接项目。"}
+		case 76:
+			return &projectShareError{Recovery: "environment-restart", Message: "此项目还保留着旧的客机挂载。请保存工作，在环境设置中停止并重新启动虚拟 Mac，再连接项目。"}
+		case 77, 78:
+			return &projectShareError{Recovery: "project-directory", Message: "客机的项目挂载位置包含文件、链接或权限异常。请先保留其中的文件，再通过诊断记录检查该位置。"}
+		}
+	}
+	return &projectShareError{Recovery: "project-retry", Message: "工作台暂时无法连接客机项目服务。连接恢复后会自动重试，也可以重新连接项目。"}
+}
 
 func (s *Server) ensureMacOSProjectShare(hostDir string) error {
 	ctx, cancel := context.WithTimeout(s.operationContext(), 18*time.Second)
@@ -86,27 +105,33 @@ func (s *Server) ensureMacOSProjectShare(hostDir string) error {
 func (s *Server) startMacOSProjectShare(ctx context.Context, hostDir, guestDir string) (*projectShare, error) {
 	folder := shellescape.Quote(guestDir)
 
-	prepare := `set -e; test "$(/usr/bin/stat -f %u /dev/console)" = "$(/usr/bin/id -u)" || exit 73
-		/bin/launchctl print "gui/$(/usr/bin/id -u)" >/dev/null 2>&1 || exit 73
-		test -x /usr/local/libexec/cage-sshfs; test -x ` + macProjectAgent +
-		`; p=` + folder + `; if /sbin/mount | /usr/bin/grep -Fq " on $p ("; then exit 2; fi; for d in "$HOME/Cage" "$HOME/Cage/Projects" "$p"; do
-		test ! -L "$d"; if test ! -e "$d"; then /bin/mkdir -m 700 "$d"; fi; test -d "$d" && test -O "$d" || exit 1
-	done; test -z "$(/bin/ls -A "$p")"; /usr/bin/open -gj -a /Applications/CageProjectAccess.app`
-	_, err := s.guestControl(ctx, prepare, "macos-project-prepare")
+	prepare := `set -e; ` + macProjectLoginCheck + ` || exit 73
+		test -x /usr/local/libexec/cage-sshfs && test -x ` + macProjectAgent + ` || exit 74
+		p=` + folder + `; if /sbin/mount | /usr/bin/grep -Fq " on $p ("; then exit 76; fi; for d in "$HOME/Cage" "$HOME/Cage/Projects" "$p"; do
+		test ! -L "$d" || exit 77; if test ! -e "$d"; then /bin/mkdir -m 700 "$d" || exit 78; fi; test -d "$d" && test -O "$d" || exit 77
+	done; entries=$(/bin/ls -A "$p") || exit 78; test -z "$entries" || exit 77
+	/usr/bin/open -gj -a /Applications/CageProjectAccess.app || exit 79
+	if /usr/local/libexec/cage-sshfs --help 2>/dev/null | /usr/bin/grep -Fq 'cage_openwith='; then
+		printf '\nCAGE_SSHFS_OPENWITH\n'
+	fi`
+	capabilities, err := s.guestControl(ctx, prepare, "macos-project-prepare")
 	if err != nil {
-		var exit *exec.ExitError
-		if errors.As(err, &exit) && exit.ExitCode() == 73 {
-			return nil, errors.New("请先在虚拟 Mac 中登录已绑定的普通账户，再重新打开项目")
-		}
-		return nil, errors.New("无法准备 macOS 实时挂载。请检查客机项目助手、SSHFS 及目标目录")
+		return nil, macOSProjectPrepareError(err)
 	}
 	command := "exec /usr/local/libexec/cage-sshfs " + shellescape.Quote(":"+filepath.ToSlash(hostDir)) + " " + folder +
 		" -f -o slave,backend=fskit,nodev,nosuid,dir_cache=no"
-	conn, err := startProjectTransport(s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", command), hostDir)
+	if strings.Contains("\n"+string(capabilities)+"\n", "\nCAGE_SSHFS_OPENWITH\n") {
+		metadata := path.Join("/Users", s.macosGuest.User, "Library/Caches/dev.cage.GuestClaudeWindow/openwith.data")
+		command += " -o " + shellescape.Quote("cage_openwith="+metadata)
+	}
+	cmd := s.sshCommand(s.lifetimeContext(), "-T", s.sshTarget(), "--", command)
+	stderr := &fileControlStderr{}
+	cmd.Stderr = stderr
+	conn, err := startProjectTransport(cmd, hostDir)
 	if err != nil {
 		return nil, err
 	}
-
+	conn.stderr = stderr
 	return conn, nil
 }
 
@@ -151,10 +176,60 @@ func (s *Server) probeMacOSProject(ctx context.Context, hostDir, guestDir string
 		}
 		select {
 		case <-ctx.Done():
-			return errors.New("虚拟 Mac 的项目助手未能读回宿主项目文件")
+			return &projectShareError{Recovery: "project-retry", Message: "客机项目助手尚未确认此文件夹可用。请重新连接项目，持续失败时可查看诊断记录。"}
 		case <-share.done:
-			return errors.New("macOS 实时挂载已断开，请检查客机文件系统扩展授权")
+			if share.stderr != nil && len(share.stderr.data) > 0 {
+				message := string(share.stderr.data)
+				_ = diagnostics.New(s.profile).Record("warn", "macos-project-mount", message)
+				if strings.Contains(strings.ToLower(message), "not enabled") {
+					return &projectShareError{Recovery: "filesystem-permission", Message: "虚拟 Mac 的文件系统扩展尚未启用。请在客机系统设置中同时启用 macFUSE 和 macFUSE (local)，然后重新连接项目。"}
+				}
+			}
+			return &projectShareError{Recovery: "project-retry", Message: "客机文件共享连接已中断。Cage 会自动重试，持续失败时可查看诊断记录。"}
 		case <-time.After(200 * time.Millisecond):
 		}
+	}
+}
+
+// The existing lifecycle monitor retries only failed or ended project streams.
+// A login check precedes retry so startup does not repeatedly open guest prompts.
+func (s *Server) retryMacOSProjectShares(ctx context.Context) {
+	s.mu.Lock()
+	pending := make(map[string]bool)
+	waitingForLogin := false
+	waitingForFilesystem := false
+	for _, failure := range s.projectErrors {
+		if failure.Recovery == "guest-login" || failure.Recovery == "project-retry" || failure.Recovery == "filesystem-permission" {
+			pending[failure.Path] = true
+			waitingForLogin = waitingForLogin || failure.Recovery == "guest-login"
+			waitingForFilesystem = waitingForFilesystem || failure.Recovery == "filesystem-permission"
+		}
+	}
+	for path, share := range s.projectShares {
+		select {
+		case <-share.done:
+			pending[path] = true
+		default:
+		}
+	}
+	retryAt := s.macProjectsRetryAt
+	s.mu.Unlock()
+	if len(pending) == 0 || (!waitingForLogin && time.Now().Before(retryAt)) {
+		return
+	}
+	if _, err := s.guest(ctx, "set -e; "+macProjectLoginCheck+" || exit 73"); err != nil {
+		for path := range pending {
+			s.setProjectError(path, macOSProjectPrepareError(err))
+		}
+		return
+	}
+	s.mu.Lock()
+	s.macProjectsRetryAt = time.Now().Add(15 * time.Second)
+	s.mu.Unlock()
+	if waitingForFilesystem && s.checkMacOSSetupProjects(s.lifetimeContext()) != nil {
+		return
+	}
+	for path := range pending {
+		_ = s.ensureProjectShare(path)
 	}
 }

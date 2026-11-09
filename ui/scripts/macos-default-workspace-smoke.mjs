@@ -10,6 +10,7 @@ const notice = "此历史会话仍使用原来的客机目录，文件保留在�
 let allowed = false;
 let screenAllowed = false, frameReads = 0, frameReadsAtClick = 0;
 const actions = [];
+const maintenance = [];
 const fixture = await createWorkbench({
   beforeNavigate: async (page, state) => {
     const panelImage = await page.evaluate(() => {
@@ -43,13 +44,22 @@ const fixture = await createWorkbench({
         ? { image: panelImage, window: 1, pid: 5, nonce: "fixture" }
         : { error: "project_screen_permission" } });
     });
+    await page.route("**/api/macos/maintenance", route => {
+      const request = route.request().postDataJSON();
+      maintenance.push(request);
+      if (request.action === "open") return route.fulfill({ json: { session: "permission-fixture", maintenance_version: 1 } });
+      if (request.action === "frame") return route.fulfill({ json: {
+        image: panelImage, mime: "image/png", geometry: "permission-window", region: [100, 80, 480, 260], maintenance_version: 1,
+      } });
+      return route.fulfill({ json: { maintenance_version: 1 } });
+    });
     await page.route("**/api/cli/sessions/*/account", route => route.fulfill({ json: { supported: false, candidates: [], session: {} } }));
     await page.routeWebSocket("**/api/terminals/**", socket => socket.send(Buffer.from("隔离测试终端\r\n/Users/cage/.local/share/cage/workspace $ ")));
   },
 });
 const { page, state, browser, errors } = fixture;
 try {
-  await page.getByRole("button", { name: "连接项目", exact: true }).click();
+  await page.getByRole("button", { name: "重新连接项目", exact: true }).click();
   const project = page.getByRole("dialog", { name: "打开项目", exact: true });
   await project.waitFor();
   assert.equal(await project.getByRole("textbox", { name: "新项目文件夹", exact: true }).inputValue(), state.settings.workspace);
@@ -59,6 +69,12 @@ try {
   await permission.getByText(state.settings.workspace, { exact: true }).waitFor();
   await permission.getByRole("status").filter({ hasText: "屏幕与系统音频录制" }).waitFor();
   await page.screenshot({ path: join(output, "default-workspace-approval.png"), animations: "disabled" });
+  await permission.getByRole("button", { name: "打开客机授权设置", exact: true }).click();
+  const recovery = page.getByRole("dialog", { name: "恢复客机系统权限", exact: true });
+  await recovery.getByRole("img").waitFor();
+  assert.equal(maintenance.find(request => request.action === "open").maintenance, "screen");
+  await recovery.getByRole("button", { name: "返回工作台", exact: true }).click();
+  await recovery.waitFor({ state: "detached" });
   screenAllowed = true;
   await permission.getByRole("img").click();
   const inputError = permission.getByRole("alert").filter({ hasText: "辅助功能" });
@@ -66,6 +82,11 @@ try {
   await permission.getByRole("img").waitFor();
   assert.ok(frameReads > frameReadsAtClick, "next guest frame was fetched");
   assert.ok(await inputError.isVisible(), "polling must retain the failed click");
+  await permission.getByRole("button", { name: "打开客机授权设置", exact: true }).click();
+  await recovery.getByRole("img").waitFor();
+  assert.equal(maintenance.filter(request => request.action === "open").at(-1).maintenance, "input");
+  await recovery.getByRole("button", { name: "返回工作台", exact: true }).click();
+  await recovery.waitFor({ state: "detached" });
   allowed = true;
   await permission.getByRole("button", { name: "验证授权", exact: true }).click();
   await permission.waitFor({ state: "hidden" });
@@ -79,7 +100,7 @@ try {
   await page.getByRole("status").filter({ hasText: notice }).waitFor();
   await page.screenshot({ path: join(output, "default-workspace-legacy-notice.png"), animations: "disabled" });
   assert.deepEqual(errors, []);
-  const result = { passed: true, browser: browser.browserType().name(), actions, checks: ["default workspace reconnect opens existing project authorization", "missing screen permission shows the macOS settings path", "click permission error survives the next frame", "permission retry keeps the same host directory", "legacy guest-private workspace notice is visible in the terminal"] };
+  const result = { passed: true, browser: browser.browserType().name(), actions, checks: ["default workspace reconnect opens existing project authorization", "missing screen permission opens its restricted recovery view", "click permission error survives the next frame and opens input recovery", "permission retry keeps the same host directory", "legacy guest-private workspace notice is visible in the terminal"] };
   await writeFile(join(output, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result));
 } finally { await browser.close(); }

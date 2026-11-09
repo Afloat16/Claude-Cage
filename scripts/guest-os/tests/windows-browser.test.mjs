@@ -133,7 +133,7 @@ integration("actual Chromium tabs restore and project switching retains unsaved 
     await assert.rejects(f.call("insert-text", { id: editor.id, text: "迟到输入" }), { code: "project_grant_unavailable" });
   }
 });
-integration("private editor connection applies only the issued alias's HTML defaults through loopback", async t => {
+(process.env.CAGE_BROWSER_TEST_PLATFORM === "darwin" ? test.skip : integration)("Windows private editor connection applies only the issued alias's HTML defaults through loopback", async t => {
   const f = await fixture(t), project = "d".repeat(16), connection = "e".repeat(32);
   const url = new URL(f.url); url.hostname = project + ".cage-editor.localhost"; url.search = "?editor=" + project;
   const input = { workspace: project, connection, url: url.href, folder: f.root, trust_default: false };
@@ -451,6 +451,11 @@ macImages("Mac image preparation rejects a changed field before accepting bytes"
 
 macImages("Mac clipboard text uses one bounded transfer and one final insertion", async t => {
   const f = await fixture(t), one = await f.open();
+  await one.page.evaluate(() => {
+    document.querySelector("#first").addEventListener("paste", event => {
+      window.textPaste = { trusted: event.isTrusted, text: event.clipboardData.getData("text/plain") };
+    });
+  });
   await f.click(one.id, one.page, "#first");
   assert.equal(f.launchOptions().ignoreDefaultArgs.includes("--mute-audio"), true);
   const text = "中".repeat(Math.floor((2 << 20) / 3)) + "ab", bytes = Buffer.from(text);
@@ -466,11 +471,33 @@ macImages("Mac clipboard text uses one bounded transfer and one final insertion"
   const actual = await one.page.locator("#first").inputValue();
   assert.equal(Buffer.byteLength(actual), bytes.length);
   assert.equal(createHash("sha256").update(actual).digest("hex"), createHash("sha256").update(text).digest("hex"));
+  const pasted = await one.page.evaluate(() => window.textPaste);
+  assert.equal(pasted.trusted, true);
+  assert.equal(pasted.text, text);
   const tooLarge = await f.call("paste-start", { id: one.id });
   await assert.rejects(f.call("paste-chunk", { transfer: tooLarge.transfer, sequence: 0, length: bytes.length + 1, mime: "text/plain", data: "YQ==" }), /大小/);
 });
 
 const macImagePaste = playwrightPath && executablePath && process.env.CAGE_BROWSER_TEST_PLATFORM === "darwin" && process.env.CAGE_BROWSER_TEST_PNG_PASTE === "1" ? test : test.skip;
+integration("native paste preparation rejects a field switch inside a child frame", async t => {
+  const f = await fixture(t), one = await f.open();
+  for (const origin of [f.url, f.url.replace("127.0.0.1", "localhost")]) {
+    await one.page.evaluate(url => {
+      document.querySelector("#child")?.remove();
+      const frame = document.createElement("iframe"); frame.id = "child"; frame.src = url;
+      document.body.append(frame);
+    }, origin + "/child");
+    const child = one.page.frameLocator("#child");
+    await child.locator("#first").click();
+    const before = await f.call("focus-proof", {}, "GET");
+    const prepared = await f.call("paste-start", { id: one.id });
+    await child.locator("#second").focus();
+    const after = await f.call("focus-proof", {}, "GET");
+    assert.notEqual(after.focus, before.focus);
+    await assert.rejects(f.call("paste-chunk", { transfer: prepared.transfer, sequence: 0, mime: "text/plain", length: 1, data: "YQ==" }), /target changed/i);
+  }
+});
+
 macImagePaste("Mac headless image transfer delivers an actual PNG paste event", async t => {
   const f = await fixture(t), one = await f.open();
   await one.page.evaluate(() => {
@@ -495,6 +522,88 @@ macImagePaste("Mac headless image transfer delivers an actual PNG paste event", 
   assert.equal(pasted.type, "image/png");
   assert.deepEqual(Buffer.from(pasted.bytes).subarray(0, 8), png.subarray(0, 8));
   await assert.rejects(f.call("image-finish", { transfer: prepared.transfer, sequence }), /已关闭|顺序/);
+});
+
+async function readClipboardReference(f, copied) {
+  assert.match(copied.clipboard.id, /^[a-f0-9-]{36}$/);
+  const opened = await f.call("file-open", { direction: "download", id: copied.clipboard.id, tab: copied.id, context: copied.context, document: copied.document });
+  assert.equal(opened.mime, copied.clipboard.mime);
+  assert.equal(opened.size, copied.clipboard.size);
+  const chunks = [];
+  let sequence = 0, result;
+  do {
+    result = await f.call("file-read", { transfer: opened.transfer, sequence });
+    assert.equal(result.sequence, ++sequence);
+    chunks.push(Buffer.from(result.data, "base64"));
+  } while (!result.eof);
+  const bytes = Buffer.concat(chunks);
+  assert.equal(bytes.length, opened.size);
+  return bytes;
+}
+
+macImagePaste("Mac webpage PNG copy exports a bound reference with the original pixels", async t => {
+  const f = await fixture(t), one = await f.open();
+  await one.page.evaluate(() => {
+    document.querySelector("#copy").onclick = async () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 8; canvas.height = 4;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#d82931"; context.fillRect(0, 0, 4, 4);
+      context.fillStyle = "#264dc6"; context.fillRect(4, 0, 4, 4);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    };
+  });
+  const context = "b".repeat(32);
+  await f.call("copy-context", { id: one.id, context });
+  await f.click(one.id, one.page, "#copy");
+  let copied;
+  for (let attempt = 0; attempt < 100 && !copied; attempt++) {
+    const state = await f.call("events", {}, "GET");
+    copied = state.events.find(event => event.type === "clipboard" && event.value.context === context)?.value;
+    if (!copied) await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(copied?.clipboard?.mime, "image/png", JSON.stringify(copied));
+  assert.equal(copied.png, undefined);
+  assert.equal(copied.text, undefined);
+  assert.equal((await f.call("tabs", {}, "GET")).tabs.some(tab => tab.url.includes("cage-clipboard.localhost")), false);
+  await assert.rejects(f.call("file-open", { direction: "download", id: copied.clipboard.id }), { code: "copy_changed" });
+  const bytes = await readClipboardReference(f, copied);
+  const pixels = await one.page.evaluate(async encoded => {
+    const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
+    const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+    const canvas = document.createElement("canvas"); canvas.width = bitmap.width; canvas.height = bitmap.height;
+    const context = canvas.getContext("2d"); context.drawImage(bitmap, 0, 0);
+    const result = { width: bitmap.width, height: bitmap.height, left: [...context.getImageData(1, 1, 1, 1).data], right: [...context.getImageData(6, 1, 1, 1).data] };
+    bitmap.close();
+    return result;
+  }, bytes.toString("base64"));
+  assert.deepEqual(pixels, { width: 8, height: 4, left: [216, 41, 49, 255], right: [38, 77, 198, 255] });
+  await f.call("copy-context", { id: one.id, context: "c".repeat(32) });
+  await assert.rejects(readClipboardReference(f, copied), { code: "copy_changed" });
+});
+
+macImagePaste("Mac native copy and cut preserve 2 MiB UTF-8 text and reject superseded reads", async t => {
+  const f = await fixture(t), one = await f.open();
+  const text = "中".repeat(Math.floor((2 << 20) / 3)) + "ab";
+  await one.page.locator("#first").fill(text);
+  await one.page.locator("#first").selectText();
+  const copied = await f.call("copy", { id: one.id, context: "1".repeat(32) });
+  assert.equal(copied.clipboard.mime, "text/plain");
+  assert.equal(copied.clipboard.size, 2 << 20);
+  assert.equal((await readClipboardReference(f, copied)).toString("utf8"), text);
+  assert.equal(await one.page.locator("#first").inputValue(), text);
+  const opened = await f.call("file-open", { direction: "download", id: copied.clipboard.id, tab: copied.id, context: copied.context, document: copied.document });
+  const first = await f.call("file-read", { transfer: opened.transfer, sequence: 0 });
+  assert.equal(first.eof, false);
+  await f.call("copy-context", { id: one.id, context: "2".repeat(32) });
+  await assert.rejects(f.call("file-read", { transfer: opened.transfer, sequence: 1 }), { code: "copy_changed" });
+  const cut = await f.call("cut", { id: one.id, context: "3".repeat(32) });
+  assert.equal((await readClipboardReference(f, cut)).toString("utf8"), text);
+  assert.equal(await one.page.locator("#first").inputValue(), "");
+  const state = await f.call("events", {}, "GET");
+  assert.equal(state.events.some(event => event.type === "clipboard" && [copied.context, cut.context].includes(event.value.context)), false, "explicit copy results must have one consumer");
+  await assert.rejects(f.call("copy", { id: one.id, context: "4".repeat(32) }), { code: "copy_unavailable" });
 });
 
 const nativeExtensions = playwrightPath && executablePath && process.env.CAGE_BROWSER_TEST_EXTENSIONS === "1" ? test : test.skip;

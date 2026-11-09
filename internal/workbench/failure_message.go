@@ -20,6 +20,15 @@ func executionFailure(action string, err error, output string) error {
 		patterns     []string
 		reason, next string
 	}{
+		{[]string{"cage_windows_maintenance_authorization_canceled"}, "已取消 Windows 管理员授权", "请重新发起原操作，并在 Windows 系统授权窗口中确认。"},
+		{[]string{"cage_windows_maintenance_authorization"}, "Windows 管理员授权窗口未能打开", "请从本机 Cage 重新发起操作，并使用可完成管理员授权的 Windows 账户。"},
+		{[]string{"cage_windows_maintenance_validation"}, "Windows 环境绑定或组件清单未通过校验", "请重新发起原操作，组件包仍无法核验时重新安装完整 Cage 应用。"},
+		{[]string{"cage_windows_maintenance_host_manager"}, "Windows 系统管理助手安装未完成", "请重试修复系统助手，仍失败时检查系统服务或安全软件记录并导出诊断包。"},
+		{[]string{"cage_windows_maintenance_guest_connection"}, "Windows 客机连接未完成", "请启动并登录已绑定客机，使用该客机的管理员账户重试。"},
+		{[]string{"cage_windows_maintenance_guest_components"}, "Windows 客机组件安装未完成", "请保持原客机运行，重试同步环境组件，仍失败时导出诊断包。"},
+		{[]string{"cage_windows_maintenance_host_relay"}, "Windows 主机连接组件更新未完成", "请关闭占用连接组件的程序，再重试同步环境组件。"},
+		{[]string{"cage_windows_maintenance_package_preparation"}, "Windows 组件包准备未完成", "请检查应用目录和系统盘空间后重试，更新工具时同时检查已选代理。"},
+		{[]string{"cage_windows_maintenance_failed"}, "Windows 维护未完成", "请从 Cage 重新发起原操作，仍失败时导出诊断包。"},
 		{[]string{"desktop file service state=failed"}, "Claude Desktop 的文件服务已经退出", "请从 Cage 重新打开 Claude Desktop；若应用反复退出，请在设置中查看资源用量并导出诊断包。"},
 		{[]string{"curl: (7)", "connection refused"}, "目标服务没有接受连接", "请确认环境及所选代理已启动；文件传递时请重新打开接收文件的应用，再重试。"},
 		{[]string{"no space left on device", "not enough space on the disk"}, "磁盘空间不足，无法继续写入", "请释放环境所在磁盘的空间后继续；不要删除 Cage 的个人数据目录。"},

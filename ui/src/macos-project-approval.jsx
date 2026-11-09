@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { Modal } from "./modal";
+import { MacOSLogin } from "./macos-login";
 import "./macos-project-approval.css";
 
 const permissionMessages = {
@@ -9,11 +10,12 @@ const permissionMessages = {
   requires_gui_login: "请先登录并解锁虚拟 Mac 的普通账户，然后重新打开项目。",
 };
 
-export function MacOSProjectApproval({ pending, onCheck, onClose }) {
+export function MacOSProjectApproval({ pending, onCheck, onClose, onSettings }) {
   const [frame, setFrame] = useState(null),
     [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [maintenance, setMaintenance] = useState("");
   const active = useRef(false),
     inFlight = useRef(null);
   const call = (action, fields = {}) =>
@@ -34,6 +36,8 @@ export function MacOSProjectApproval({ pending, onCheck, onClose }) {
           inFlight.current = request;
           const result = await request;
           if (live && !active.current) {
+            if (result.error === "project_screen_permission") setMaintenance("screen");
+            if (result.error === "accessibility_permission") setMaintenance("input");
             const valid = Boolean(
               !result.error &&
               result.image &&
@@ -104,6 +108,7 @@ export function MacOSProjectApproval({ pending, onCheck, onClose }) {
         y,
       });
       setFrame(null);
+      if (result.error === "accessibility_permission") setMaintenance("input");
       if (result.error) throw new Error(permissionMessages[result.error] || "客机授权窗口已变化，请等待新画面。");
       await onCheck();
     });
@@ -135,6 +140,7 @@ export function MacOSProjectApproval({ pending, onCheck, onClose }) {
         />
       )}
       {notice && <p role="status">{notice}</p>}
+      {maintenance && <MacOSLogin maintenance={maintenance} onSettings={onSettings} onSessionClosed={() => void act(onCheck)} />}
       {actionError && <p role="alert">{actionError}</p>}
     </Modal>
   );

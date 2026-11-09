@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { api, native, nativeAvailable } from "./api";
 import {
+  assertConnection,
   getClientContext,
   isRemoteClient,
   runtimeURL,
@@ -88,6 +89,7 @@ export function useDesktopFiles(ready, onStatus) {
     let disposed = false,
       timer,
       failures = 0;
+    const handled = new Set();
     const poll = async () => {
       try {
         const value = await api("/input/files/desktop/requests");
@@ -97,7 +99,26 @@ export function useDesktopFiles(ready, onStatus) {
             uploads: value.uploads || [],
             downloads: value.downloads || [],
           });
-
+        for (const request of value.opens || []) {
+          if (disposed || handled.has(request.id)) continue;
+          handled.add(request.id);
+          try {
+            assertConnection(connection);
+            if (!nativeAvailable()) {
+              await api("/input/files/desktop/open", {
+                id: request.id,
+                stage: "complete",
+                error: "请在 Cage 桌面应用中打开文件",
+              });
+              throw new Error(
+                "请在 Cage 桌面应用中打开文件，或从下载列表保存文件",
+              );
+            }
+            await native("desktopFileAction", { id: request.id });
+          } catch (error) {
+            if (!disposed) status.current?.(error.message);
+          }
+        }
       } catch (error) {
         // Closing Desktop invalidates its outstanding file choosers.
         if (!disposed) {

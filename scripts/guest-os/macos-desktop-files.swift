@@ -493,7 +493,7 @@ final class MacDesktopFiles {
             if !value.files.isEmpty { Task { _ = try? await clipboardRequest(["operation": "discard", "files": value.files]) } }
         }
         guard AXIsProcessTrusted(), let pid = try? claudePIDs().first else {
-            return ["available": false, "uploads": [], "downloads": try MacDesktopDownloads.shared.snapshot(), "opens": openSnapshot()]
+            return ["available": false, "uploads": [], "downloads": try MacDesktopDownloads.shared.snapshot(), "downloadAck": true, "opens": openSnapshot()]
         }
         if let (panel, field) = saveFilePanel(pid) {
             if savingPanel == nil || !CFEqual(savingPanel!, panel) {
@@ -509,7 +509,7 @@ final class MacDesktopFiles {
                 batches.removeValue(forKey: id)
                 if !value.files.isEmpty { Task { _ = try? await clipboardRequest(["operation": "discard", "files": value.files]) } }
             }
-            return ["available": true, "uploads": [], "downloads": try MacDesktopDownloads.shared.snapshot(), "opens": openSnapshot()]
+            return ["available": true, "uploads": [], "downloads": try MacDesktopDownloads.shared.snapshot(), "downloadAck": true, "opens": openSnapshot()]
         }
         let existing = batches.first { $0.value.pid == pid && $0.value.panel.map { CFEqual($0, panel) } == true }
         let id: String
@@ -519,7 +519,7 @@ final class MacDesktopFiles {
             id = UUID().uuidString.lowercased()
             batches[id] = Batch(pid: pid, window: 0, kind: "chooser", epoch: try MacGUISession.shared.validate(), panel: panel)
         }
-        return ["available": true, "uploads": [["id": id, "kind": "chooser", "multiple": true, "directory": false, "target": "desktop"]], "downloads": try MacDesktopDownloads.shared.snapshot(), "opens": openSnapshot()]
+        return ["available": true, "uploads": [["id": id, "kind": "chooser", "multiple": true, "directory": false, "target": "desktop"]], "downloads": try MacDesktopDownloads.shared.snapshot(), "downloadAck": true, "opens": openSnapshot()]
     }
 
     func pasteImage(_ data: Data, window: SCWindow) async throws -> [String: Any] {

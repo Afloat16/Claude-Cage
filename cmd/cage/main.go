@@ -298,7 +298,7 @@ func run() int {
 		return appupdate.Run(path, args[1:], os.Stdout)
 	}
 	connectionID := ""
-	if (args[0] == "clipboard-files" || args[0] == "upload-files" || args[0] == "browser-file" || args[0] == "share-project") && len(args) >= 3 && args[2] == "--connection" {
+	if (args[0] == "clipboard-files" || args[0] == "upload-files" || args[0] == "browser-file" || args[0] == "desktop-file" || args[0] == "share-project") && len(args) >= 3 && args[2] == "--connection" {
 		if len(args) < 4 || args[3] == "" {
 			return fail(fmt.Errorf("missing file connection identity"))
 		}
@@ -312,6 +312,18 @@ func run() int {
 		result, err := workbench.ClipboardFilesForConnection(workbench.DesktopHelperConfig(path, connectionID), connectionID, args[2], args[3:])
 		if err != nil {
 			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"message": err.Error()})
+			return 1
+		}
+		_ = json.NewEncoder(os.Stdout).Encode(result)
+		return 0
+	}
+	if args[0] == "desktop-file" {
+		if len(args) != 3 || args[1] != "--json" {
+			return fail(fmt.Errorf("desktop-file --json --connection ID REQUEST"))
+		}
+		result, err := workbench.DesktopFileForConnection(workbench.DesktopHelperConfig(path, connectionID), connectionID, args[2])
+		if err != nil {
+			_ = json.NewEncoder(os.Stdout).Encode(map[string]string{"status": "error", "message": err.Error()})
 			return 1
 		}
 		_ = json.NewEncoder(os.Stdout).Encode(result)

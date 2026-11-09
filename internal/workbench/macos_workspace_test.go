@@ -266,6 +266,53 @@ func (g *macWorkspaceGuest) execute(channel ssh.Channel, command string) uint32 
 	}
 }
 
+func TestMacOSProjectOpenWithRequiresSSHFSCapability(t *testing.T) {
+	for _, capability := range []struct {
+		name   string
+		output string
+		want   bool
+	}{
+		{name: "legacy helper"},
+		{name: "supported helper", output: "\nCAGE_SSHFS_OPENWITH\n", want: true},
+		{name: "unrelated diagnostic", output: "unknown CAGE_SSHFS_OPENWITH option\n"},
+	} {
+		t.Run(capability.name, func(t *testing.T) {
+			mounts := make(chan string, 1)
+			guest := newMacWorkspaceGuest(t, func(channel ssh.Channel, command string) (uint32, bool) {
+				if strings.Contains(command, "CAGE_SSHFS_OPENWITH") {
+					fmt.Fprint(channel, capability.output)
+					return 0, true
+				}
+				if strings.HasPrefix(command, "exec /usr/local/libexec/cage-sshfs ") {
+					mounts <- command
+				}
+				return 0, false
+			})
+			guest.approved.Store(true)
+			if err := guest.s.ensureMacOSProjectShare(guest.hostPath); err != nil {
+				t.Fatal(err)
+			}
+			command := <-mounts
+			args, err := shellquote.Split(command)
+			if err != nil {
+				t.Fatal(err)
+			}
+			found := false
+			for _, arg := range args {
+				if strings.HasPrefix(arg, "cage_openwith=") {
+					found = true
+					if arg != "cage_openwith=/Users/cage/Library/Caches/dev.cage.GuestClaudeWindow/openwith.data" {
+						t.Fatalf("unexpected guest metadata path %q", arg)
+					}
+				}
+			}
+			if found != capability.want {
+				t.Fatalf("OpenWith option present = %v, want %v", found, capability.want)
+			}
+		})
+	}
+}
+
 func TestMacOSDefaultWorkspaceUsesApprovedSharedProject(t *testing.T) {
 	guest := newMacWorkspaceGuest(t)
 	s := guest.s

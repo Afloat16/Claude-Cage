@@ -74,7 +74,7 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		switch {
 		case method == "GET" && parsed.Path == "/requests":
 			input.Action = "files-poll"
-		case method == "POST" && (parsed.Path == "/start" || parsed.Path == "/finish" || parsed.Path == "/finish-image" || parsed.Path == "/cancel" || parsed.Path == "/directory" || parsed.Path == "/download-retry" || parsed.Path == "/open-claim" || parsed.Path == "/open-complete"):
+		case method == "POST" && (parsed.Path == "/start" || parsed.Path == "/finish" || parsed.Path == "/finish-image" || parsed.Path == "/cancel" || parsed.Path == "/directory" || parsed.Path == "/download-retry" || parsed.Path == "/download-ack" || parsed.Path == "/open-claim" || parsed.Path == "/open-complete"):
 			input.Action = "files-" + strings.TrimPrefix(parsed.Path, "/")
 		default:
 			return nil, errors.New("虚拟 Mac 文件操作无效")
@@ -97,7 +97,7 @@ func (s *Server) guestFiles(ctx context.Context, target, method, path string, bo
 		switch {
 		case method == "GET" && parsed.Path == "/requests":
 			action = "files-poll"
-		case method == "POST" && (parsed.Path == "/start" || parsed.Path == "/finish" || parsed.Path == "/finish-image" || parsed.Path == "/cancel" || parsed.Path == "/directory" || parsed.Path == "/download-retry" || parsed.Path == "/open-claim" || parsed.Path == "/open-complete"):
+		case method == "POST" && (parsed.Path == "/start" || parsed.Path == "/finish" || parsed.Path == "/finish-image" || parsed.Path == "/cancel" || parsed.Path == "/directory" || parsed.Path == "/download-retry" || parsed.Path == "/download-ack" || parsed.Path == "/open-claim" || parsed.Path == "/open-complete"):
 			action = "files-" + strings.TrimPrefix(parsed.Path, "/")
 		default:
 			return nil, errors.New("Windows 原生文件选择框与桌面下载尚未接通")
@@ -316,7 +316,33 @@ func (s *Server) desktopFileRequests(w http.ResponseWriter, r *http.Request) {
 		requestError(w, err)
 		return
 	}
+	s.acknowledgeDesktopDownloads(ctx, result)
 	jsonReply(w, result)
+}
+
+func (s *Server) acknowledgeDesktopDownloads(ctx context.Context, result map[string]any) {
+	if result["downloadAck"] != true || (s.macosGuest == nil && s.windowsGuest == nil) {
+		return
+	}
+	var ids []string
+	items, _ := result["downloads"].([]any)
+	for _, value := range items {
+		item, ok := value.(map[string]any)
+		if !ok || item["state"] != "saved" || item["acknowledged"] == true {
+			continue
+		}
+		id, _ := item["id"].(string)
+		ids = append(ids, id)
+	}
+	if len(ids) == 0 {
+		return
+	}
+	// rememberDesktopDownloads has resolved every saved state from its durable
+	// host receipt. A failed acknowledgment keeps the guest copy for the next poll.
+	body, _ := json.Marshal(map[string]any{"ids": ids})
+	if _, err := s.guestFiles(ctx, "desktop", "POST", "/download-ack", bytes.NewReader(body), ""); err != nil {
+		diagnostics.Log("warn", "desktop-files", "主机文件已保存，客机保留副本并等待下次确认："+err.Error())
+	}
 }
 
 // Register completed exports before the UI can ask a native bridge to save them.

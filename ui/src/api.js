@@ -8,6 +8,7 @@ async function responseError(response, path, method = "GET") {
     httpErrorMessage(path, response.status, await response.text(), response.headers.get("Content-Type") || "", method),
   );
   error.status = response.status;
+  error.recovery = response.headers.get("X-Cage-Recovery") || "";
   return error;
 }
 async function renewSession() {

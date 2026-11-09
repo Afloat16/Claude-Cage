@@ -45,6 +45,8 @@ type Server struct {
 	agentNativeQueue                                 agentNativeQueue
 	macSetupProjectsChecked                          time.Time
 	macSetupProjectsAttempt                          time.Time
+	macProjectsRetryAt                               time.Time
+	macLoginLease                                    *macLoginLease
 	macosGuest                                       *guestos.MacOSProfile
 	macResources                                     macOSResourceObserver
 	windowsGuest                                     *guestos.WindowsProfile
@@ -65,6 +67,7 @@ type Server struct {
 	guestManifest                                    *cage.GuestManifest
 	guestUpdateRequired                              bool
 	guestUpdateError                                 string
+	storageRecoveryError                             string
 	closing                                          bool
 	shutdown                                         func()
 	claudeAccounts                                   claudeAccountManager
@@ -198,7 +201,7 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 	defer s.remote.close()
 	if workload {
 		if err = guestos.RecoverWindowsStorage(context.Background(), profile); err != nil {
-			return err
+			s.failStorageRecovery(err)
 		}
 		s.macosGuest, err = guestos.LoadMacOSProfile(profile)
 		if err != nil {
@@ -235,8 +238,13 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 			s.preferences.AutoLanguage = false
 			_ = json.Unmarshal(b, &s.preferences)
 		}
-		if err = s.prepareEnvironment(); err != nil {
-			return err
+		if !s.storageRecoveryStatus().Required {
+			if err = s.prepareEnvironment(); err != nil {
+				if s.windowsGuest == nil {
+					return err
+				}
+				s.failStorageRecovery(err)
+			}
 		}
 		// Invalid intent keeps the gate paused and its error visible in status.
 		s.restoreNetworkIntent()
@@ -382,6 +390,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST /api/environment/guest-systems/activate", s.guestInstallation)
 	mux.HandleFunc("GET /api/environment/storage", s.environmentStorage)
 	mux.HandleFunc("POST /api/environment/storage", s.environmentStorage)
+	mux.HandleFunc("POST /api/environment/storage/recover", s.recoverEnvironmentStorage)
 	mux.HandleFunc("GET /api/environment/resources", s.resourceStatus)
 	mux.HandleFunc("POST /api/environment/resources", s.applyResources)
 	mux.HandleFunc("POST /api/environment/update", s.updateEnvironment)
@@ -447,6 +456,7 @@ func (s *Server) handler() http.Handler {
 	if s.macosGuest != nil {
 		mux.HandleFunc("POST /api/macos/first-setup", s.macOSLoginWindow)
 		mux.HandleFunc("POST /api/macos/login", s.macOSLoginWindow)
+		mux.HandleFunc("POST /api/macos/maintenance", s.macOSLoginWindow)
 		s.registerMacOSClaudeRoutes(mux)
 		s.registerMacOSBrowserRoutes(mux)
 		mux.HandleFunc("POST /api/macos/project-approval", s.macOSProjectApproval)
@@ -581,6 +591,12 @@ func (s *Server) handler() http.Handler {
 				panic(failure)
 			}
 		}()
+		if !storageRecoveryRoute(r) {
+			if err := s.requireStorageReady(); err != nil {
+				http.Error(w, err.Error(), http.StatusConflict)
+				return
+			}
+		}
 		mux.ServeHTTP(w, r)
 	})
 }
@@ -615,7 +631,7 @@ func requestError(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusBadRequest)
 }
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	if s.windowsGuest != nil {
+	if s.windowsGuest != nil && !s.storageRecoveryStatus().Required {
 		s.refreshWindowsComponents()
 	}
 	projects, err := s.projectPaths()
@@ -637,8 +653,10 @@ func (s *Server) status(w http.ResponseWriter, r *http.Request) {
 	view := map[string]any{
 		"projects": projects, "ready": s.ready, "vm_running": running,
 		"workspace": s.workspaceLocked(), "environment_workspace": s.workspaceLocked() == s.environmentDir(), "environment_directory": s.environmentDir(),
-		"local_vm_storage": s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors,
-		"keyboard": s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
+		"environment_identity_directory": cage.EnvironmentIdentityDir(s.profile),
+		"local_vm_storage":               s.localVMStorage(), "project_error": projectError, "project_errors": s.projectErrors,
+		"storage_recovery": s.storageRecoveryStatusLocked(),
+		"keyboard":         s.preferences.Keyboard, "auto_timezone": s.preferences.AutoTimezone, "job": s.jobs.snapshot(),
 		"location": s.location, "network_error": s.currentNetworkErrorLocked(), "can_restore": e == nil,
 		"safety": s.safety, "environment_update_required": s.guestUpdateRequired, "environment_update_error": s.guestUpdateError,
 	}
@@ -810,6 +828,10 @@ func (s *Server) stop(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) requestStop(w http.ResponseWriter, logout bool) {
+	if err := s.requireStorageReady(); err != nil {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	for _, name := range []string{cage.InstanceName(s.profile, s.environmentDir()), "base-building"} {
 		if owner := cage.InstanceJobID(filepath.Join(s.profile, "state"), name); owner != "" {
 			_ = cage.RequestJobStop(s.profile, owner)

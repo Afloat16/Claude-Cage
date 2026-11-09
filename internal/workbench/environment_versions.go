@@ -146,6 +146,11 @@ func (s *Server) synchronizeEnvironment() error {
 	if err := s.closeProxyGate("正在更新环境组件，外网暂时关闭"); err != nil {
 		return err
 	}
+	// Publish the new guest-only binary before runCage restarts its controller;
+	// otherwise updated JavaScript would keep talking to the old protocol.
+	if err := s.refreshInstalledTailnet(); err != nil {
+		return err
+	}
 	s.mu.Lock()
 	s.ready = false
 	s.guestUpdateRequired = true

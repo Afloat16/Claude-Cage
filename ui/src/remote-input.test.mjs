@@ -577,6 +577,25 @@ test("explicit desktop copy preserves the queued native copy keys", async () => 
   } finally { f.controller.dispose(); }
 });
 
+test("a late browser capability can switch copying from native events to its private adapter", async () => {
+  let available = false;
+  const f = fixture(false, false, { copyText: () => available ? Promise.resolve({ text: "private copy" }) : undefined });
+  try {
+    await f.controller.copy();
+    assert.equal(f.keys.length, 4);
+    const event = new Event("clipboard");
+    event.detail = { text: "native event" };
+    f.rfb.dispatchEvent(event);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(f.writes, ["native event"]);
+    available = true;
+    f.keys.length = 0;
+    await f.controller.copy();
+    assert.deepEqual(f.keys, []);
+    assert.deepEqual(f.writes, ["native event", "private copy"]);
+  } finally { f.controller.dispose(); }
+});
+
 test("copied text supports two MiB in UTF-8 and rejects larger content", async () => {
   const f = fixture();
   try {

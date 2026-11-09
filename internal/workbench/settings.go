@@ -54,24 +54,13 @@ func environmentWorkspace(profile string) string { return cage.EnvironmentDir(pr
 func guestPath(path string) string { return paths.Guest(paths.Host(path)) }
 
 func (s *Server) prepareEnvironment() error {
-	if s.windowsGuest != nil {
-		path := s.environmentDir()
-		if err := os.MkdirAll(path, 0700); err != nil {
-			return err
-		}
-		if _, err := validateWorkspace(path, s.profile); err != nil {
-			return err
-		}
-		if err := writePrivate(filepath.Join(s.profile, "environment.json"), map[string]string{"directory": path}); err != nil {
-			return err
-		}
-		s.mu.Lock()
-		if s.preferences.Workspace == "" {
-			s.preferences.Workspace = s.environmentDir()
-		}
-		s.mu.Unlock()
-		return nil
+	record, err := cage.LoadEnvironmentRecord(s.profile)
+	if err != nil {
+		return err
 	}
+	s.mu.Lock()
+	p := s.preferences
+	s.mu.Unlock()
 	path := environmentWorkspace(s.profile)
 	// Promote an existing installation's VM once, preserving its disk and login state.
 	if _, err := os.Stat(filepath.Join(s.profile, "environment.json")); os.IsNotExist(err) {
@@ -85,17 +74,33 @@ func (s *Server) prepareEnvironment() error {
 	if err := os.MkdirAll(path, 0700); err != nil {
 		return err
 	}
-	path, err := validateWorkspace(path, s.profile)
+	previous := path
+	path, err = validateWorkspace(path, s.profile)
 	if err != nil {
+		// Older independent profiles generated their default workspace inside
+		// the default profile. Keep its files and VM identity while selecting a
+		// shareable workspace through the same admission used for every project.
+		path, err = validateWorkspace(p.Workspace, s.profile)
+		if p.Workspace == "" || err != nil {
+			path = cage.DefaultEnvironmentDir(s.profile)
+			if err = os.MkdirAll(path, 0700); err != nil {
+				return err
+			}
+			path, err = validateWorkspace(path, s.profile)
+			if err != nil {
+				return err
+			}
+		}
+		if record.IdentityDirectory == "" {
+			record.IdentityDirectory = previous
+		}
+	}
+	record.Directory = path
+	if err = writePrivate(filepath.Join(s.profile, "environment.json"), record); err != nil {
 		return err
 	}
-	if err = writePrivate(filepath.Join(s.profile, "environment.json"), map[string]string{"directory": path}); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	p := s.preferences
-	s.mu.Unlock()
-	if p.Workspace == "" {
+	if p.Workspace == "" || paths.Equal(paths.Host(p.Workspace), paths.Host(previous)) ||
+		record.IdentityDirectory != "" && paths.Equal(paths.Host(p.Workspace), paths.Host(record.IdentityDirectory)) {
 		p.Workspace = path
 	}
 	if err := writePrivate(filepath.Join(s.profile, "workbench.json"), p); err != nil {

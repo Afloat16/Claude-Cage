@@ -128,8 +128,9 @@ export const RemoteView = forwardRef(function RemoteView(
           }, container, {
             guestPlatform: () => current.current.guestPlatform,
             systemClipboard: () => current.current.systemClipboard,
-            copyText: !desktop && !current.current.systemClipboard
+            copyText: !desktop
               ? (_sendCopy, valid, { id, context, key }) => {
+                if (current.current.systemClipboard !== false) return undefined;
                 if (!valid()) throw new Error("复制位置已切换，请重新复制");
                 return api("/browser/" + (key === "x" ? "cut" : "copy"), { id, context });
               }

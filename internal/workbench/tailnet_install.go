@@ -8,8 +8,26 @@ import (
 	"errors"
 	"github.com/sylvinus/agent-vm/internal/tailnetassets"
 	"io"
+	"strings"
 	"time"
 )
+
+// Stage beside the installed executable so a running node can finish on its old
+// inode. Identity and user data live elsewhere and are never part of installation.
+const tailnetInstallScript = `set -eu; tmp=$(mktemp /tmp/cage-tailnet.XXXXXX); stage=; trap 'rm -f "$tmp"; if test -n "$stage"; then sudo rm -f "$stage"; fi' EXIT; cat > "$tmp"; stage=$(sudo mktemp /usr/local/bin/.cage-tailnet.XXXXXX); sudo install -m 0755 "$tmp" "$stage"; sudo mv -f "$stage" /usr/local/bin/cage-tailnet; printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-tailnet\n' | sudo tee /etc/sudoers.d/cage-tailnet >/dev/null; sudo chmod 0440 /etc/sudoers.d/cage-tailnet`
+
+func (s *Server) refreshInstalledTailnet() error {
+	ctx, cancel := context.WithTimeout(s.operationContext(), 15*time.Second)
+	defer cancel()
+	installed, err := s.guest(ctx, "if test -x /usr/local/bin/cage-tailnet; then printf installed; fi")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(string(installed)) == "installed" {
+		return s.installTailnet()
+	}
+	return nil
+}
 
 func (s *Server) installTailnet() error {
 	if s.macosGuest != nil || s.windowsGuest != nil {
@@ -40,8 +58,7 @@ func (s *Server) installTailnet() error {
 		return err
 	}
 	defer reader.Close()
-	script := `set -eu; tmp=$(mktemp /tmp/cage-tailnet.XXXXXX); trap 'rm -f "$tmp"' EXIT; cat > "$tmp"; sudo install -m 0755 "$tmp" /usr/local/bin/cage-tailnet; printf 'cage-browser ALL=(cage) NOPASSWD: /usr/local/bin/cage-tailnet\n' | sudo tee /etc/sudoers.d/cage-tailnet >/dev/null; sudo chmod 0440 /etc/sudoers.d/cage-tailnet`
-	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(script))
+	cmd := s.sshCommand(ctx, "-T", s.sshTarget(), "--", "/bin/bash -c "+shellescape.Quote(tailnetInstallScript))
 	cmd.Stdin = reader
 	cmd.Stdout = io.Discard
 	cmd.Stderr = io.Discard

@@ -32,6 +32,7 @@ import { TerminalMenu } from "./terminal-menu";
 import { InitializationGate } from "./initialization";
 import { MacOSLogin } from "./macos-login";
 import { MacOSClaudeWindow } from "./macos-claude-window";
+import { ProjectRecovery } from "./project-recovery";
 import { ClaudeDesktop } from "./claude-desktop";
 import { useClaudeAccounts } from "./claude-accounts";
 import { AccountProvider, AccountGate, useAccount } from "./account";
@@ -140,12 +141,21 @@ function App() {
     quitAfterStop = useRef(null);
   activeRef.current = active;
   readyRef.current = Boolean(status?.ready);
+  const storageRecovery = status?.storage_recovery?.required;
   const current = tabs.find((t) => t.id === active),
     terminal = !desktopOpen && current?.kind === "terminal",
     busy = Boolean(status?.job?.running),
-    showHome = !desktopOpen && (home || !status?.vm_running || !current);
+    showHome = storageRecovery || !desktopOpen && (home || !status?.vm_running || !current);
   const setupProgress = status?.job?.setup_progress && (busy || status.job.error);
-	const cliSessions = useCLISessions(Boolean(status && !busy), windowVisible);
+	const cliSessions = useCLISessions(Boolean(status && !busy && !storageRecovery), windowVisible);
+  useEffect(() => {
+    if (storageRecovery) {
+      setDesktopOpen(false);
+      setHome(true);
+      setStartOptions(null);
+      setStartRequest(null);
+    }
+  }, [storageRecovery]);
   const other = tabs.find(tab => tab.id === layout.other);
   const split = Boolean(other && current && !showHome && !desktopOpen);
   const panes = !split ? [current].filter(Boolean)
@@ -240,7 +250,7 @@ function App() {
   useEffect(() => {
     if (finishedLogins) claudeProfiles.load();
   }, [finishedLogins, claudeProfiles.load]);
-  const audio = useAudioOutput(running && !status?.environment_update_required && !connectionError);
+  const audio = useAudioOutput(running && !storageRecovery && !status?.environment_update_required && !connectionError);
   useEffect(() => {
     if (audio.error) setToast(audio.error);
   }, [audio.error]);
@@ -639,7 +649,7 @@ function App() {
           ]);
           if (!live) return;
           const b = browserResult || browserSnapshot.current;
-          const legacyMetadata = readLocal(clientStorageKey("cage-tab-layout"), {})[next.environment_directory || next.workspace] || {};
+          const legacyMetadata = readLocal(clientStorageKey("cage-tab-layout"), {})[next.environment_identity_directory || next.environment_directory || next.workspace] || {};
           for (const item of t) {
             const saved = legacyMetadata["terminal:" + item.id];
             if (!item.cli_session_id || item.metadata_set || !saved || (!saved.title && !saved.pinned)) continue;
@@ -940,6 +950,10 @@ function App() {
         if (!projectDialog && !rename && !dialog) openSettings();
         return;
       }
+      if (storageRecovery && ["openProject", "newTab", "newTerminal"].includes(command)) {
+        openSettings("project");
+        return;
+      }
       if (command === "openProject") {
         if (
           !busy &&
@@ -1034,7 +1048,7 @@ function App() {
     terminalChoice,
   ]);
   const project = projectName(contentWorkspace, status?.environment_directory);
-  const tabLayoutKey = status?.environment_directory || status?.workspace;
+  const tabLayoutKey = status?.environment_identity_directory || status?.environment_directory || status?.workspace;
   const metadata = { ...(savedTabs[tabLayoutKey] || {}), ...(privateTabMetadata[tabLayoutKey] || {}) };
   for (const tab of tabs) {
     if (tab.cli_session_id && tab.metadata_set) metadata[tab.id] = {
@@ -1318,7 +1332,7 @@ function App() {
             saved={metadata}
             active={active}
             home={showHome}
-            busy={busy}
+            busy={busy || storageRecovery}
             ready={status.ready}
             running={running}
             runtimeLabel={runtimeLabel}
@@ -1372,10 +1386,10 @@ function App() {
           <main className={`workspace ${split ? "workspace-split" : ""}`} ref={workspaceBox}
             style={{ "--split-left": `${100 * (dualBrowser && nativeSplit?.fraction || 0.5)}%` }}>
             {dropSide && <div aria-hidden="true" className={`split-drop split-${dropSide}`}>{dropSide === "left" ? "放到左侧" : "放到右侧"}</div>}
-            {desktopOpen && macGuest && <MacOSClaudeWindow uploads={desktopFiles.uploads} keyboard={status.keyboard} remoteRef={remote}
+            {!storageRecovery && desktopOpen && macGuest && <MacOSClaudeWindow uploads={desktopFiles.uploads} keyboard={status.keyboard} remoteRef={remote}
               onStatus={notify} onFallback={(text, message) => setTransfer({ text, message })} visible={!settingsOpen} onConfirm={confirm}
               sidebarCollapsed={sidebarCollapsed} onExpand={() => persist("cage-sidebar-collapsed", false, setSidebarCollapsed)} />}
-            {desktopOpen && !macGuest && <ClaudeDesktop
+            {!storageRecovery && desktopOpen && !macGuest && <ClaudeDesktop
               uploads={desktopFiles.uploads}
               onProjectOpened={() => refreshStatus.current?.()}
               status={status} visible={!settingsOpen} remoteRef={remote}
@@ -1390,7 +1404,7 @@ function App() {
                 <button onClick={() => openSettings("project")}>查看并更新</button>
               </div>
             )}
-            {(status.vm_running || terminal) && (
+            {!storageRecovery && (status.vm_running || terminal) && (
               <>
                 {!desktopOpen && !showHome && webPanes.length > 0 && (
                   <section className={`pane-lane browser-lane ${browserTabLayout === "vertical" ? "vertical-browser" : ""} ${dualBrowser ? "" : "split-" + paneSide(webPanes[0].id)}`}>
@@ -1457,7 +1471,12 @@ function App() {
               <div className="welcome">
                 <div className="welcome-content">
                   <img className="welcome-logo" src={logo} alt="Cage" />
-                  {setupProgress ? <>
+                  {storageRecovery ? <>
+                    <h1>环境存储需要恢复</h1>
+                    <p className="welcome-subtitle"><SafetyMessage message={status.storage_recovery.error} /></p>
+                    <p className="field-help">在设置中恢复环境存储后，再启动浏览器和终端。诊断包可以从同一页面导出。</p>
+                    <button className="primary" onClick={() => openSettings("project")}>恢复环境存储</button>
+                  </> : setupProgress ? <>
                     <h1>{status.job.error ? "环境安装未完成" : "正在安装 Cage 环境"}</h1>
                     <SetupProgress job={status.job} onDetails={() => setDetails(true)}
                       onStop={stop} onRetry={() => setStartOptions(status.job.kind === "guest-install" ? { guest_system: status.job.setup_progress.system } : {})} disconnected={Boolean(connectionError)} />
@@ -1629,19 +1648,20 @@ function App() {
                       <p>环境和浏览器可继续使用。</p>
                       {status.project_errors?.length ? (
                         <ul className="project-connection-errors">
-                          {status.project_errors.map(({ path, message }) => (
+                          {status.project_errors.map(({ path, message, recovery }) => (
                             <li key={path}>
                               <strong>{projectName(path, status.environment_directory)}</strong>
                               <span className="project-error-path">{path}</span>
                               <p>{message}</p>
-                              <button disabled={!status.ready || busy} onClick={() => setProjectDialog({ path })}>连接项目</button>
+                              <ProjectRecovery recovery={recovery} disabled={!status.ready || busy}
+                                onRetry={() => setProjectDialog({ path })} onSettings={() => openSettings("project")} />
                             </li>
                           ))}
                         </ul>
                       ) : <p>{status.project_error}</p>}
                     </div>
                   )}
-                  {!setupProgress && status.job?.error && (
+                  {!storageRecovery && !setupProgress && status.job?.error && (
                     <div className="start-error" role="alert">
                       <strong>{status.job.message || "本次操作未完成"}</strong>
                       <p><SafetyMessage message={status.job.error} /></p>
@@ -1761,6 +1781,7 @@ function App() {
           status={status}
           initialPath={projectDialog.path}
           onClose={() => setProjectDialog(null)}
+          onSettings={() => { setProjectDialog(null); openSettings("project"); }}
           onOpened={openedProject}
         />
       )}

@@ -18,6 +18,10 @@ func windowsHostStorage(ctx context.Context, id uuid.UUID, input windowsHostStor
 	return state, err
 }
 
+func WindowsPrivateStoragePaths() []string {
+	return []string{filepath.Join(managerKnownFolder(windows.FOLDERID_ProgramData), "Cage", "HyperVManager")}
+}
+
 func replaceWindowsStorageProfile(path string, data []byte) error {
 	file, err := os.CreateTemp(filepath.Dir(path), ".windows-storage-*")
 	if err != nil {

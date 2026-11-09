@@ -128,7 +128,12 @@ func (s *Server) desktopFileOpenAction(w http.ResponseWriter, r *http.Request) {
 	guest, _ := result["path"].(string)
 	action, _ := result["action"].(string)
 	var target string
-	if download, _ := result["download_id"].(string); download != "" && (s.macosGuest != nil || s.windowsGuest != nil) {
+	download, _ := result["download_id"].(string)
+	if message, _ := result["error"].(string); message != "" {
+		err = errors.New(message)
+	} else if action != "open" && action != "reveal" {
+		err = errors.New("文件打开操作无效")
+	} else if download != "" && (s.macosGuest != nil || s.windowsGuest != nil) {
 		var saved browserDownloadInfo
 		saved, err = s.downloadInfo(ctx, download)
 		if err == nil && saved.State != "saved" {
@@ -144,12 +149,6 @@ func (s *Server) desktopFileOpenAction(w http.ResponseWriter, r *http.Request) {
 		if err == nil {
 			target, err = s.resolveDesktopProjectFile(guest, projects)
 		}
-	}
-	if action != "open" && action != "reveal" {
-		err = errors.New("文件打开操作无效")
-	}
-	if message, _ := result["error"].(string); message != "" {
-		err = errors.New(message)
 	}
 	if err != nil {
 		body, _ = json.Marshal(map[string]string{"id": input.ID, "error": err.Error()})

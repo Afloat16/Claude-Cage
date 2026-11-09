@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
@@ -494,8 +493,8 @@ func readClipboardArchive(input io.Reader) ([]string, error) {
 
 // A tar EOF only ends the archive, not the guest process. Drain the HTTP body
 // before checking the producer's completion trailer or publishing local paths.
-func receiveClipboardArchive(response *http.Response) ([]string, error) {
-	paths, err := readClipboardArchive(response.Body)
+func receiveClipboardArchive(response *http.Response, cache clipboardfiles.CacheStore) (clipboardfiles.CachedSelection, error) {
+	selection, err := cache.Read(response.Body)
 	if err == nil {
 		_, err = io.Copy(io.Discard, response.Body)
 	}
@@ -503,12 +502,12 @@ func receiveClipboardArchive(response *http.Response) ([]string, error) {
 		err = errors.New("剪贴板文件传递中断，请重新复制")
 	}
 	if err != nil {
-		if len(paths) != 0 {
-			_ = os.RemoveAll(filepath.Dir(paths[0]))
+		if selection.ID != "" {
+			_ = cache.Release(selection.ID)
 		}
-		return nil, err
+		return clipboardfiles.CachedSelection{}, err
 	}
-	return paths, nil
+	return selection, nil
 }
 
 // Native helpers stream bytes directly, keeping host paths out of the WebView.
@@ -571,16 +570,11 @@ func ClipboardFilesForConnection(configPath, connectionID, operation string, arg
 		return nil, errors.New("剪贴板文件传递失败，请重新复制")
 	}
 	if method == "GET" {
-		paths, err := receiveClipboardArchive(response)
+		selection, err := receiveClipboardArchive(response, cache)
 		if err != nil {
 			return nil, err
 		}
-		selection, err := cache.Register(paths)
-		if err != nil {
-			_ = os.RemoveAll(filepath.Dir(paths[0]))
-			return nil, err
-		}
-		return map[string]any{"paths": paths, "cache_id": selection.ID}, nil
+		return map[string]any{"paths": selection.Paths, "cache_id": selection.ID}, nil
 	}
 	var result map[string]any
 	err = json.NewDecoder(io.LimitReader(response.Body, 65537)).Decode(&result)

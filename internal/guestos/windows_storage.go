@@ -18,6 +18,7 @@ type windowsStorageSnapshot struct {
 	Profile  WindowsProfile     `json:"profile"`
 	Instance string             `json:"instance"`
 	Disk     windowsStorageDisk `json:"disk"`
+	Excluded []string           `json:"excluded,omitempty"`
 }
 
 type windowsStorageRuntime struct {
@@ -48,7 +49,7 @@ func (runtime *windowsStorageRuntime) Snapshot(ctx context.Context, source strin
 	}
 	state, err := runtime.call(ctx, binding.VMID, windowsHostStorageRequest{Action: "status"})
 	if err != nil {
-		return snapshot, fmt.Errorf("请先更新或恢复 Windows 系统管理助手，再迁移环境存储：%w", err)
+		return snapshot, fmt.Errorf("请先在设置的环境页选择“同步环境组件”，完成 Windows 系统授权后再迁移：%w", err)
 	}
 	if state.Pending != "" {
 		return snapshot, errors.New("这台 Windows 客机仍有待恢复的存储迁移，请打开发起迁移的原工作台")
@@ -57,7 +58,7 @@ func (runtime *windowsStorageRuntime) Snapshot(ctx context.Context, source strin
 	if err != nil {
 		return snapshot, err
 	}
-	snapshot.State, err = json.Marshal(windowsStorageSnapshot{Profile: *binding, Instance: instance, Disk: state.Disk})
+	runtimeState := windowsStorageSnapshot{Profile: *binding, Instance: instance, Disk: state.Disk}
 	if !cage.StorageContains(source, instance) {
 		snapshot.Backups = append(snapshot.Backups, instance)
 	}
@@ -74,9 +75,12 @@ func (runtime *windowsStorageRuntime) Snapshot(ctx context.Context, source strin
 			}
 			if cage.StorageContains(source, physical) && !cage.StorageContains(physical, state.Disk.Path) {
 				snapshot.Excluded = append(snapshot.Excluded, physical)
+			} else if cage.StorageContains(instance, physical) && !cage.StorageContains(physical, state.Disk.Path) {
+				runtimeState.Excluded = append(runtimeState.Excluded, physical)
 			}
 		}
 	}
+	snapshot.State, err = json.Marshal(runtimeState)
 	return snapshot, err
 }
 
@@ -89,13 +93,13 @@ func windowsMoveSnapshot(move cage.StorageTransition) (windowsStorageSnapshot, e
 	return snapshot, nil
 }
 
-func (runtime *windowsStorageRuntime) action(ctx context.Context, move cage.StorageTransition, action, disk, directory string) error {
+func (runtime *windowsStorageRuntime) action(ctx context.Context, move cage.StorageTransition, action, disk string) error {
 	snapshot, err := windowsMoveSnapshot(move)
 	if err != nil {
 		return err
 	}
 	state, err := runtime.call(ctx, snapshot.Profile.VMID, windowsHostStorageRequest{Action: action, ID: move.ID,
-		SourceVolume: snapshot.Disk.Volume, SourceFileID: snapshot.Disk.FileID, Disk: disk, Directory: directory})
+		SourceVolume: snapshot.Disk.Volume, SourceFileID: snapshot.Disk.FileID, Disk: disk})
 	if err != nil {
 		return err
 	}
@@ -110,7 +114,7 @@ func (runtime *windowsStorageRuntime) action(ctx context.Context, move cage.Stor
 }
 
 func (runtime *windowsStorageRuntime) Begin(ctx context.Context, move cage.StorageTransition) error {
-	return runtime.action(ctx, move, "begin", "", "")
+	return runtime.action(ctx, move, "begin", "")
 }
 
 func windowsMovedPath(value, source, target string) string {
@@ -126,25 +130,25 @@ func windowsMovedPath(value, source, target string) string {
 
 func (runtime *windowsStorageRuntime) movedProfile(move cage.StorageTransition, snapshot windowsStorageSnapshot) (WindowsProfile, string) {
 	logical := filepath.Join(runtime.profile, "state")
-	instance := filepath.Join(logical, "windows-"+strings.ReplaceAll(snapshot.Profile.VMID.String(), "-", ""))
+	instance := filepath.Join(move.Destination, "windows-"+strings.ReplaceAll(snapshot.Profile.VMID.String(), "-", ""))
 	if cage.StorageContains(move.Source, snapshot.Instance) {
-		instance = windowsMovedPath(snapshot.Instance, move.Source, logical)
+		instance = windowsMovedPath(snapshot.Instance, move.Source, move.Destination)
 	}
 	next := snapshot.Profile
 	next.InstanceDirectory = instance
 	remap := func(value string) string {
 		value = windowsMovedPath(value, snapshot.Profile.InstanceDirectory, instance)
 		value = windowsMovedPath(value, snapshot.Instance, instance)
-		return windowsMovedPath(value, move.Source, logical)
+		value = windowsMovedPath(value, move.Source, move.Destination)
+		return windowsMovedPath(value, logical, move.Destination)
 	}
 	next.RelayExecutable = remap(next.RelayExecutable)
 	next.PairingFile = remap(next.PairingFile)
 	next.NetworkPairingFile = remap(next.NetworkPairingFile)
-	physicalInstance := windowsMovedPath(instance, logical, move.Destination)
-	disk := windowsMovedPath(snapshot.Disk.Path, snapshot.Instance, physicalInstance)
+	disk := windowsMovedPath(snapshot.Disk.Path, snapshot.Instance, instance)
 	disk = windowsMovedPath(disk, move.Source, move.Destination)
 	if disk == snapshot.Disk.Path {
-		disk = filepath.Join(physicalInstance, filepath.Base(snapshot.Disk.Path))
+		disk = filepath.Join(instance, filepath.Base(snapshot.Disk.Path))
 	}
 	return next, disk
 }
@@ -155,9 +159,9 @@ func (runtime *windowsStorageRuntime) Switch(ctx context.Context, move cage.Stor
 		return err
 	}
 	next, disk := runtime.movedProfile(move, snapshot)
-	physicalInstance := windowsMovedPath(next.InstanceDirectory, filepath.Join(runtime.profile, "state"), move.Destination)
+	physicalInstance := next.InstanceDirectory
 	if !cage.StorageContains(move.Source, snapshot.Instance) {
-		if err = cage.CopyStorage(ctx, snapshot.Instance, physicalInstance, nil); err != nil {
+		if err = cage.CopyStorage(ctx, snapshot.Instance, physicalInstance, snapshot.Excluded, nil); err != nil {
 			return err
 		}
 	}
@@ -169,11 +173,17 @@ func (runtime *windowsStorageRuntime) Switch(ctx context.Context, move cage.Stor
 			return err
 		}
 	}
-	directory := filepath.Join(move.Destination, "hyperv-"+snapshot.Profile.VMID.String()+"-"+move.ID)
-	if err = os.Mkdir(directory, 0700); err != nil {
+	if err = prepareWindowsStorageDisk(ctx, snapshot.Disk.Path, disk); err != nil {
 		return err
 	}
-	if err = runtime.action(ctx, move, "attach", disk, directory); err != nil {
+	for _, path := range []string{next.PairingFile, next.NetworkPairingFile} {
+		if path != "" && cage.StorageContains(move.Destination, path) {
+			if err = protectWindowsProfile(path); err != nil {
+				return err
+			}
+		}
+	}
+	if err = runtime.action(ctx, move, "attach", disk); err != nil {
 		return err
 	}
 	return runtime.writeProfile(snapshot.Profile, next, next)
@@ -189,7 +199,7 @@ func (runtime *windowsStorageRuntime) Recover(ctx context.Context, move cage.Sto
 	if committed {
 		chosen, action = next, "commit"
 	}
-	if err = runtime.action(ctx, move, action, "", ""); err != nil {
+	if err = runtime.action(ctx, move, action, ""); err != nil {
 		return err
 	}
 	return runtime.writeProfile(snapshot.Profile, next, chosen)

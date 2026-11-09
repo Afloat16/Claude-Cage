@@ -134,6 +134,9 @@ func (s *Server) guestControl(ctx context.Context, script, diagnosticSource stri
 	return data, nil
 }
 func (s *Server) attach() error {
+	if err := s.requireStorageReady(); err != nil {
+		return err
+	}
 	if s.windowsGuest != nil {
 		return s.attachWindowsGuest()
 	}
@@ -304,6 +307,9 @@ func (s *Server) runCage(args ...string) error {
 	return nil
 }
 func (s *Server) startEnvironment(syncTimezone bool) error {
+	if err := s.requireStorageReady(); err != nil {
+		return err
+	}
 	if s.macosGuest != nil {
 		return s.startMacOSGuest()
 	}
@@ -622,6 +628,10 @@ func (s *Server) apply(v savedProfile, validate bool) error {
 func (s *Server) monitorNetworkTick() {
 	timing := s.startMonitorTiming()
 	defer s.recordMonitorTiming("network", timing)
+	if s.storageRecoveryStatus().Required {
+		timing.result = "storage_recovery_pending"
+		return
+	}
 	if s.macSetupPending() {
 		timing.result = "setup_pending"
 		return

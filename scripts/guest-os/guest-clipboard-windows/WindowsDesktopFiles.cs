@@ -145,7 +145,7 @@ internal static class WindowsDesktopFiles
                 {
                     ["id"] = value.ID, ["target"] = "desktop", ["kind"] = "chooser", ["multiple"] = value.Multiple, ["directory"] = value.Directory,
                 }).ToArray()),
-                ["downloads"] = WindowsDesktopDownloads.Snapshot(), ["opens"] = OpenSnapshot(),
+                ["downloads"] = WindowsDesktopDownloads.Snapshot(), ["downloadAck"] = true, ["opens"] = OpenSnapshot(),
             };
         }
     }
@@ -162,14 +162,26 @@ internal static class WindowsDesktopFiles
 
     internal static void QueueOpen(string path, string action, Action validate)
     {
-        if (!Path.IsPathFullyQualified(path) || path.Length > 32767 || path.Contains('\0') || action is not ("open" or "reveal"))
+        QueueOpen([path], action, validate);
+    }
+
+    internal static void QueueOpen(string[] paths, string action, Action validate)
+    {
+        if (paths.Length is < 1 or > 32 || action is not ("open" or "reveal") ||
+            paths.Any(path => string.IsNullOrEmpty(path) || !Path.IsPathFullyQualified(path) || path.Length > 32767 || path.Contains('\0')))
             throw new InvalidDataException("file_open_request_invalid");
+        var normalized = paths.Select(Path.GetFullPath).ToArray();
         lock (Gate)
         {
-            SessionGuard.Assert(); ExpireOpens(); validate();
+            SessionGuard.Assert(); ExpireOpens();
             var agent = ClipboardAgent.Current;
-            if (agent is null || !agent.SessionEventsRegistered || Opens.Count >= 32) throw new InvalidDataException("file_open_request_unavailable");
-            Opens.Add(Guid.NewGuid().ToString("D"), new OpenRequest(Path.GetFullPath(path), action, agent.Session, agent.SessionEpoch, validate));
+            if (agent is null || !agent.SessionEventsRegistered) throw new InvalidDataException("file_open_request_unavailable");
+            var epoch = agent.SessionEpoch;
+            validate();
+            if (ClipboardAgent.Current != agent || agent.SessionEpoch != epoch) throw new InvalidDataException("file_open_target_changed");
+            if (Opens.Count + normalized.Length > 32) throw new InvalidDataException("file_open_request_limit");
+            foreach (var path in normalized)
+                Opens.Add(Guid.NewGuid().ToString("D"), new OpenRequest(path, action, agent.Session, epoch, validate));
         }
     }
 

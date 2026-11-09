@@ -25,7 +25,7 @@ DISM /Online /Enable-Feature /FeatureName:HypervisorPlatform /All
 
 ## 安装并开始工作
 
-1. 在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Windows，核对对应发行条目的 `SHA256SUMS`。签名安装包名为 `Cage-<版本>-windows-amd64-setup.exe`；当前公开预览包名为 `Cage-<版本>-windows-amd64-setup-unsigned.exe`，主页标明“预览版 · 未签名”。未签名包可能触发未知发布者提示，需手动安装和更新。
+1. 在[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)点击“下载应用”并选择 Windows，核对对应发行条目的 `SHA256SUMS`。签名安装包名为 `Cage-<版本>-windows-amd64-setup.exe`；单独标明未签名的开发预览包名为 `Cage-<版本>-windows-amd64-setup-unsigned.exe`。未签名包可能触发未知发布者提示，需手动安装和更新。
 2. 运行安装程序，选择安装位置。首次安装时，默认选择本地 D 盘的 `D:\Cage`；没有本地 D 盘时使用当前用户的 `%LOCALAPPDATA%\Programs\Cage`。已有安装沿用原目录，也可以手动选择其他位置。安装器随附 .NET 桌面运行组件、WebView2 安装程序、QEMU、OpenSSH 客户端和代理核心，无需另装 Go、Node.js 或 Clash。
 3. 在“快捷方式”页选择“添加桌面快捷方式”和“添加到开始菜单”。首次安装默认勾选两项，覆盖安装沿用上次选择，旧安装按已有快捷方式恢复选择。卸载会清理 Cage 创建的快捷方式。
 4. 从选中的快捷方式启动 Cage，选择客机系统。如果 C 盘空间有限，在工作台点击“选择环境存储位置”，选择其他磁盘的专用空文件夹，再导入代理并启动环境。镜像、工具和虚拟磁盘按所选系统准备；已有环境也可以从设置迁移。见[选盘与迁移步骤](getting-started.md#选择环境存储位置)和[客机系统指南](guide/guest-systems.md)。
@@ -60,7 +60,7 @@ Windows Hypervisor Platform 已启用时，QEMU 仍可能因嵌套虚拟化初�
 
 当前开发构建在升级或强制结束后会自动检查旧连接记录及控制锁。旧锁空闲时修复其所有者和私有权限，再由新后台重建连接记录；真实后台持有的锁继续阻止接管。权限无法迁移时显示具体原因。请保留个人配置目录，不要通过删除账户或虚拟磁盘解决连接问题。点右上角 × 隐藏窗口并保留托盘，结束应用请使用“退出 Cage”；运行中的环境可选择保留运行或停止后退出。
 
-本地开发包已适配含中文的安装目录。启动时优先读取随附 QEMU 的 UEFI 固件，无需在用户目录另存副本。在默认虚拟 CPU 配置下，Cage 会向 Windows 虚拟机监控程序平台查询可用指令；Claude Code 需要客机提供 SSE4.2。自行指定了虚拟 CPU 型号的环境仍沿用该设置。这两项修复尚未进入公开的 `v0.1.5-alpha.2` 安装包。
+Cage 支持含中文的安装目录。启动时优先读取随附 QEMU 的 UEFI 固件，无需在用户目录另存副本。在默认虚拟 CPU 配置下，Cage 会向 Windows 虚拟机监控程序平台查询可用指令；Claude Code 需要客机提供 SSE4.2。自行指定了虚拟 CPU 型号的环境仍沿用该设置。
 
 - 提示虚拟化不可用：检查 BIOS/UEFI 的虚拟化开关及 Windows 虚拟机监控程序平台，重启后再试。远程或嵌套虚拟机还需要外层宿主允许嵌套虚拟化。
 - 提示缺少 WebView2：重新运行完整安装程序。不要从第三方站点下载同名 DLL。

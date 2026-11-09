@@ -41,6 +41,7 @@ func serveDesktopDownloadFixture(input io.Reader, output io.Writer, directory st
 	for reader.Scan() {
 		var request struct {
 			Action, ID, Transfer string
+			IDs                  []string
 			Sequence             int
 			KeepAlive            bool
 		}
@@ -62,6 +63,25 @@ func serveDesktopDownloadFixture(input io.Reader, output io.Writer, directory st
 		switch request.Action {
 		case "files-poll":
 			reply = map[string]any{"available": true, "uploads": []any{}, "opens": []any{}, "downloads": []browserDownloadInfo{record}}
+			if _, err := os.Stat(filepath.Join(directory, "supports-ack")); err == nil {
+				var item map[string]any
+				_ = json.Unmarshal(data, &item)
+				_, err := os.Stat(filepath.Join(directory, "acknowledged"))
+				item["acknowledged"] = err == nil
+				reply = map[string]any{"available": true, "downloadAck": true, "downloads": []any{item}}
+			}
+		case "files-download-ack":
+			if len(request.IDs) != 1 || request.IDs[0] != record.ID {
+				return
+			}
+			if _, err := os.Stat(filepath.Join(directory, "fail-ack")); err == nil {
+				reply = map[string]string{"error": "desktop_download_manifest_failed"}
+			} else {
+				if os.WriteFile(filepath.Join(directory, "acknowledged"), nil, 0600) != nil {
+					return
+				}
+				reply = map[string]bool{"ok": true}
+			}
 		case "files-download-open":
 			if request.ID != record.ID {
 				return
@@ -92,6 +112,69 @@ func serveDesktopDownloadFixture(input io.Reader, output io.Writer, directory st
 		if json.NewEncoder(output).Encode(reply) != nil || !request.KeepAlive {
 			return
 		}
+	}
+}
+
+func TestNativeDesktopDownloadAcknowledgesOnlySavedHostReceipts(t *testing.T) {
+	for _, system := range []string{"macos", "windows"} {
+		t.Run(system, func(t *testing.T) {
+			s, record, _, directory := nativeDesktopDownloadFixture(t, system)
+			poll := func() {
+				t.Helper()
+				response := windowsBrowserRequestForTest(s, http.MethodGet, "/api/input/files/desktop/requests", nil)
+				if response.Code != http.StatusOK {
+					t.Fatalf("poll failed: %d %s", response.Code, response.Body.String())
+				}
+			}
+			marker := func(name string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(directory, name), nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			ackCount := func() int {
+				t.Helper()
+				trace, err := os.ReadFile(filepath.Join(directory, "requests.jsonl"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return bytes.Count(trace, []byte(`"action":"files-download-ack"`))
+			}
+			marker("supports-ack")
+			poll()
+			if ackCount() != 0 {
+				t.Fatal("guest-only saved state acknowledged before a durable host copy")
+			}
+			if _, err := s.downloadInfo(t.Context(), record.ID); err != nil {
+				t.Fatal(err)
+			}
+			marker("fail-ack")
+			poll()
+			if ackCount() != 1 {
+				t.Fatal("saved host receipt was not acknowledged")
+			}
+			if saved, err := readSavedDownload(s.profile, record.ID); err != nil || saved.Path == "" {
+				t.Fatal("failed acknowledgment invalidated the host receipt", err)
+			}
+			if err := os.Remove(filepath.Join(directory, "fail-ack")); err != nil {
+				t.Fatal(err)
+			}
+			poll()
+			if ackCount() != 2 {
+				t.Fatal("failed acknowledgment was not retried")
+			}
+			poll()
+			if ackCount() != 2 {
+				t.Fatal("acknowledged guest record generated another acknowledgment")
+			}
+			if err := os.Remove(filepath.Join(directory, "supports-ack")); err != nil {
+				t.Fatal(err)
+			}
+			poll()
+			if ackCount() != 2 {
+				t.Fatal("legacy helper received an unsupported acknowledgment")
+			}
+		})
 	}
 }
 

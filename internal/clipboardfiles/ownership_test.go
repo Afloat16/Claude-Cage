@@ -105,6 +105,26 @@ func TestCacheRejectsForeignOrMalformedIdentifiers(t *testing.T) {
 	}
 }
 
+func TestCacheRecoveryLeavesAnotherLiveNativeOwnerInControl(t *testing.T) {
+	store, selection := cacheFixture(t)
+	record, err := store.load(selection.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record.Published = true
+	record.Owner = os.Getpid()
+	if err := store.save(record); err != nil {
+		t.Fatal(err)
+	}
+	listed, err := store.List()
+	if err != nil || len(listed) != 0 {
+		t.Fatal("another live native owner's clipboard entered recovery", err)
+	}
+	if _, err := os.Stat(selection.Paths[0]); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCacheConcurrentPublishCannotRecreateAReleasedReceipt(t *testing.T) {
 	for range 20 {
 		store, selection := cacheFixture(t)

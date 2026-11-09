@@ -5,6 +5,7 @@ set -euo pipefail
 [[ $# == 2 && $(uname -sm) == 'Darwin arm64' ]] || { echo 'Usage: build-macos-sshfs.sh /absolute/macfuse-sdk/usr/local /absolute/cage-sshfs' >&2; exit 2; }
 sdk=$1
 output=$2
+script_dir=$(cd "$(dirname "$0")" && pwd)
 [[ $sdk == /* && $output == /* && -f $sdk/include/fuse3/fuse.h && ! -e $output ]]
 src=$(mktemp -d)
 trap 'rm -rf "$src"' EXIT
@@ -13,6 +14,7 @@ curl -fLsS --retry 2 "https://codeload.github.com/libfuse/sshfs/tar.gz/$commit" 
 cd "$src"
 echo '9be20256ac841c6e5b4cd8aefbf57c325f93e9ff01f7c7691edfe9f02700338b  sshfs.tgz' | shasum -a 256 -c - >/dev/null
 tar xzf sshfs.tgz --strip-components 1
+patch -p1 < "$script_dir/sshfs-openwith.patch"
 cat > config.h <<'HEADER'
 #define PACKAGE_VERSION "3.7.6"
 #define IDMAP_DEFAULT "user"

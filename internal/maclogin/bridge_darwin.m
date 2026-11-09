@@ -46,6 +46,30 @@ void *cageLoginImage(int *size) {
     });
     return copy;
 }
+void *cageLoginImageRegion(int x, int y, int width, int height, int *size) {
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || x + width > 1024 || y + height > 640) return NULL;
+    __block void *copy = NULL;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        @autoreleasepool {
+            NSData *frame = [loginView snapshotJPEG];
+            if (!frame.length) return;
+            NSBitmapImageRep *source = [NSBitmapImageRep imageRepWithData:frame];
+            if (!source.CGImage) return;
+            CGRect region = CGRectMake(x * source.pixelsWide / 1024.0, y * source.pixelsHigh / 640.0,
+                                       width * source.pixelsWide / 1024.0, height * source.pixelsHigh / 640.0);
+            CGImageRef cropped = CGImageCreateWithImageInRect(source.CGImage, region);
+            if (!cropped) return;
+            NSBitmapImageRep *output = [[NSBitmapImageRep alloc] initWithCGImage:cropped];
+            CGImageRelease(cropped);
+            NSData *image = [output representationUsingType:NSBitmapImageFileTypeJPEG properties:@{NSImageCompressionFactor:@0.92}];
+            if (image.length && image.length <= (4<<20)) {
+                copy = malloc(image.length);
+                if (copy) { memcpy(copy, image.bytes, image.length); *size = (int)image.length; }
+            }
+        }
+    });
+    return copy;
+}
 bool cageLoginClick(int x, int y) {
     __block BOOL ok = NO;
     dispatch_sync(dispatch_get_main_queue(), ^{ ok = [loginView clickAtX:x * scanWidth / 1024.0 y:y * scanHeight / 640.0]; });
@@ -71,6 +95,23 @@ bool cageLoginKey(int code, bool shift) {
             [loginView sendKey:event(NSEventTypeKeyUp,56,0)];
             [loginView sendKey:event(NSEventTypeFlagsChanged,56,0)];
         }
+    });
+    return ok;
+}
+bool cageLoginSelectAll(void) {
+    __block BOOL ok = NO;
+    dispatch_sync(dispatch_get_main_queue(), ^{
+        if (!loginView) return;
+        NSEventModifierFlags command = NSEventModifierFlagCommand | NX_DEVICELCMDKEYMASK;
+        NSEvent *(^event)(NSEventType, int, NSEventModifierFlags) = ^NSEvent *(NSEventType kind, int key, NSEventModifierFlags flags) {
+            return [NSEvent keyEventWithType:kind location:NSZeroPoint modifierFlags:flags timestamp:NSProcessInfo.processInfo.systemUptime
+                windowNumber:0 context:nil characters:@"" charactersIgnoringModifiers:@"" isARepeat:NO keyCode:(unsigned short)key];
+        };
+        [loginView sendKey:event(NSEventTypeFlagsChanged,55,command)];
+        [loginView sendKey:event(NSEventTypeKeyDown,55,command)];
+        ok = [loginView sendKey:event(NSEventTypeKeyDown,0,command)] && [loginView sendKey:event(NSEventTypeKeyUp,0,command)];
+        [loginView sendKey:event(NSEventTypeKeyUp,55,0)];
+        [loginView sendKey:event(NSEventTypeFlagsChanged,55,0)];
     });
     return ok;
 }

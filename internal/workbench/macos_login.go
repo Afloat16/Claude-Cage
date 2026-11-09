@@ -48,6 +48,65 @@ type macSetupPermissions struct {
 	ManagedCredential bool   `json:"managed_credential,omitempty"`
 }
 
+type macLoginLease struct {
+	request     guestos.MacLoginRequest
+	stopAccount func() bool
+	stopService func() bool
+}
+
+func (l *macLoginLease) stop() {
+	if l == nil {
+		return
+	}
+	l.stopAccount()
+	l.stopService()
+}
+
+func (s *Server) revokeMacLogin(session string) {
+	s.mu.Lock()
+	lease := s.macLoginLease
+	if lease == nil || lease.request.Session != session {
+		s.mu.Unlock()
+		return
+	}
+	s.macLoginLease = nil
+	s.mu.Unlock()
+	lease.stop()
+	connection, err := net.DialTimeout("unix", filepath.Join(s.instanceDir(), "cage-login.sock"), 2*time.Second)
+	if err != nil {
+		return
+	}
+	defer connection.Close()
+	_ = connection.SetWriteDeadline(time.Now().Add(2 * time.Second))
+	_ = json.NewEncoder(connection).Encode(lease.request)
+}
+
+func (s *Server) trackMacLogin(epoch context.Context, input guestos.MacLoginRequest, result guestos.MacLoginReply) {
+	if input.Action == "open" && result.Session != "" {
+		lifetime := s.lifetimeContext()
+		lease := &macLoginLease{request: guestos.MacLoginRequest{Action: "close", Session: result.Session, Setup: input.Setup, Maintenance: input.Maintenance}}
+		s.mu.Lock()
+		previous := s.macLoginLease
+		s.macLoginLease = lease
+		lease.stopAccount = context.AfterFunc(epoch, func() { s.revokeMacLogin(result.Session) })
+		lease.stopService = context.AfterFunc(lifetime, func() { s.revokeMacLogin(result.Session) })
+		s.mu.Unlock()
+		previous.stop()
+		return
+	}
+	if input.Action == "close" || result.Closed {
+		s.mu.Lock()
+		lease := s.macLoginLease
+		if lease != nil && lease.request.Session == input.Session {
+			s.macLoginLease = nil
+		} else {
+			lease = nil
+		}
+		s.mu.Unlock()
+		lease.stop()
+	}
+}
+
 func (s *Server) macSetupPermissions(ctx context.Context) (macSetupPermissions, error) {
 	var status macSetupPermissions
 	data, err := s.macOSWindowCall(ctx, macOSWindowRequest{Action: "setup-status"})
@@ -88,6 +147,20 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Setup = r.URL.Path == "/api/macos/first-setup"
+	if r.URL.Path == "/api/macos/maintenance" {
+		if !guestos.ValidMacMaintenancePurpose(input.Maintenance) {
+			http.Error(w, "请选择需要恢复的客机系统权限", http.StatusBadRequest)
+			return
+		}
+		switch input.Action {
+		case "open", "close", "frame", "click", "key", "scroll", "select-all", "fill-password":
+		default:
+			http.Error(w, "维护画面只接受窗口查看与局部输入", http.StatusBadRequest)
+			return
+		}
+	} else {
+		input.Maintenance = ""
+	}
 	if input.Setup && !s.macSetupPending() {
 		http.Error(w, "首次设置入口已关闭", http.StatusGone)
 		return
@@ -191,7 +264,12 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "无效的登录会话", 400)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	timeout := 8 * time.Second
+	if input.Maintenance != "" {
+		timeout = 15 * time.Second
+	}
+	epoch, _ := s.account.accessFor(true)
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
 	defer cancel()
 	var dial net.Dialer
 	conn, err := dial.DialContext(ctx, "unix", filepath.Join(s.instanceDir(), "cage-login.sock"))
@@ -200,17 +278,30 @@ func (s *Server) macOSLoginWindow(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(8 * time.Second))
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	_ = conn.SetDeadline(time.Now().Add(timeout))
 	var result guestos.MacLoginReply
 	if json.NewEncoder(conn).Encode(input) != nil || json.NewDecoder(io.LimitReader(conn, 6<<20)).Decode(&result) != nil {
 		http.Error(w, "客机登录界面无法响应", 503)
+		return
+	}
+	if input.Maintenance != "" && result.MaintenanceVersion != 1 {
+		result = guestos.MacLoginReply{Closed: true, Recovery: "environment-restart", Error: "虚拟 Mac 运行器需要重新加载。请保存工作，在环境设置中停止并重新启动虚拟 Mac，再打开授权设置。"}
+	}
+	s.trackMacLogin(epoch, input, result)
+	if input.Action == "open" && ctx.Err() != nil {
+		s.revokeMacLogin(result.Session)
 		return
 	}
 	if input.Setup && input.Action == "finish" && result.Error == "" && !s.macSetupPending() {
 		s.restoreProjectShares()
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	jsonReply(w, result)
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	if err := json.NewEncoder(w).Encode(result); err != nil && input.Action == "open" {
+		s.revokeMacLogin(result.Session)
+	}
 }
 
 func (s *Server) macOSSetupAdminCommand(ctx context.Context) *exec.Cmd {

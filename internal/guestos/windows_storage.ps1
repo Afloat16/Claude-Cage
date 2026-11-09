@@ -2,7 +2,9 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $id = [guid]$inputData.vm_id
 $vm = Get-VM -Id $id
-if ($vm.State -ne 'Off' -or $vm.Generation -ne 2 -or
+$recoveringDisk = $inputData.action -eq 'apply' -and $inputData.disk -ieq $inputData.source_disk
+$stopped = $vm.State -eq 'Off' -or ($recoveringDisk -and $vm.State -eq 'OffCritical')
+if (!$stopped -or $vm.Generation -ne 2 -or
     @(Get-VMNetworkAdapter -VM $vm).Count -ne 0 -or
     (Get-VMFirmware -VM $vm).SecureBoot -ne 'On' -or !(Get-VMSecurity -VM $vm).TpmEnabled) {
     throw 'vm_changed'
@@ -62,7 +64,7 @@ if ($move.Count) {
 }
 $vm = Get-VM -Id $id
 $disks = @(Get-VMHardDiskDrive -VM $vm)
-if ($vm.State -ne 'Off' -or $disks.Count -ne 1) { throw 'vm_changed' }
+if (($vm.State -ne 'Off' -and !($recoveringDisk -and $vm.State -eq 'OffCritical')) -or $disks.Count -ne 1) { throw 'vm_changed' }
 if ($disks[0].Path -ine $inputData.disk) {
     Set-VMHardDiskDrive -VMHardDiskDrive $disks[0] -Path ([string]$inputData.disk)
 }

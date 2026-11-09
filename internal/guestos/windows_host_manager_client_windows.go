@@ -43,6 +43,13 @@ func windowsHostManagerRequestCall(ctx context.Context, request windowsHostManag
 	}
 	connection, err := winio.DialPipeAccessImpLevel(connect, `\\.\pipe\Cage.HyperV.`+id.String(), 0x120003, level)
 	finish()
+	if err != nil && ctx.Err() == nil {
+		if startErr := startRegisteredWindowsHostManager(id); startErr == nil {
+			retry, finish := context.WithTimeout(ctx, 10*time.Second)
+			connection, err = winio.DialPipeAccessImpLevel(retry, `\\.\pipe\Cage.HyperV.`+id.String(), 0x120003, level)
+			finish()
+		}
+	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -126,6 +133,10 @@ func verifyWindowsHostManagerPeer(connection net.Conn, id uuid.UUID) error {
 	if windows.QueryServiceStatusEx(service, windows.SC_STATUS_PROCESS_INFO, (*byte)(unsafe.Pointer(&status)), uint32(unsafe.Sizeof(status)), &needed) != nil || status.ProcessId != pid || status.CurrentState != windows.SERVICE_RUNNING {
 		return errors.New("Windows 系统管理通道不属于当前已登记服务")
 	}
+	return verifyWindowsHostManagerService(service, id)
+}
+
+func verifyWindowsHostManagerService(service windows.Handle, id uuid.UUID) error {
 	binaryPath, account, err := windowsHostServiceConfig(service)
 	if err != nil {
 		return errors.New("Windows 系统管理服务配置无法核验")
@@ -159,6 +170,38 @@ func verifyWindowsHostManagerPeer(connection net.Conn, id uuid.UUID) error {
 		}
 	}
 	return nil
+}
+
+// Installation already grants the bound user SERVICE_START. Restoring that
+// fixed service after a reboot does not grant VM discovery or service editing.
+func startRegisteredWindowsHostManager(id uuid.UUID) error {
+	binding, err := LoadWindowsHostManagerBinding(WindowsHostManagerBindingPath(id))
+	if err != nil {
+		return err
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil || user.User.Sid.String() != binding.HostSID {
+		return errors.New("unauthorized")
+	}
+	manager, err := windows.OpenSCManager(nil, nil, windows.SC_MANAGER_CONNECT)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseServiceHandle(manager)
+	name, _ := windows.UTF16PtrFromString(WindowsHostManagerServiceName(id))
+	service, err := windows.OpenService(manager, name, windows.SERVICE_QUERY_CONFIG|windows.SERVICE_START)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseServiceHandle(service)
+	if err = verifyWindowsHostManagerService(service, id); err != nil {
+		return err
+	}
+	err = windows.StartService(service, 0, nil)
+	if errors.Is(err, windows.ERROR_SERVICE_ALREADY_RUNNING) {
+		return nil
+	}
+	return err
 }
 
 func windowsHostServiceConfig(service windows.Handle) (string, string, error) {

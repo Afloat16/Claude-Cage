@@ -43,6 +43,19 @@ func newWindowsBrowserClient(parent context.Context, profile string) *windowsBro
 	}}
 }
 
+// A modern guest service owns the browser. Its viewers use separate relay
+// connections so cancellation also releases each viewer's held input.
+func (c *windowsBrowserClient) viewer(parent context.Context) (*windowsBrowserClient, func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.ownsBrowser {
+		return c, func() {}
+	}
+	ctx, cancel := context.WithCancel(parent)
+	viewer := &windowsBrowserClient{ctx: ctx, cancel: cancel, start: c.start, ownsBrowser: true}
+	return viewer, viewer.close
+}
+
 var windowsBrowserRoutes = map[string]bool{
 	"tailnet": true, "health": true, "tabs": true, "events": true, "frame": true, "new": true, "activate": true, "close": true,
 	"navigate": true, "back": true, "forward": true, "reload": true, "homepage": true, "resize": true,

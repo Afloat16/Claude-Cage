@@ -111,11 +111,13 @@ export async function serveMacOSBrowser({ directory, dispatch, close, disconnect
     if (!stopping) stopping = (async () => {
       const closed = new Promise(resolve => server.close(resolve));
       for (const client of clients) client.destroy();
-      await close();
-      await queue;
-      await closed;
-      const current = await fs.lstat(address).catch(() => null);
-      if (current?.ino === owned.ino) await fs.unlink(address);
+      try { await close(); }
+      finally {
+        await closed;
+        await queue;
+        const current = await fs.lstat(address).catch(() => null);
+        if (current?.ino === owned.ino) await fs.unlink(address);
+      }
     })();
     return stopping;
   };

@@ -123,6 +123,11 @@ func run(args []string) error {
 			return errors.New("share-project --json --connection ID read|write DIRECTORY")
 		}
 		return printJSON(workbench.ShareNativeCloudProject(config, args[3], args[5], args[4] == "read"))
+	case "desktop-file":
+		if len(args) != 5 || args[1] != "--json" || args[2] != "--connection" || args[3] == "" {
+			return errors.New("desktop-file --json --connection ID REQUEST")
+		}
+		return printJSON(workbench.DesktopFileForConnection(config, args[3], args[4]))
 	case "clipboard-files", "upload-files", "browser-file":
 		if len(args) < 4 || args[1] != "--json" {
 			return errors.New("invalid file command")

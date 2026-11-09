@@ -351,6 +351,15 @@ internal sealed class MainWindow : Form
                 case "clipboardSyncRead": result = await SharedClipboard.Read(request, lifetime.Token); break;
                 case "clipboardSyncWrite": result = await SharedClipboard.Write(request, lifetime.Token); break;
                 case "clipboardSyncRelease": result = await SharedClipboard.Release(request, lifetime.Token); break;
+                case "desktopFileAction":
+                {
+                    var fileRequestID = request.Text("id");
+                    if (!Guid.TryParse(fileRequestID, out _)) throw new InvalidDataException("文件打开标识无效");
+                    var connection = request.Text("connection_id");
+                    var response = await Backend.Json(["desktop-file", "--json", "--connection", string.IsNullOrEmpty(connection) ? "local" : connection, fileRequestID], lifetime.Token, TimeSpan.FromMinutes(30));
+                    if (response.Exit != 0) throw new IOException(response.Data.Text("message"));
+                    result = response.Data; break;
+                }
                 case "saveBrowserDownload":
                 case "browserDownloadAction":
                 {

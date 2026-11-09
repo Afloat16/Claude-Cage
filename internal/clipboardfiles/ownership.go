@@ -262,7 +262,8 @@ func (store CacheStore) List() ([]CachedSelection, error) {
 		if err != nil {
 			return nil, err
 		}
-		if record.Pending && !cacheOwnerAlive(record.Producer) || !record.Pending && (record.Published || !cacheOwnerAlive(record.Owner)) {
+		if record.Pending && !cacheOwnerAlive(record.Producer) || !record.Pending &&
+			(record.Published && record.Owner == os.Getppid() || !cacheOwnerAlive(record.Owner)) {
 			selections = append(selections, record.CachedSelection)
 		}
 	}
@@ -313,12 +314,8 @@ func (store CacheStore) Release(id string) error {
 			}
 		}
 	}
-	if err := root.Remove(record.Marker); err != nil {
+	if err := removeCacheDirectory(root, record); err != nil {
 		return err
-	}
-	if err := os.Remove(record.Directory); err != nil {
-		// A busy directory must retain its proof of ownership for a later retry.
-		return errors.Join(err, root.WriteFile(record.Marker, []byte(id), 0600))
 	}
 	return os.Remove(path)
 }

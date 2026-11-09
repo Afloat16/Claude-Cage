@@ -112,7 +112,7 @@ func (s *Server) browserAction(ctx context.Context, action string, input *browse
 			((input.Mode == "delete" || input.Mode == "details") && len(input.CookieKey) != 64)) {
 			return nil, browserInputError{errors.New("Cookie 操作或目标标签无效")}
 		}
-		if action == "copy-context" && (input.ID == "" || !validInputToken(input.Context)) {
+		if (action == "copy-context" || action == "copy" || action == "cut") && (input.ID == "" || !validInputToken(input.Context)) {
 			return nil, browserInputError{errors.New("复制操作或目标标签无效")}
 		}
 		if action == "insert-text" && (input.ID == "" || input.Text == "" || len(input.Text) > 8192) {

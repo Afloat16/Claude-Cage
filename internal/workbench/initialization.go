@@ -26,7 +26,7 @@ type initializationView struct {
 }
 
 func (s *Server) initializationState() (initializationView, error) {
-	if !s.localVMStorage() {
+	if !s.localVMStorage() || s.storageRecoveryStatus().Required {
 		return initializationView{}, nil
 	}
 	data, err := os.ReadFile(filepath.Join(s.profile, "initialization.json"))

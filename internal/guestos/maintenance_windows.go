@@ -5,8 +5,10 @@ package guestos
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,4 +38,35 @@ func WindowsMaintenanceCommand(ctx context.Context, profile, kit, manifest strin
 		args = append(args, "-Tools")
 	}
 	return exec.CommandContext(ctx, filepath.Join(system, "WindowsPowerShell", "v1.0", "powershell.exe"), args...), nil
+}
+
+// RepairWindowsHostManager uses the existing UAC maintenance entry point. It
+// updates the fixed host service without requiring a running GUI guest.
+func RepairWindowsHostManager(ctx context.Context, profile, kit string, stdout, stderr io.Writer) error {
+	manifest, err := RequiredNativeComponents(kit, Windows11)
+	if err != nil {
+		return err
+	}
+	file, err := os.CreateTemp(profile, "native-host-repair-*.json")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	err = json.NewEncoder(file).Encode(manifest)
+	if err = errors.Join(err, file.Close()); err != nil {
+		return err
+	}
+	command, err := WindowsMaintenanceCommand(ctx, profile, kit, file.Name(), false)
+	if err != nil {
+		return err
+	}
+	command.Args = append(command.Args, "-HostOnly")
+	command.Stdout, command.Stderr = stdout, stderr
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return err
+	}
+	return nil
 }

@@ -281,11 +281,14 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
     private func clipboardCacheCommand(_ action: String, id: String = "", reply: @escaping (Any?, String?) -> Void) {
         guard let data = try? JSONSerialization.data(withJSONObject: ["action": action, "cache_id": id]),
               let request = String(data: data, encoding: .utf8) else { reply(nil,"剪贴板缓存请求无效"); return }
-        fileCommand(["clipboard-files", "--json", "cache", request], reply: reply)
+        fileCommand(["clipboard-files", "--json", "cache", request], replyLimit: 30 << 20, seconds: 10, reply: reply)
     }
     private func watchClipboardCaches() {
         guard clipboardCacheTimer == nil else { return }
         clipboardCacheTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.collectClipboardCaches() }
+        restoreClipboardCaches()
+    }
+    private func restoreClipboardCaches() {
         clipboardCacheCommand("list") { result, _ in
             self.clipboardCacheLoaded = true
             for selection in (result as? [String:Any])?["selections"] as? [[String:Any]] ?? [] {
@@ -319,7 +322,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             if !referenced { releaseClipboardCache(id) }
         }
     }
-    private func fileCommand(_ arguments: [String], reply: @escaping (Any?, String?) -> Void) {
+    private func fileCommand(_ arguments: [String], replyLimit: Int = 65536, seconds: TimeInterval = 1800, reply: @escaping (Any?, String?) -> Void) {
         guard let executable = Bundle.main.url(forResource: "cage", withExtension: nil) else { reply(nil,"无法找到文件传递组件"); return }
         DispatchQueue.global(qos: .userInitiated).async {
             let process = Process(); process.executableURL = executable
@@ -328,10 +331,10 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             do {
                 try process.run()
                 let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 1800, execute: timeout)
+                DispatchQueue.global().asyncAfter(deadline: .now() + seconds, execute: timeout)
                 defer { timeout.cancel() }
                 let data = output.fileHandleForReading.readDataToEndOfFile(); process.waitUntilExit()
-                guard data.count <= 65536, let result = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw CageUpdateError("文件操作未返回有效结果") }
+                guard data.count <= replyLimit, let result = try JSONSerialization.jsonObject(with: data) as? [String:Any] else { throw CageUpdateError("文件操作未返回有效结果") }
                 DispatchQueue.main.async { reply(process.terminationStatus == 0 ? result : nil, process.terminationStatus == 0 ? nil : result["message"] as? String ?? "文件操作失败") }
             } catch { CageDiagnostics.record(error.localizedDescription); DispatchQueue.main.async { reply(nil,error.localizedDescription) } }
         }
@@ -487,7 +490,7 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
             }
             if let id = body["files"] as? String, UUID(uuidString:id) != nil {
                 fileCommand(["clipboard-files","--json","--connection",body["connection_id"] as? String ?? "local","receive",id]) { result, error in
-                    guard error == nil, let paths = (result as? [String:Any])?["paths"] as? [String] else { replyHandler(nil,error ?? "剪贴板文件读取失败"); return }
+                    guard error == nil, let paths = (result as? [String:Any])?["paths"] as? [String] else { self.restoreClipboardCaches(); replyHandler(nil,error ?? "剪贴板文件读取失败"); return }
                     let cache = (result as? [String:Any])?["cache_id"] as? String ?? ""
                     if !cache.isEmpty { self.clipboardCopies[cache] = paths; self.clipboardPending.insert(cache) }
                     write(paths.map { URL(fileURLWithPath:$0) }, cache)
@@ -552,6 +555,9 @@ final class CageApp: NSObject, NSApplicationDelegate, NSWindowDelegate, WKNaviga
                 guard response == .OK, let url = panel.url else { replyHandler(["canceled":true],nil); return }
                 self.browserFile("save",id:id,connection:body["connection_id"] as? String ?? "local",path:url.path,reply:replyHandler)
             }
+        case "desktopFileAction":
+            guard let id = body["id"] as? String, UUID(uuidString:id) != nil else { replyHandler(nil,"文件打开标识无效"); return }
+            fileCommand(["desktop-file", "--json", "--connection", body["connection_id"] as? String ?? "local", id], reply: replyHandler)
         case "browserDownloadAction":
             guard let id = body["id"] as? String, let operation = body["operation"] as? String, ["open","reveal"].contains(operation) else { replyHandler(nil,"下载操作无效"); return }
             browserFile(operation,id:id,connection:body["connection_id"] as? String ?? "local",reply:replyHandler)

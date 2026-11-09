@@ -300,7 +300,7 @@ func (server *windowsHostManagerServer) request(ctx context.Context, request win
 	}
 	// Hold the verified inode across the operation. A same-user caller cannot
 	// replace the VHDX path after validation while the SYSTEM operation runs.
-	lockedDisk, err := windows.CreateFile(name, windows.FILE_READ_ATTRIBUTES, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
+	lockedDisk, err := windows.CreateFile(name, windows.GENERIC_READ, windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE, nil, windows.OPEN_EXISTING, windows.FILE_FLAG_OPEN_REPARSE_POINT, 0)
 	if err != nil {
 		return nil, errors.New("vm_changed")
 	}

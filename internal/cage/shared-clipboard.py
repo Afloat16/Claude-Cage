@@ -36,6 +36,31 @@ class CacheRegistry:
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
             raise ValueError('Clipboard ownership directory is not private')
 
+    def session_path(self, session):
+        if not isinstance(session, str) or not 1 <= len(session) <= 256 or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-' for c in session):
+            raise ValueError('Invalid clipboard session')
+        return self.directory / ('session-' + session)
+
+    def begin_session(self, session):
+        self.ensure_directory()
+        path = self.session_path(session)
+        with path.open('x') as output:
+            os.chmod(path, 0o600)
+            json.dump({'owner': os.getpid()}, output)
+
+    def require_session(self, session):
+        try:
+            value = json.loads(self.session_path(session).read_text())
+            owner = value['owner']
+            if not isinstance(owner, int) or owner < 1:
+                raise ValueError('Invalid clipboard session owner')
+            os.kill(owner, 0)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ValueError('Clipboard session changed') from error
+
+    def end_session(self, session):
+        self.session_path(session).unlink(missing_ok=True)
+
     def records(self):
         if not self.directory.exists():
             return []
@@ -55,7 +80,9 @@ class CacheRegistry:
                     or not isinstance(paths, list) or not 1 <= len(paths) <= 100
                     or any(not isinstance(item, str) or Path(item).parent != Path(directory) or os.path.normpath(item) != item for item in paths)
                     or not isinstance(marker, str) or marker in ('', '.', '..') or Path(marker).name != marker
-                    or not isinstance(record.get('session'), str) or not isinstance(record.get('retired'), bool)):
+                    or not isinstance(record.get('session'), str) or not isinstance(record.get('retired'), bool)
+                    or not isinstance(record.get('pending', False), bool)
+                    or record.get('pending') and (not isinstance(record.get('producer'), int) or record['producer'] < 1)):
                 raise ValueError('Invalid clipboard ownership record')
             records.append(record)
         return records
@@ -70,7 +97,7 @@ class CacheRegistry:
         finally:
             Path(temporary).unlink(missing_ok=True)
 
-    def register(self, paths, session):
+    def register(self, paths, session, pending=False):
         root = Path(paths[0]).parent
         identity = uuid.uuid4().hex
         fd, marker = tempfile.mkstemp(dir=root, prefix='.cage-clipboard-owner-')
@@ -80,8 +107,10 @@ class CacheRegistry:
         lock = self.directory / (identity + '.lock')
         lock.touch(mode=0o600, exist_ok=False)
         try:
-            self.save({'id': identity, 'directory': str(root), 'marker': Path(marker).name,
-                       'paths': paths, 'session': session, 'retired': False})
+            record = {'id': identity, 'directory': str(root), 'marker': Path(marker).name,
+                      'paths': paths, 'session': session, 'retired': False, 'pending': pending, 'producer': os.getpid()}
+            self.save(record)
+            return record
         except BaseException:
             lock.unlink(missing_ok=True)
             raise
@@ -118,7 +147,13 @@ class CacheRegistry:
     def collect(self, selected, session):
         for record in self.records():
             root = Path(record['directory'])
-            if root.exists() and not record['retired'] and (not record['session'] or record['session'] == session):
+            if root.exists() and record.get('pending') and not record['retired']:
+                try:
+                    os.kill(record['producer'], 0)
+                    continue
+                except ProcessLookupError:
+                    pass
+            if root.exists() and not record.get('pending') and not record['retired'] and (not record['session'] or record['session'] == session):
                 continue
             if any(Path(path).is_relative_to(root) or root.is_relative_to(Path(path)) for path in selected):
                 continue
@@ -182,13 +217,25 @@ def export_files(paths, output):
 
 
 def import_files(source, session=''):
+    registry = CacheRegistry()
+    if session:
+        registry.require_session(session)
     root = Path(tempfile.mkdtemp(prefix='cage-clipboard-'))
+    record = None
     try:
+        record = registry.register([str(root / '.pending')], session, pending=True)
         paths = extract_files(source, root)
-        CacheRegistry().register(paths, session)
+        record['paths'] = paths
+        record['pending'] = False
+        registry.save(record)
+        if session:
+            registry.require_session(session)
         return paths
     except BaseException:
         shutil.rmtree(root)
+        if record:
+            (registry.directory / (record['id'] + '.json')).unlink(missing_ok=True)
+            (registry.directory / (record['id'] + '.lock')).unlink(missing_ok=True)
         raise
 
 
@@ -466,6 +513,7 @@ def bridge():
     session = str(uuid.uuid4())
     announced = None
     registry = CacheRegistry()
+    registry.begin_session(session)
     current_files = {}
     next_cache_check = 0
     cleanup_needed = True
@@ -598,6 +646,7 @@ def bridge():
                 next_cache_check = time.monotonic() + 1
     finally:
         try:
+            registry.end_session(session)
             for record in registry.records():
                 if record['session'] == session:
                     registry.retire(record['paths'])

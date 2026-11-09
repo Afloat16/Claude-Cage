@@ -38,7 +38,7 @@ func main() {
 			os.Exit(2)
 		}
 		err = guestos.RunWindowsHostManagerService(*binding)
-	case "prepare":
+	case "prepare", "binding":
 		id, parseErr := uuid.Parse(*vm)
 		if parseErr != nil || id == uuid.Nil || *hostSID == "" || *binding != "" || enrollmentFlags {
 			os.Exit(2)
@@ -46,7 +46,14 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		var record guestos.WindowsHostManagerBinding
-		record, err = guestos.PrepareWindowsHostManagerBinding(ctx, id, *hostSID)
+		if os.Args[1] == "binding" {
+			record, err = guestos.LoadWindowsHostManagerBinding(guestos.WindowsHostManagerBindingPath(id))
+			if err == nil && (record.VMID != id || record.HostSID != *hostSID) {
+				err = fmt.Errorf("binding_mismatch")
+			}
+		} else {
+			record, err = guestos.PrepareWindowsHostManagerBinding(ctx, id, *hostSID)
+		}
 		if err == nil {
 			err = json.NewEncoder(os.Stdout).Encode(record)
 		}

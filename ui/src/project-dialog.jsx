@@ -5,6 +5,7 @@ import { api, native, nativeAvailable } from "./api";
 import { SafetyMessage } from "./safety-message";
 import { Modal } from "./views";
 import { MacOSProjectApproval } from "./macos-project-approval";
+import { ProjectRecovery } from "./project-recovery";
 import { projectName, rememberClientProjectName } from "./workspace-state.mjs";
 import { getClientContext, isRemoteClient } from "./client-context.mjs";
 
@@ -14,11 +15,13 @@ export function ProjectDialog({
   activate = true,
   onClose,
   onOpened,
+  onSettings,
 }) {
   const projects = status.projects || [];
   const [adding, setAdding] = useState(Boolean(initialPath) || projects.length === 0);
   const [path, setPath] = useState(initialPath || status.workspace || projects[0] || "");
   const [error, setError] = useState("");
+  const [recovery, setRecovery] = useState("");
   const [pending, setPending] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [directories, setDirectories] = useState(null);
@@ -91,10 +94,11 @@ export function ProjectDialog({
     else if (nativeAvailable()) void choose();
   };
   const open = async (event) => {
-    event.preventDefault();
+    event?.preventDefault();
     if (busy || sharing || !path.trim()) return;
     setSubmitting(true);
     setError("");
+    setRecovery("");
     try {
       const result = await api("/projects/open", {
         workspace: path.trim(),
@@ -105,11 +109,12 @@ export function ProjectDialog({
       else await onOpened(result.workspace);
     } catch (e) {
       setError(e.message);
+      setRecovery(e.recovery || "");
     } finally {
       setSubmitting(false);
     }
   };
-  if (pending) return <MacOSProjectApproval pending={pending} onClose={onClose} onCheck={async () => {
+  if (pending) return <MacOSProjectApproval pending={pending} onClose={onClose} onSettings={onSettings} onCheck={async () => {
     const result = await api("/projects/open", { workspace: pending.workspace, add: adding, activate });
     if (result.approval) {
       setPending({workspace: result.workspace, grant: result.approval});
@@ -219,6 +224,8 @@ export function ProjectDialog({
         {error && (
           <div className="error-message" role="alert">
             <SafetyMessage message={error} />
+            {recovery && <ProjectRecovery recovery={recovery} disabled={busy} onRetry={() => void open()}
+              onSettings={onSettings} onSessionClosed={() => void open()} />}
           </div>
         )}
       </form>

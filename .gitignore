@@ -81,3 +81,6 @@ __pycache__/
 /packaging/nfpm.yaml
 /ui/vendor/novnc/README.cage.md
 /ui/vendor/novnc/vendor/pako/README.md
+
+# Unfinished local native file-open prototype, excluded from compilation.
+/scripts/guest-os/guest-clipboard-windows/WindowsNativeOpen.cs.local

@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
 import { serveMacOSBrowser, relayMacOSBrowser } from "../macos-browser-service.mjs";
+const unixService = process.platform === "win32" ? test.skip : test;
 
 async function fixture(t, dispatch) {
   const directory = await mkdtemp(path.join(tmpdir(), "cage-bs-"));
@@ -29,7 +30,7 @@ async function fixture(t, dispatch) {
   return { directory, connect, service, stopped: () => stopped };
 }
 
-test("Mac browser connections retain owned state and publish service ownership", async t => {
+unixService("Mac browser connections retain owned state and publish service ownership", async t => {
   let value = "";
   const f = await fixture(t, async request => {
     if (request.text !== undefined) value = request.text;
@@ -47,7 +48,7 @@ test("Mac browser connections retain owned state and publish service ownership",
   await assert.rejects(serveMacOSBrowser({ directory: f.directory, dispatch: async () => ({}), close: async () => {} }), /already running/);
 });
 
-test("Mac browser service drops a disconnected caller's queued mutation", async t => {
+unixService("Mac browser service drops a disconnected caller's queued mutation", async t => {
   let release, began;
   const started = new Promise(resolve => { began = resolve; });
   const wait = new Promise(resolve => { release = resolve; });
@@ -69,7 +70,7 @@ test("Mac browser service drops a disconnected caller's queued mutation", async 
   assert.deepEqual(applied, ["first", "last"]);
 });
 
-test("Mac browser service refuses insecure directories and unrelated socket paths", async t => {
+unixService("Mac browser service refuses insecure directories and unrelated socket paths", async t => {
   const directory = await mkdtemp(path.join(tmpdir(), "cage-bs-"));
   t.after(() => rm(directory, { recursive: true, force: true }));
   await chmod(directory, 0o755);
@@ -79,4 +80,14 @@ test("Mac browser service refuses insecure directories and unrelated socket path
   await assert.rejects(relayMacOSBrowser(directory), /socket/);
   await assert.rejects(serveMacOSBrowser({ directory, dispatch: async () => ({}), close: async () => {} }), /socket/);
   assert.equal((await stat(path.join(directory, "browser.sock"))).isFile(), true);
+});
+
+unixService("Mac browser service releases its endpoint when owned browser shutdown fails", async t => {
+  const directory = await mkdtemp(path.join(tmpdir(), "cage-bs-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const service = await serveMacOSBrowser({ directory, dispatch: async () => ({}), close: async () => { throw new Error("fixture shutdown failure"); } });
+  await assert.rejects(service.close(), /fixture shutdown failure/);
+  await assert.rejects(stat(path.join(directory, "browser.sock")), { code: "ENOENT" });
+  const replacement = await serveMacOSBrowser({ directory, dispatch: async () => ({}), close: async () => {} });
+  await replacement.close();
 });

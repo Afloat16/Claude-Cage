@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sylvinus/agent-vm/internal/clipboardfiles"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
@@ -120,11 +121,13 @@ func TestWindowsGuestClipboardWorkbench(t *testing.T) {
 	if response.StatusCode != 200 {
 		t.Fatal("public file export failed")
 	}
-	paths, err := receiveClipboardArchive(response)
+	cache := clipboardfiles.CacheStore{Directory: filepath.Join(t.TempDir(), "clipboard-receipts")}
+	selection, err := receiveClipboardArchive(response, cache)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(filepath.Dir(paths[0]))
+	defer cache.Release(selection.ID)
+	paths := selection.Paths
 	actual, err := os.ReadFile(filepath.Join(paths[0], "内容.bin"))
 	if err != nil || !bytes.Equal(actual, content) {
 		t.Fatal("public file bytes changed")

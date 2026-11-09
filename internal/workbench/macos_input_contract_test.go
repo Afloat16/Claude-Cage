@@ -82,7 +82,7 @@ func TestMacOSWindowInputRoutesPreserveCompositionSequence(t *testing.T) {
 	for sequence, mode := range []string{"begin", "update", "commit"} {
 		input := macOSWindowRequest{Action: "ime", PID: 42, Window: 7, Geometry: "geometry", Mode: mode,
 			Context: strings.Repeat("a", 32), Session: strings.Repeat("b", 32), Sequence: sequence,
-			Project: "ungranted", PhoneToken: "ungranted", Path: "ungranted", Transfer: "ungranted", KeepAlive: true, Wait: true, Binary: true}
+			Project: "ungranted", PhoneToken: "ungranted", Path: "ungranted", Transfer: "ungranted", IDs: []string{"ungranted"}, KeepAlive: true, Wait: true, Binary: true}
 		if mode == "commit" {
 			input.Text = strings.Repeat("\x01", 8192)
 		}
@@ -102,7 +102,7 @@ func TestMacOSWindowInputRoutesPreserveCompositionSequence(t *testing.T) {
 			if actual.Sequence != sequence || actual.Session != input.Session || actual.Text != input.Text || actual.Geometry != input.Geometry {
 				t.Fatalf("composition changed in transit for %s, sequence %d", mode, actual.Sequence)
 			}
-			if actual.Project != "" || actual.Path != "" || actual.PhoneToken != "" || actual.Transfer != "" || actual.Wait || actual.Binary || actual.KeepAlive != keepAlive {
+			if actual.Project != "" || actual.Path != "" || actual.PhoneToken != "" || actual.Transfer != "" || actual.IDs != nil || actual.Wait || actual.Binary || actual.KeepAlive != keepAlive {
 				t.Fatalf("public input retained privileged fields for %s", mode)
 			}
 		}

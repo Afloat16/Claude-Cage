@@ -97,8 +97,9 @@ class CacheOwnershipTests(unittest.TestCase):
         clipboard.export_files(self.paths, source)
         source.seek(0)
         with patch.object(clipboard.tempfile, 'tempdir', str(self.root)):
-            paths = clipboard.import_files(source, 'import-session')
             registry = clipboard.CacheRegistry()
+            registry.begin_session('import-session')
+            paths = clipboard.import_files(source, 'import-session')
             self.assertEqual(registry.records()[0]['paths'], paths)
             registry.retire(paths)
             registry.collect([], 'import-session')
@@ -112,11 +113,45 @@ class CacheOwnershipTests(unittest.TestCase):
             entry.size = 1
             archive.addfile(entry, io.BytesIO(b'x'))
         source.seek(0)
-        before = set(self.root.iterdir())
         with patch.object(clipboard.tempfile, 'tempdir', str(self.root)):
+            clipboard.CacheRegistry().ensure_directory()
+            before = set(self.root.iterdir())
             with self.assertRaises(ValueError):
-                clipboard.import_files(source, 'import-session')
+                clipboard.import_files(source)
         self.assertEqual(set(self.root.iterdir()), before)
+
+    def test_an_import_finishing_after_disconnect_releases_its_created_directory(self):
+        source = io.BytesIO()
+        clipboard.export_files(self.paths, source)
+        source.seek(0)
+        with patch.object(clipboard.tempfile, 'tempdir', str(self.root)):
+            registry = clipboard.CacheRegistry()
+            registry.begin_session('import-session')
+            original = clipboard.extract_files
+            created = []
+            def disconnected(stream, root):
+                created.append(root)
+                paths = original(stream, root)
+                registry.end_session('import-session')
+                return paths
+            with patch.object(clipboard, 'extract_files', side_effect=disconnected):
+                with self.assertRaises(ValueError):
+                    clipboard.import_files(source, 'import-session')
+            self.assertFalse(created[0].exists())
+            registry.collect([], 'next-session')
+            self.assertEqual(registry.records(), [])
+        self.assertEqual(self.file.read_bytes(), b'complete copied bytes')
+
+    def test_an_incomplete_copy_keeps_a_live_producer_and_reclaims_a_terminated_one(self):
+        record = self.registry.records()[0]
+        record['pending'] = True
+        self.registry.save(record)
+        self.registry.collect([], 'next-session')
+        self.assertTrue(self.cache.exists())
+        record['producer'] = 2147483647
+        self.registry.save(record)
+        self.registry.collect([], 'next-session')
+        self.assertFalse(self.cache.exists())
 
 
 if __name__ == '__main__':

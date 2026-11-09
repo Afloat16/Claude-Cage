@@ -60,6 +60,7 @@ func macOSWindowClientRequest(input macOSWindowRequest, keepAlive bool) macOSWin
 	input.Project, input.Nonce = "", ""
 	input.Phone, input.PhoneToken = nil, ""
 	input.Transfer, input.Path, input.Error = "", "", ""
+	input.IDs = nil
 	input.Wait, input.Binary, input.KeepAlive = false, false, keepAlive
 	if input.Action != "ime" {
 		input.Sequence = 0

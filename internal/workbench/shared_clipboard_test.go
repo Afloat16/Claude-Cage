@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/sylvinus/agent-vm/internal/clipboardfiles"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 )
 
@@ -94,12 +95,14 @@ func TestClipboardReceiveRequiresProducerCompletion(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer response.Body.Close()
-			paths, err := receiveClipboardArchive(response)
+			cache := clipboardfiles.CacheStore{Directory: filepath.Join(t.TempDir(), "records")}
+			selection, err := receiveClipboardArchive(response, cache)
+			paths := selection.Paths
 			if status == "ok" {
 				if err != nil || len(paths) != 1 {
 					t.Fatalf("completed transfer failed: %v", err)
 				}
-				defer os.RemoveAll(filepath.Dir(paths[0]))
+				defer cache.Release(selection.ID)
 				data, _ := os.ReadFile(paths[0])
 				if string(data) != "complete bytes" {
 					t.Fatal("file content changed")
@@ -117,7 +120,8 @@ func TestClipboardReceiveRequiresProducerCompletion(t *testing.T) {
 	}
 	// Losing the connection before all file bytes arrive must not create a file.
 	response := &http.Response{Body: io.NopCloser(bytes.NewReader(archive.Bytes()[:520])), Trailer: http.Header{"X-Cage-Clipboard-Status": {"ok"}}}
-	if paths, err := receiveClipboardArchive(response); err == nil || len(paths) != 0 {
+	cache := clipboardfiles.CacheStore{Directory: filepath.Join(t.TempDir(), "records")}
+	if selection, err := receiveClipboardArchive(response, cache); err == nil || len(selection.Paths) != 0 {
 		t.Fatal("truncated archive succeeded")
 	}
 }

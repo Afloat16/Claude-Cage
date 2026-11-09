@@ -28,10 +28,10 @@ internal static class Backend
         return start;
     }
 
-    public static Task<(int Exit, JsonElement Data)> Json(string[] arguments, CancellationToken cancellation = default, TimeSpan? deadline = null) =>
-        JsonAt(Executable, arguments, cancellation, deadline);
+    public static Task<(int Exit, JsonElement Data)> Json(string[] arguments, CancellationToken cancellation = default, TimeSpan? deadline = null, int outputLimit = 65536) =>
+        JsonAt(Executable, arguments, cancellation, deadline, outputLimit);
 
-    public static async Task<(int Exit, JsonElement Data)> JsonAt(string executable, string[] arguments, CancellationToken cancellation = default, TimeSpan? deadline = null)
+    public static async Task<(int Exit, JsonElement Data)> JsonAt(string executable, string[] arguments, CancellationToken cancellation = default, TimeSpan? deadline = null, int outputLimit = 65536)
     {
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timeout.CancelAfter(deadline ?? TimeSpan.FromMinutes(3));
@@ -41,12 +41,15 @@ internal static class Backend
         try
         {
             var errors = Drain(process.StandardError, timeout.Token);
-            var text = await ReadLimited(process.StandardOutput, 65536, timeout.Token);
+            var text = await ReadLimited(process.StandardOutput, outputLimit, timeout.Token);
             await process.WaitForExitAsync(timeout.Token); await errors;
             try { return (process.ExitCode, JsonDocument.Parse(text).RootElement.Clone()); }
             catch (JsonException) { throw new IOException("Cage 后台未返回有效状态，请查看工作台日志"); }
         }
-        finally { if (!process.HasExited) process.Kill(); }
+        finally
+        {
+            if (!process.HasExited) { process.Kill(); await process.WaitForExitAsync(); }
+        }
     }
 
     public static async Task<string> ReadLimited(StreamReader reader, int limit, CancellationToken token)

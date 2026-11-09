@@ -292,9 +292,12 @@ private final class ClipboardAgent: @unchecked Sendable {
         process.arguments = ["cache", String(data: try JSONSerialization.data(withJSONObject: ["action": action, "cache_id": id]), encoding: .utf8)!]
         process.standardInput = FileHandle.nullDevice; process.standardOutput = output; process.standardError = FileHandle.nullDevice
         try process.run()
+        let timeout = DispatchWorkItem { if process.isRunning { process.terminate() } }
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: timeout)
+        defer { timeout.cancel() }
         let data = try output.fileHandleForReading.readToEnd() ?? Data()
         process.waitUntilExit()
-        guard process.terminationStatus == 0, data.count <= 1 << 20 else { throw ClipboardFailure("clipboard_cache_failed") }
+        guard process.terminationStatus == 0, data.count <= wireLimit else { throw ClipboardFailure("clipboard_cache_failed") }
         return try json(data)
     }
     private func rememberCopy(_ result: [String: Any], clipboard: Bool) {
@@ -365,17 +368,19 @@ private final class ClipboardAgent: @unchecked Sendable {
     }
     private func fileJSON(_ operation: String, values: [String]) throws -> [String] {
         let reader = UUID()
+        var recorded = false
         onGUI { fileReaders[reader] = values }
-        defer { onGUI { fileReaders.removeValue(forKey: reader); collectCopies() } }
+        defer { onGUI { fileReaders.removeValue(forKey: reader); if !recorded { copiesLoaded = false }; collectCopies() } }
         let input = Pipe()
         let (process, output, id, epoch) = try beginTransfer(operation, input: input.fileHandleForReading)
-        defer { try? input.fileHandleForWriting.close(); if process.isRunning { process.terminate() }; onGUI { _ = transfers.removeValue(forKey: id) } }
+        defer { try? input.fileHandleForWriting.close(); if process.isRunning { process.terminate() }; process.waitUntilExit(); onGUI { _ = transfers.removeValue(forKey: id) } }
         try input.fileHandleForWriting.write(contentsOf: JSONSerialization.data(withJSONObject: values)); try input.fileHandleForWriting.close()
         let data = try output.fileHandleForReading.readToEnd() ?? Data()
         guard data.count <= 65536 else { throw ClipboardFailure("invalid_files") }
         let response = try json(data)
         let result = try paths(response["paths"])
         onGUI { record(result, copied: true); rememberCopy(response, clipboard: operation == "copy") }
+        recorded = true
         do { try finishTransfer(process, id: id, epoch: epoch) }
         catch { onGUI { retireCopies(result) }; throw error }
         return result
@@ -530,18 +535,33 @@ private final class ClipboardAgent: @unchecked Sendable {
                 }
                 try writeAll(fd, jsonData(["ok": true]))
             case "import", "upload":
+                let capturedStreams = onGUI { Set(streams.values.map(ObjectIdentifier.init)) }
                 let name = operation == "upload" ? request["name"] as? String : nil
                 if operation == "upload" && (name == nil || name!.utf8.count > 255) { throw ClipboardFailure("invalid_files") }
                 let input = Pipe()
                 let (process, output, id, epoch) = try beginTransfer(operation == "upload" ? "save" : "import", input: input.fileHandleForReading, name: name)
-                defer { try? input.fileHandleForWriting.close(); if process.isRunning { process.terminate() }; onGUI { _ = transfers.removeValue(forKey: id) } }
+                var recorded = false
+                defer {
+                    try? input.fileHandleForWriting.close()
+                    if process.isRunning { process.terminate() }
+                    process.waitUntilExit()
+                    onGUI { transfers.removeValue(forKey: id); if !recorded { copiesLoaded = false }; collectCopies() }
+                }
                 try reader.copy(to: input.fileHandleForWriting); try input.fileHandleForWriting.close()
                 let data = try output.fileHandleForReading.readToEnd() ?? Data()
                 guard data.count <= 65536 else { throw ClipboardFailure("invalid_files") }
                 let response = try json(data)
                 let imported = try paths(response["paths"])
                 onGUI { record(imported, copied: true); rememberCopy(response, clipboard: operation == "import") }
-                do { try finishTransfer(process, id: id, epoch: epoch); try writeAll(fd, jsonData(["paths": imported])) }
+                recorded = true
+                do {
+                    try finishTransfer(process, id: id, epoch: epoch)
+                    try onGUI {
+                        if operation == "import", !capturedStreams.isEmpty,
+                           capturedStreams.isDisjoint(with: streams.values.map(ObjectIdentifier.init)) { throw ClipboardFailure("connection_closed") }
+                    }
+                    try writeAll(fd, jsonData(["paths": imported]))
+                }
                 catch { onGUI { retireCopies(imported) }; throw error }
             case "export":
                 let selected = try paths(request["paths"])

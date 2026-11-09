@@ -132,9 +132,15 @@ func (s *Server) attachWindowsGuest() error {
 }
 
 func (s *Server) attachWindowsGuestContext(parent context.Context) error {
+	if err := s.requireStorageReady(); err != nil {
+		return err
+	}
 	ctx, cancel := context.WithTimeout(parent, 15*time.Second)
 	defer cancel()
 	state, err := s.windowsStatus(ctx)
+	if err == nil {
+		err = s.requireStorageReady()
+	}
 	restartedNetwork := false
 	if err == nil && s.windowsGuest.NetworkPairingFile != "" {
 		// An alive helper alone does not prove its packet connection survived.
@@ -154,6 +160,11 @@ func (s *Server) attachWindowsGuestContext(parent context.Context) error {
 		err = s.ensureProjectShare(s.environmentDir())
 	}
 	s.mu.Lock()
+	if s.storageRecoveryError != "" {
+		err = errors.New(s.storageRecoveryError)
+		s.mu.Unlock()
+		return err
+	}
 	s.windowsState = state
 	newlyReady := !s.ready && err == nil
 	s.ready = err == nil
@@ -200,6 +211,9 @@ func waitWindowsBoot(ctx context.Context, interval time.Duration, attach func(co
 }
 
 func (s *Server) startWindowsGuest() error {
+	if err := s.requireStorageReady(); err != nil {
+		return err
+	}
 	if err := requireHostGit(s.operationContext()); err != nil {
 		return err
 	}

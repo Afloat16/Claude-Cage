@@ -321,6 +321,13 @@ class Portal:
         <arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
       <method name="SaveFile"><arg type="s" direction="in"/><arg type="s" direction="in"/>
         <arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+      </interface><interface name="org.freedesktop.portal.OpenURI">
+      <property name="version" type="u" access="read"/>
+      <method name="OpenDirectory"><arg type="s" direction="in"/><arg type="h" direction="in"/>
+        <arg type="a{sv}" direction="in"/><arg type="o" direction="out"/></method>
+      </interface><interface name="org.freedesktop.FileManager1">
+      <method name="ShowItems"><arg type="as" direction="in"/><arg type="s" direction="in"/></method>
+      <method name="ShowFolders"><arg type="as" direction="in"/><arg type="s" direction="in"/></method>
       </interface><interface name="org.freedesktop.portal.Request">
       <method name="Close"/><signal name="Response"><arg type="u"/><arg type="a{sv}"/></signal>
       </interface></node>'''
@@ -362,6 +369,17 @@ class Portal:
         self.unref(name_reply)
         if code_value != 1:
             raise RuntimeError('已有其他桌面文件选择服务')
+        name_reply = call(self.connection, b'org.freedesktop.DBus', b'/org/freedesktop/DBus', b'org.freedesktop.DBus',
+                         b'RequestName', self.tuple(self.new_string(b'org.freedesktop.FileManager1'), self.new_uint(4)),
+                         None, 0, 5000, None, None)
+        if not name_reply:
+            raise RuntimeError('本机文件打开服务无法注册')
+        code = self.child(name_reply, 0)
+        code_value = bind(self.glib, 'g_variant_get_uint32', u, p)(code)
+        self.unref(code)
+        self.unref(name_reply)
+        if code_value != 1:
+            raise RuntimeError('已有其他文件管理服务')
         self.reply = bind(self.gio, 'g_dbus_method_invocation_return_value', None, p, p)
         self.error = bind(self.gio, 'g_dbus_method_invocation_return_dbus_error', None, p, s, s)
         self.emit = bind(self.gio, 'g_dbus_connection_emit_signal', C.c_int, p, s, s, s, s, p, p)
@@ -378,6 +396,10 @@ class Portal:
         self.vtable = VTable(self.method_callback, self.property_callback, None)
         if not self.register(self.connection, ROOT.encode(), self.interface(self.node, PORTAL.encode()), C.byref(self.vtable), None, None, None):
             raise RuntimeError('桌面文件选择接口无法注册')
+        for object_path, interface in ((ROOT, 'org.freedesktop.portal.OpenURI'),
+                                       ('/org/freedesktop/FileManager1', 'org.freedesktop.FileManager1')):
+            if not self.register(self.connection, object_path.encode(), self.interface(self.node, interface.encode()), C.byref(self.vtable), None, None, None):
+                raise RuntimeError('本机文件打开接口无法注册')
         self.loop = bind(self.glib, 'g_main_loop_new', p, p, C.c_int)(None, False)
 
     def tuple(self, *values):
@@ -401,6 +423,22 @@ class Portal:
 
     def method(self, _connection, sender, path, _interface, method, parameters, invocation, _data):
         try:
+            if method in (b'ShowItems', b'ShowFolders'):
+                uris = self.child(parameters, 0)
+                try:
+                    count = bind(self.glib, 'g_variant_n_children', C.c_size_t, C.c_void_p)(uris)
+                    if count > 32:
+                        raise ValueError('一次最多打开 32 个位置')
+                    for index in range(count):
+                        uri = self.child(uris, index)
+                        try:
+                            self.broker.open_path(self.string(uri, None).decode(), 'reveal' if method == b'ShowItems' else 'open')
+                        finally:
+                            self.unref(uri)
+                finally:
+                    self.unref(uris)
+                self.reply(invocation, self.tuple())
+                return
             if method == b'Close':
                 request = next((r for r in self.broker.requests.values() if r.get('handle') == path.decode() and r.get('sender') == sender.decode()), None)
                 if request:
@@ -424,9 +462,24 @@ class Portal:
                 key = None
                 try:
                     saving = method == b'SaveFile'
-                    key = self.broker.start('save' if saving else 'chooser', self.option(options, 'multiple', False) and not directory,
-                                      directory=directory,
-                                      handle=handle, sender=sender.decode(), title=self.string(title, None).decode())['id']
+                    if method == b'OpenDirectory':
+                        # The handle belongs to the caller's D-Bus message, not
+                        # to this service's file descriptor table.
+                        message = bind(self.gio, 'g_dbus_method_invocation_get_message', C.c_void_p, C.c_void_p)(invocation)
+                        descriptors = bind(self.gio, 'g_dbus_message_get_unix_fd_list', C.c_void_p, C.c_void_p)(message)
+                        index = bind(self.glib, 'g_variant_get_handle', C.c_int, C.c_void_p)(title)
+                        fd = bind(self.gio, 'g_unix_fd_list_get', C.c_int, C.c_void_p, C.c_int, C.c_void_p)(descriptors, index, None) if descriptors else -1
+                        if fd < 0:
+                            raise ValueError('文件位置无法读取')
+                        try:
+                            key = self.broker.open_path(os.readlink('/proc/self/fd/' + str(fd)), 'reveal',
+                                                       handle=handle, sender=sender.decode())['id']
+                        finally:
+                            os.close(fd)
+                    else:
+                        key = self.broker.start('save' if saving else 'chooser', self.option(options, 'multiple', False) and not directory,
+                                          directory=directory,
+                                          handle=handle, sender=sender.decode(), title=self.string(title, None).decode())['id']
                     if saving:
                         if not self.broker.downloads:
                             raise ValueError('下载服务不可用')
@@ -548,6 +601,29 @@ def clipboard(paths, expected_context=None):
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == '--open':
+        import http.client
+        import socket
+        class Connection(http.client.HTTPConnection):
+            def connect(self):
+                self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.sock.settimeout(self.timeout)
+                self.sock.connect('/run/cage-desktop/files.sock')
+        client = Connection('localhost', timeout=5)
+        try:
+            # Electron's folder fallback invokes `xdg-open .` with the target
+            # directory as its cwd. Preserve the caller's cwd across the socket.
+            path = sys.argv[2]
+            if not path.startswith('file:'):
+                path = str(Path(path).resolve(strict=True))
+            client.request('POST', '/open', json.dumps({'path': path}), {'Content-Type': 'application/json'})
+            response = client.getresponse()
+            data = response.read()
+            if response.status != 200:
+                raise ValueError(data.decode())
+        finally:
+            client.close()
+        return
     if len(sys.argv) == 3 and sys.argv[1] == '--save-file':
         # Terminal attachments are independent of the graphical session.
         root = Path.home() / '.local/share/cage/attachments/files'

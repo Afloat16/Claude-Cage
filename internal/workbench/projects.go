@@ -90,6 +90,10 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
+		var failure *projectShareError
+		if errors.As(err, &failure) && failure.Recovery != "" {
+			w.Header().Set("X-Cage-Recovery", failure.Recovery)
+		}
 		requestError(w, err)
 		return
 	}
@@ -132,6 +136,7 @@ type projectShare struct {
 	approval       string
 	approvalTimer  *time.Timer
 	windowsProject *windowsProjectBinding
+	stderr         *fileControlStderr
 }
 
 func (p *projectShare) stop() {
@@ -193,15 +198,18 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	if closing {
 		return errJobsClosed
 	}
-	defer func() {
-		if returned == nil {
-			s.clearProjectError(path)
-		}
-	}()
 	path, err := validateWorkspace(path, s.profile)
 	if err != nil {
 		return err
 	}
+	defer func() {
+		if returned != nil {
+			if _, err := s.projectWorkspace(path); err != nil {
+				return
+			}
+		}
+		s.setProjectError(path, returned)
+	}()
 	if s.windowsGuest != nil {
 		return s.ensureWindowsProjectShare(path)
 	}
@@ -280,18 +288,37 @@ type sharedProjects struct {
 }
 
 type projectShareError struct {
-	Path    string `json:"path"`
-	Message string `json:"message"`
+	Path     string `json:"path"`
+	Message  string `json:"message"`
+	Recovery string `json:"recovery,omitempty"`
 }
 
-func (s *Server) clearProjectError(path string) {
+func (e *projectShareError) Error() string { return e.Message }
+
+func projectShareFailure(path string, err error) projectShareError {
+	value := projectShareError{Path: path, Message: err.Error()}
+	var failure *projectShareError
+	if errors.As(err, &failure) {
+		value.Recovery = failure.Recovery
+	}
+	return value
+}
+
+func (s *Server) setProjectError(path string, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i, failure := range s.projectErrors {
 		if failure.Path == path {
-			s.projectErrors = append(s.projectErrors[:i], s.projectErrors[i+1:]...)
+			if err == nil {
+				s.projectErrors = append(s.projectErrors[:i], s.projectErrors[i+1:]...)
+			} else {
+				s.projectErrors[i] = projectShareFailure(path, err)
+			}
 			return
 		}
+	}
+	if err != nil {
+		s.projectErrors = append(s.projectErrors, projectShareFailure(path, err))
 	}
 }
 
@@ -384,7 +411,7 @@ func (s *Server) restoreProjectShares() {
 	var failures []projectShareError
 	for _, path := range saved.Paths {
 		if err := s.ensureProjectShare(path); err != nil {
-			failures = append(failures, projectShareError{Path: path, Message: err.Error()})
+			failures = append(failures, projectShareFailure(path, err))
 		} else if err := s.rememberSharedProject(path); err != nil {
 			failures = append(failures, projectShareError{Path: path, Message: "项目已连接，但未能保存项目记录：" + err.Error()})
 		}
