@@ -117,6 +117,44 @@ FunctionEnd
   Call WriteInstallDiagnostic
 !macroend
 
+Function un.WriteInstallDiagnostic
+  ${If} $DiagnosticFile != ""
+    Push $2
+    Push $3
+    StrCpy $3 0
+    IfErrors 0 +2
+      StrCpy $3 1
+    ClearErrors
+    FileOpen $2 "$DiagnosticFile" w
+    ${IfNot} ${Errors}
+      FileWrite $2 '{"phase":"$InstallPhase","status":"$InstallOutcome","helperExit":"$HelperExit"}$\r$\n'
+      FileClose $2
+    ${EndIf}
+    ${If} $3 == 1
+      SetErrors
+    ${Else}
+      ClearErrors
+    ${EndIf}
+    Pop $3
+    Pop $2
+  ${EndIf}
+FunctionEnd
+
+!macro UninstallPhase NAME
+  StrCpy $InstallPhase "${NAME}"
+  Call un.WriteInstallDiagnostic
+!macroend
+
+Function un.onUninstFailed
+  StrCpy $InstallOutcome "failed"
+  Call un.WriteInstallDiagnostic
+FunctionEnd
+
+Function un.onUninstSuccess
+  StrCpy $InstallOutcome "success"
+  !insertmacro UninstallPhase "completed"
+FunctionEnd
+
 Function .onInstFailed
   StrCpy $InstallOutcome "failed"
   Call WriteInstallDiagnostic
@@ -250,6 +288,7 @@ FunctionEnd
     ; Exclusive write access also detects images whose VM/controller has no window.
     System::Call 'kernel32::CreateFileW(w "$INSTDIR\${FILE}", i 0x40000000, i 0, p 0, i 3, i 0, p 0) p .r0'
     ${If} $0 == -1
+      StrCpy $HelperExit "application_file_in_use"
       SetErrorLevel 2
       Abort "Quit Cage and stop its environment before installing or uninstalling."
     ${EndIf}
@@ -529,15 +568,27 @@ Section "Cage" Main
 SectionEnd
 
 Function un.onInit
+  StrCpy $InstallOutcome "running"
+  StrCpy $HelperExit ""
+  StrCpy $DiagnosticArguments ""
+  ${GetParameters} $0
+  ${GetOptions} $0 "/DIAGNOSTICS=" $DiagnosticFile
+  ${If} $DiagnosticFile != ""
+    StrCpy $DiagnosticArguments '-Diagnostics "$DiagnosticFile.helper.json"'
+  ${EndIf}
+  !insertmacro UninstallPhase "checking_installation_identity"
   SetShellVarContext current
   SetRegView 64
   FileOpen $0 "$INSTDIR\Cage.install-id" r
   FileRead $0 $1
   FileClose $0
   ${If} $1 != "${APP_ID}"
+    StrCpy $HelperExit "identity_mismatch"
+    Call un.WriteInstallDiagnostic
     SetErrorLevel 2
     Abort "This is not a Cage installation folder."
   ${EndIf}
+  !insertmacro UninstallPhase "checking_stopped_processes"
   !insertmacro CheckStopped "Cage.exe"
   !insertmacro CheckStopped "resources\cage.exe"
   !insertmacro CheckStopped "resources\mihomo.exe"
@@ -545,8 +596,12 @@ Function un.onInit
 FunctionEnd
 
 Section "Uninstall"
+  !insertmacro UninstallPhase "acquiring_installation_lock"
   !insertmacro AcquireInstallationMutex
+  !insertmacro UninstallPhase "checking_pending_transaction"
   ${If} ${FileExists} "$INSTDIR.cage-installation.json"
+    StrCpy $HelperExit "pending_install_transaction"
+    Call un.WriteInstallDiagnostic
     SetErrorLevel 2
     Abort "存在待恢复的安装事务，请先处理 $INSTDIR.cage-installation.json 中记录的目录。"
   ${EndIf}
@@ -555,18 +610,23 @@ Section "Uninstall"
   File /oname=installation-files.ps1 "installation-files.ps1"
   File /oname=verified-file-deletion.cs "verified-file-deletion.cs"
   File /oname=install-files.json "${FILE_MANIFEST}"
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation uninstall -Target "$INSTDIR" -Manifest "$PLUGINSDIR\install-files.json"'
+  !insertmacro UninstallPhase "removing_owned_files"
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation uninstall -Target "$INSTDIR" -Manifest "$PLUGINSDIR\install-files.json" $DiagnosticArguments'
   Pop $0
   Pop $1
+  StrCpy $HelperExit $0
+  Call un.WriteInstallDiagnostic
   DetailPrint "$1"
   ${If} $0 != 0
     SetErrorLevel 2
     Abort "部分程序文件正在使用或无法读取，卸载未完成。个人文件已保留，请关闭占用程序后重试。"
   ${EndIf}
+  !insertmacro UninstallPhase "removing_shortcuts_and_registration"
   Delete "$DESKTOP\Cage.lnk"
   Delete "$SMPROGRAMS\Cage\Cage.lnk"
   Delete "$SMPROGRAMS\Cage\Uninstall Cage.lnk"
   RMDir "$SMPROGRAMS\Cage"
   DeleteRegKey HKCU "${UNINSTALL_KEY}"
+  !insertmacro UninstallPhase "removing_install_directory"
   RMDir "$INSTDIR"
 SectionEnd

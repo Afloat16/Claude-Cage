@@ -101,7 +101,7 @@ function Test-InstallerTransaction {
         try {
             if (!$process.WaitForExit(30000)) { $process.Kill($true); $process.WaitForExit(); throw 'The owned NSIS fixture exceeded 30 seconds.' }
             if ($process.ExitCode -ne 0) {
-                foreach ($path in @($report, "$report.helper.json")) {
+                foreach ($path in @($report, "$report.helper.json", "$report.uninstall.json", "$report.uninstall.json.helper.json")) {
                     if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -le 8192) { Write-Output ('Quick NSIS diagnostic: ' + (Get-Content -LiteralPath $path -Raw)) }
                 }
                 throw "The NSIS fixture returned $($process.ExitCode)."
@@ -117,7 +117,7 @@ function Test-InstallerTransaction {
     } finally {
         if (Test-Path $key) {
             if ((Get-ItemProperty $key).InstallLocation -ne $target) { throw 'NSIS fixture registration changed owner; retained for inspection.' }
-            Run-Fixture (Join-Path $target 'Uninstall.exe') @('/S')
+            Run-Fixture (Join-Path $target 'Uninstall.exe') @('/S',('/DIAGNOSTICS="' + $report + '.uninstall.json"'))
             # NSIS can return from its bootstrapper while the TEMP worker is
             # still running. Its helper removes the target before NSIS clears
             # registration and shortcuts, so target disappearance is not done.
@@ -126,6 +126,11 @@ function Test-InstallerTransaction {
         }
     }
     $remaining = @{target = (Test-Path -LiteralPath $target); registration = (Test-Path $key); desktopShortcut = (Test-Path -LiteralPath $desktop); startMenu = (Test-Path -LiteralPath $menu)}
+    if ($remaining.Values -contains $true) {
+        foreach ($path in @("$report.uninstall.json", "$report.uninstall.json.helper.json")) {
+            if ((Test-Path -LiteralPath $path) -and (Get-Item -LiteralPath $path).Length -le 8192) { Write-Output ('Quick NSIS uninstall diagnostic: ' + (Get-Content -LiteralPath $path -Raw)) }
+        }
+    }
     Check (!($remaining.Values -contains $true)) ('NSIS fixture did not finish uninstalling owned artifacts: ' + ($remaining | ConvertTo-Json -Compress))
     Write-Output 'PASS: production NSIS silently installed/uninstalled its text-only fixture through PowerShell 5.1 transactions; no application or VM was started.'
 }

@@ -316,11 +316,13 @@ if ($Operation -eq 'prepare') {
     Complete-Transfer
 } else {
     # The payload list comes from this uninstaller's embedded build manifest.
+    $diagnosticStep = 'reading_uninstall_manifest'
     $owned = Read-FileManifest $Manifest
     if (!$owned.Count) { throw '卸载文件清单无效，原文件已保留。' }
     $installed = Read-FileManifest (Join-Path $Target $manifestName)
     if ($installed.ContainsKey('Uninstall.exe')) { $owned['Uninstall.exe'] = $installed['Uninstall.exe'] }
     $actual = @(Read-Tree $Target @($owned.Keys) | Where-Object { !($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object { Relative-Path $Target $_.FullName })
+    $diagnosticStep = 'deleting_verified_program_files'
     foreach ($relative in $owned.Keys) {
         if ($relative -ne $identityName -and $relative -in $actual) { Remove-MatchingFile $Target $relative $owned[$relative] }
     }
@@ -334,6 +336,7 @@ if ($Operation -eq 'prepare') {
         $directory = Split-Path $relative -Parent
         while ($directory) { $directories += $directory.Replace('\', '/'); $directory = Split-Path $directory -Parent }
     }
+    $diagnosticStep = 'removing_program_directories'
     Remove-EmptyDirectories $Target $directories
     # A retained identity lets a later installation reuse this data-bearing folder.
     $remaining = @(Get-ChildItem -LiteralPath $Target -Force | Where-Object Name -ne $identityName)
