@@ -610,6 +610,9 @@ Section "Uninstall"
   File /oname=installation-files.ps1 "installation-files.ps1"
   File /oname=verified-file-deletion.cs "verified-file-deletion.cs"
   File /oname=install-files.json "${FILE_MANIFEST}"
+  ; PowerShell 5.1 Add-Type must not resolve NSIS's native System.dll as a
+  ; managed compiler reference from the plugin working directory.
+  SetOutPath "$TEMP"
   !insertmacro UninstallPhase "removing_owned_files"
   nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\installation-files.ps1" -Operation uninstall -Target "$INSTDIR" -Manifest "$PLUGINSDIR\install-files.json" $DiagnosticArguments'
   Pop $0
