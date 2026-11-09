@@ -51,11 +51,16 @@ test('includes Linux deb only with its verified corresponding source and merges 
 
 test('combines both platforms, deduplicates identical sources and keeps website checksum lookup valid', async t => {
   const f = await fixture(t);
-  const extraSource = dependencies.qemuSource.file;
+  const extraSource = `${dependencies.qemuSource.file}.gz`;
+  const packagedSources = {
+    [extraSource]: 'QEMU repository source fixture',
+    [`qemu-keycodemapdb-${dependencies.qemuKeycodemap.version}-source.tar.gz`]: 'keymap source fixture',
+    [`qemu-${dependencies.qemu.version}-cage-changes-source.tar.gz`]: 'Cage QEMU patch fixture',
+  };
   await platform(f.mac, macAssets());
-  await platform(f.windows, { ...windowsAssets(), [extraSource]: 'patched QEMU source fixture' });
+  await platform(f.windows, { ...windowsAssets(), ...packagedSources });
   const result = await prepareReleaseAssets({ inputs: [f.mac, f.windows], output: f.output });
-  const expected = new Map(Object.entries({ ...macAssets(), ...windowsAssets(), [extraSource]: 'patched QEMU source fixture' }));
+  const expected = new Map(Object.entries({ ...macAssets(), ...windowsAssets(), ...packagedSources }));
   assert.deepEqual(new Set(await readdir(f.output)), new Set([...expected.keys(), 'SHA256SUMS']));
   assert.equal(result.version, version);
   const sums = await readFile(join(f.output, 'SHA256SUMS'), 'utf8');

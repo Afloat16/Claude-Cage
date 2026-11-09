@@ -13,6 +13,8 @@ const repoURL = `https://github.com/${repository}`;
 const apiURL = `https://api.github.com/repos/${repository}/releases`;
 const sourceArchive = name => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(name) ||
   /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
+  /^qemu-keycodemapdb-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
+  /^qemu-\d+\.\d+\.\d+-cage-changes-source\.tar\.gz$/.test(name) ||
   /^qemu-\d+\.\d+\.\d+-windows-full-source\.(?:tar\.)?(?:gz|xz|bz2|zst|zip|7z|tar)$/.test(name);
 
 export async function request(url, timeout = 180_000, { fetchImpl = fetch } = {}) {

@@ -33,7 +33,9 @@ async function releaseNames() {
     macSource: `mihomo-${macCore}-source.tar.gz`,
     windowsSource: `mihomo-${dependencies.mihomo.version}-source.tar.gz`,
     qemuPrefix: `qemu-${dependencies.qemu.version}-windows-full-source.`,
-    qemuSource: dependencies.qemuSource?.file,
+    qemuSource: `${dependencies.qemuSource.file}.gz`,
+    qemuKeymap: `qemu-keycodemapdb-${dependencies.qemuKeycodemap.version}-source.tar.gz`,
+    qemuChanges: `qemu-${dependencies.qemu.version}-cage-changes-source.tar.gz`,
   };
 }
 
@@ -119,7 +121,7 @@ export async function prepareReleaseAssets({ inputs, output }) {
     }
     for (const [name, digest] of entries) {
       const installer = name === names.mac || name === names.windows || name === names.linux;
-      if (!installer && name !== names.macSource && name !== names.windowsSource && name !== names.linuxSource && name !== names.qemuSource && !isQemuArchive(name, names)) {
+      if (!installer && ![names.macSource, names.windowsSource, names.linuxSource, names.qemuSource, names.qemuKeymap, names.qemuChanges].includes(name) && !isQemuArchive(name, names)) {
         throw new Error(`Unsupported asset or version in SHA256SUMS: ${name}`);
       }
       const existing = all.get(name);
