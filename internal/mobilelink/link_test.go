@@ -405,6 +405,13 @@ func TestSavedNativeClientUsesNewRoomsAndChecksHostIdentity(t *testing.T) {
 	for _, expectedPin := range []string{other.Pin, f.identity.Pin, f.identity.Pin} {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		inv, err := mobilelink.CreateDiscoverableRoom(ctx, f.base, strings.Repeat("t", 64), lookup)
+		// The host connection can finish before the relay retires its room.
+		// Saved hosts back off on this transient conflict too; the occupied-room
+		// assertion below must still reject displacement without retrying.
+		for previous != "" && err != nil && mobilelink.Retryable(err) && ctx.Err() == nil {
+			time.Sleep(10 * time.Millisecond)
+			inv, err = mobilelink.CreateDiscoverableRoom(ctx, f.base, strings.Repeat("t", 64), lookup)
+		}
 		if err != nil {
 			cancel()
 			t.Fatal(err)
