@@ -7,7 +7,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   assembleRelease, expectedFiles, prepareRelease, publishRelease, releaseFiles,
-  verifyCandidate, versionPaths, workflowContext,
+  verifyCandidate, versionPaths, workflowContext, releaseNotes,
 } from './release-control.mjs';
 
 const repository = 'Lee-xeo/Claude-Cage';
@@ -192,6 +192,42 @@ test('prepare leaves the working version unchanged and reuses the same run candi
   assert.equal(second.commitSha, first.commitSha);
   assert.equal(second.version, first.version);
   assert.equal(f.state.calls.filter(call => call.method === 'POST' && call.path.endsWith('/git/commits')).length, 1);
+});
+
+test('exact requested version is retained on preparation and resume, with reserved versions rejected', async t => {
+  const f = await repositoryFixture(t);
+  f.context.requestedVersion = '99.1.0-rc.1';
+  const first = await f.candidate();
+  assert.equal(first.version, '99.1.0-rc.1');
+  assert.equal((await f.candidate()).commitSha, first.commitSha);
+  f.context.requestedVersion = '99.1.0-rc.2';
+  await assert.rejects(f.candidate(), /another requested version/);
+  const reserved = await repositoryFixture(t);
+  reserved.context.requestedVersion = '99.1.0-rc.1';
+  reserved.state.otherReleases.push({ tag_name: 'v99.1.0-rc.1', draft: true });
+  await assert.rejects(reserved.candidate(), /reserved/);
+  assert.equal(reserved.state.calls.some(call => call.method !== 'GET'), false);
+});
+
+test('custom release notes come from the immutable source and are published with RC status', async t => {
+  const f = await repositoryFixture(t);
+  f.context.notesPath = 'docs/releases/v99.1.0-rc.1.md';
+  await mkdir(join(f.root, 'docs/releases'), { recursive: true });
+  await writeFile(join(f.root, f.context.notesPath), '# 本轮更新\n\n功能与已验证范围。\n');
+  f.git(['add', f.context.notesPath]);
+  f.git(['commit', '--quiet', '-m', 'Public release notes']);
+  f.context.sourceSha = f.state.main = f.git(['rev-parse', 'HEAD']);
+  f.context.requestedVersion = '99.1.0-rc.1';
+  const candidate = await f.candidate();
+  await writeFile(join(f.root, f.context.notesPath), 'Concurrent local draft, must not be published.');
+  const files = await uploadFiles(f.root, candidate.version);
+  const release = await publish(f, candidate, files);
+  assert.equal(release.prerelease, true);
+  assert.ok(release.body.endsWith('# 本轮更新\n\n功能与已验证范围。'));
+  assert.equal(f.state.calls.some(call => call.path.endsWith('/generate-notes')), false);
+  for (const notesPath of ['../private.md', 'docs/../private.md', '/docs/notes.md', 'docs/notes.txt']) {
+    await assert.rejects(releaseNotes(f.root, { ...candidate, notesPath }), /committed Markdown/);
+  }
 });
 
 test('main movement prevents candidate creation and later publication', async t => {

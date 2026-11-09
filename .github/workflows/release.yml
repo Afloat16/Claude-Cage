@@ -8,6 +8,14 @@ on:
         default: prerelease
         type: choice
         options: [prerelease, patch, minor, major]
+      version:
+        description: Exact requested version (for example 0.1.7-rc.1); overrides bump
+        required: false
+        type: string
+      notes_path:
+        description: Committed Markdown release notes under docs/ (optional)
+        required: false
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -47,8 +55,6 @@ jobs:
           CAGE_ESIGNER_TOTP_SECRET: ${{ secrets.CAGE_ESIGNER_TOTP_SECRET }}
           CAGE_WINDOWS_PFX_BASE64: ${{ secrets.CAGE_WINDOWS_PFX_BASE64 }}
           CAGE_WINDOWS_PFX_PASSWORD: ${{ secrets.CAGE_WINDOWS_PFX_PASSWORD }}
-          CAGE_WINDOWS_QEMU_SOURCE_URL: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_URL }}
-          CAGE_WINDOWS_QEMU_SOURCE_SHA256: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_SHA256 }}
         run: node scripts/check-release-readiness.mjs
       - name: Validate versions and release behavior
         run: |

@@ -105,7 +105,17 @@ try {
     Expand-BuildArchive $qemuArchive $qemuTarget $sevenZip
     $qemuBuilt = Join-Path $DependencyCache 'qemu-cage'
     & (Join-Path $PSScriptRoot 'build-qemu-windows.ps1') -DependencyCache $DependencyCache -OutputDirectory $qemuBuilt
-    Copy-Item (Join-Path $qemuBuilt '*') $qemuTarget -Force
+    $runtimeManifest = Get-Content (Join-Path $qemuBuilt 'cage-build.json') -Raw | ConvertFrom-Json
+    $ownedRuntime = @($runtimeManifest.files | ForEach-Object { $_.name }) + @('cage-build.json')
+    foreach ($name in $ownedRuntime) {
+        if ([IO.Path]::GetFileName($name) -ne $name) { throw 'Invalid QEMU runtime manifest path.' }
+        Copy-Item -LiteralPath (Join-Path $qemuBuilt $name) -Destination $qemuTarget -Force
+    }
+    # The two executables above are linked against the built dependency closure.
+    # Vendor DLLs/executables outside that closure have no runtime consumer.
+    Get-ChildItem -LiteralPath $qemuTarget -File | Where-Object {
+        $_.Extension -in @('.exe', '.dll') -and $_.Name -notin $ownedRuntime
+    } | Remove-Item -Force
     # Ship the x64 VM only, with its original firmware, DLLs and notices.
     Get-ChildItem -LiteralPath $qemuTarget -Filter 'qemu-system-*.exe' | Where-Object { $_.Name -ne 'qemu-system-x86_64.exe' } | Remove-Item -Force
     Get-ChildItem -LiteralPath (Join-Path $qemuTarget 'share') -File |

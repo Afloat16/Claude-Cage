@@ -145,8 +145,6 @@ jobs:
           CAGE_ESIGNER_TOTP_SECRET: ${{ secrets.CAGE_ESIGNER_TOTP_SECRET }}
           CAGE_WINDOWS_PFX_BASE64: ${{ secrets.CAGE_WINDOWS_PFX_BASE64 }}
           CAGE_WINDOWS_PFX_PASSWORD: ${{ secrets.CAGE_WINDOWS_PFX_PASSWORD }}
-          CAGE_WINDOWS_QEMU_SOURCE_URL: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_URL }}
-          CAGE_WINDOWS_QEMU_SOURCE_SHA256: ${{ vars.CAGE_WINDOWS_QEMU_SOURCE_SHA256 }}
         run: ./scripts/ci-windows-build.ps1 -Release
       - uses: actions/upload-artifact@v4
         with:

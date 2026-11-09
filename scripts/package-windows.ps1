@@ -37,7 +37,7 @@ if ($signed) {
     if ($env:CAGE_WINDOWS_CERT_SHA1 -notmatch '^[0-9A-Fa-f]{40}$') { throw 'Build and verify the signed app before packaging.' }
     if (Test-Path -LiteralPath (Join-Path $AppDirectory 'DEVELOPMENT-BUILD.txt')) { throw 'Rebuild with build-windows.ps1 -Sign or -Release before packaging a signed installer.' }
     if ($Release -and (-not $QemuSourceArchive -or -not (Test-Path -LiteralPath $QemuSourceArchive -PathType Leaf))) {
-        throw 'Release packaging requires -QemuSourceArchive containing the corresponding patched QEMU and bundled library sources. A generic upstream QEMU tarball is not the source for the Weilnetz build.'
+        throw 'Release packaging requires -QemuSourceArchive containing the exact QEMU, firmware and linked library sources. Generate it from the built runtime with bundle-qemu-sources.sh.'
     }
     if ($Release) { Invoke-BuildTool $sevenZip @('t', '-bso0', '-bsp0', $QemuSourceArchive) }
     $signTool = Get-SigningTool
@@ -100,7 +100,8 @@ if (Test-Path (Join-Path $qemuRuntime 'cage-build.json')) {
     $releaseFiles += @($keymapSource, $changesSource)
 }
 if ($Release) {
-    $qemuSourceTarget = Join-Path $OutputDirectory ('qemu-' + $dependencies.qemu.version + '-windows-full-source' + [IO.Path]::GetExtension($QemuSourceArchive))
+    $sourceExtension = if ($QemuSourceArchive.EndsWith('.tar.gz', [StringComparison]::OrdinalIgnoreCase)) { '.tar.gz' } else { [IO.Path]::GetExtension($QemuSourceArchive) }
+    $qemuSourceTarget = Join-Path $OutputDirectory ('qemu-' + $dependencies.qemu.version + '-windows-full-source' + $sourceExtension)
     Copy-Item -LiteralPath $QemuSourceArchive -Destination $qemuSourceTarget -Force
     $releaseFiles += $qemuSourceTarget
 }

@@ -24,14 +24,24 @@ strip "$output_dir"/*.exe
 # Copy the DLL dependency closure from this toolchain, using the same versions
 # that were linked into the executables. Windows system DLLs remain system-owned.
 pending=("$output_dir"/*.exe)
+packages=()
 while ((${#pending[@]})); do
     binary=${pending[0]}
     pending=("${pending[@]:1}")
     while read -r dll; do
         if [[ -f "$MINGW_PREFIX/bin/$dll" && ! -f "$output_dir/$dll" ]]; then
             cp "$MINGW_PREFIX/bin/$dll" "$output_dir/$dll"
+            packages+=("$(pacman -Qqo "$MINGW_PREFIX/bin/$dll")")
             pending+=("$output_dir/$dll")
         fi
     done < <(objdump -p "$binary" | awk '/DLL Name:/ {print $3}')
 done
 pacman -Q > "$output_dir/build-packages.txt"
+# Keep the exact source package identity with cached binaries. A later runner
+# must not collect the source of whichever library version happens to be installed.
+for package in "${packages[@]}"; do
+    read -r name version < <(pacman -Q "$package")
+    base=$(awk '/^%BASE%$/ {getline; print; exit}' "/var/lib/pacman/local/$name-$version/desc")
+    [[ -n "$base" ]] || { echo "Source package identity missing for $package" >&2; exit 1; }
+    printf '%s %s\n' "$base" "$version"
+done | sort -u > "$output_dir/build-source-packages.txt"

@@ -1,0 +1,46 @@
+name: Build signed release platforms for local macOS assembly
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Exact versioned source commit SHA (same as the locally notarized macOS build)
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: cage-local-assembly-platforms
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require an immutable build source
+        env:
+          BUILD_REF: ${{ inputs.ref }}
+        run: '[[ "$BUILD_REF" =~ ^[0-9a-f]{40}$ ]]'
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: node scripts/check-version.mjs
+  windows:
+    needs: validate
+    if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/windows-build.yml
+    with:
+      ref: ${{ inputs.ref }}
+      release: true
+      artifact_name: release-windows
+  linux:
+    needs: validate
+    if: github.repository == 'Lee-xeo/Claude-Cage' && github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/linux-build.yml
+    with:
+      ref: ${{ inputs.ref }}
+      release: true
+      artifact_name: release-linux
