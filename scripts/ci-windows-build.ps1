@@ -13,6 +13,8 @@ $certificates = @()
 $qemuSource = $null
 $savedPath = $env:PATH
 $savedCertificate = $env:CAGE_WINDOWS_CERT_SHA1
+$savedStorageVolume = $env:CAGE_TEST_STORAGE_VOLUME
+$storageTestRoot = $null
 try {
     $actual = (& git rev-parse HEAD).Trim()
     if ($LASTEXITCODE -ne 0 -or $actual -ne $env:CAGE_BUILD_REF) { throw 'Checkout differs from the requested commit.' }
@@ -66,13 +68,21 @@ try {
             '-GuestToolsDirectory', "$repository/_output/windows-amd64/app/resources/guest-os")
     }
     Invoke-BuildTool 'dotnet' @('run', '--project', 'desktop/windows.tests/Cage.Windows.Tests.csproj')
+    # RUNNER_TEMP and the checkout share D: on hosted runners. Use a
+    # unique system-drive directory, outside user data, for the other side.
+    if (-not $env:CAGE_TEST_STORAGE_VOLUME) {
+        $systemDrive = [IO.Path]::GetPathRoot($env:SystemRoot)
+        $testDrive = [IO.Path]::GetPathRoot((Get-WindowsWorkbenchTestBase))
+        if ($systemDrive -ne $testDrive) {
+            $storageTestRoot = (New-Item -ItemType Directory -Path (Join-Path $systemDrive ('cage-storage-volume-' + [guid]::NewGuid().ToString('N')))).FullName
+            $env:CAGE_TEST_STORAGE_VOLUME = $storageTestRoot
+            Write-Host "Storage migration tests use separate drives: $testDrive -> $systemDrive"
+        } else {
+            Write-Warning 'No second test volume is configured; the cross-volume storage test will be skipped.'
+        }
+    }
     Invoke-InIsolatedTestTemp {
         Invoke-BuildTool 'go' @('test', './internal/workbench', './internal/appupdate', './internal/host', './internal/managedproxy', './internal/env', './internal/paths', './internal/mounts')
-        # Exercise a second volume when the runner keeps its workspace and temp on different drives.
-        if ($env:GITHUB_WORKSPACE -and -not $env:CAGE_TEST_STORAGE_VOLUME -and
-            [IO.Path]::GetPathRoot($env:GITHUB_WORKSPACE) -ne [IO.Path]::GetPathRoot([IO.Path]::GetTempPath())) {
-            $env:CAGE_TEST_STORAGE_VOLUME = $env:GITHUB_WORKSPACE
-        }
         Invoke-BuildTool 'go' @('test', './internal/cage', '-run', 'Test(Storage|Gate|ProxyRevision|ConfigChange|JobStop|CONNECT|SOCKS|DNS|RejectHostLAN|Credentials|ProxyHostname|SafetyReport|Renew)')
         Invoke-BuildTool 'go' @('test', './internal/vm', '-run', 'Test(NetworkConfined|WindowsQEMUIdentity)')
         Invoke-BuildTool 'go' @('test', 'github.com/lima-vm/lima/v2/pkg/driver/qemu', '-run', 'Test(WindowsFirmwareArgument|WindowsPackagedFirmwareBeatsOldUserCopy|WHPXQEMU64Features|WindowsCPUResolution)$')
@@ -101,6 +111,8 @@ try {
     # Verified QEMU sources remain in the build cache; packaging copies them separately.
     $env:PATH = $savedPath
     $env:CAGE_WINDOWS_CERT_SHA1 = $savedCertificate
+    $env:CAGE_TEST_STORAGE_VOLUME = $savedStorageVolume
+    if ($storageTestRoot) { Remove-Item -LiteralPath $storageTestRoot -Recurse -Force -ErrorAction SilentlyContinue }
     Remove-Item Env:CAGE_ESIGNER_PASSWORD, Env:CAGE_ESIGNER_TOTP_SECRET -ErrorAction SilentlyContinue
     Pop-Location
 }
