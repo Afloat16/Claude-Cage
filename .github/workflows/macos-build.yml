@@ -53,7 +53,13 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - uses: astral-sh/setup-uv@v10.3.3
       - name: Application version consistency
-        run: node scripts/check-version.mjs
+        run: |
+          node scripts/check-version.mjs
+          node --test scripts/macos-sshfs-sources.test.mjs
+      - name: Install SSHFS build dependencies
+        run: |
+          brew install glib gettext pcre2
+          brew upgrade glib gettext pcre2
       - name: Build the macOS application without release credentials
         env:
           CAGE_SIGNING_IDENTITY: '-'
@@ -73,6 +79,8 @@ jobs:
           go vet ./cmd/cage ./internal/cage ./internal/managedproxy ./internal/workbench
       - name: Native application updater
         run: bash scripts/test-app-updates.sh
+      - name: External Agent CLI with an isolated profile
+        run: node scripts/agent-cli-smoke.mjs "$PWD/_output/Cage.app/Contents/Resources/cage"
       - name: Native account credential status
         run: bash scripts/test-account-device.sh
       - name: Patched networking and shared files
@@ -159,7 +167,7 @@ jobs:
           release="$PWD/_output/releases/$version"
           node scripts/release-version.mjs metadata macos "$release/build-metadata.json"
           mkdir -p _output/ci-macos-release
-          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
+          cp "$release/Cage-$version-macos-arm64.dmg" "$release/mihomo-$source_version-source.tar.gz" "$release/cage-macos-guest-$version-source.tar.gz" "$release/SHA256SUMS" "$release/build-metadata.json" _output/ci-macos-release/
           (cd _output/ci-macos-release && shasum -a 256 --check SHA256SUMS)
       - uses: actions/upload-artifact@v4
         with:

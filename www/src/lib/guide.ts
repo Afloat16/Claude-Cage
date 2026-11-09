@@ -11,7 +11,8 @@ export const guideGroups = [...new Set(guidePages.map(page => page.group))];
 export const guideURL = (slug: string) => `${import.meta.env.BASE_URL}docs/${slug === 'index' ? '' : `${slug}/`}`;
 export function guideHTML(html: string) {
   // The same Markdown links work in the repository and under a custom website base.
-  return html.replaceAll('href="https://lee-xeo.github.io/Claude-Cage/', `href="${import.meta.env.BASE_URL}`).replace(/href="([^"#]+)\.md(#[^"]*)?"/g, (original, name: string, hash = '') => {
+  return html.replace(/(src|href)="\.\.\/\.\.\/www\/public\/([^\"]+)"/g, (_, attribute: string, asset: string) => `${attribute}="${import.meta.env.BASE_URL}${asset}"`)
+    .replaceAll('href="https://lee-xeo.github.io/Claude-Cage/', `href="${import.meta.env.BASE_URL}`).replace(/href="([^"#]+)\.md(#[^"]*)?"/g, (original, name: string, hash = '') => {
     const page = guidePages.find(page => page.slug === name.replace(/^\.\//, ''));
     return page ? `href="${guideURL(page.slug)}${hash}"` : original;
   });

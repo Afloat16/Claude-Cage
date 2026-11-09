@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -18,7 +19,10 @@ import (
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
+	"github.com/sylvinus/agent-vm/internal/diagnostics"
+	"github.com/sylvinus/agent-vm/internal/exitpolicy"
 	"github.com/sylvinus/agent-vm/internal/paths"
+	"github.com/sylvinus/agent-vm/internal/usererror"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -26,20 +30,36 @@ import (
 var guestSafetyProbe string
 
 type safetyState struct {
-	pauseVersion uint64
-	monitorError string
-	Gate         *cage.GateStatus   `json:"gate,omitempty"`
-	Report       *cage.SafetyReport `json:"report,omitempty"`
-	Error        string             `json:"error,omitempty"`
-	ExitIP       string             `json:"exit_ip,omitempty"`
-	VerifiedAt   time.Time          `json:"verified_at,omitempty"`
+	MacOSExitCandidate *macOSExitCandidate `json:"macos_exit_candidate,omitempty"`
+	pauseVersion       uint64
+	monitorError       string
+	Gate               *cage.GateStatus   `json:"gate,omitempty"`
+	Report             *cage.SafetyReport `json:"report,omitempty"`
+	Error              string             `json:"error,omitempty"`
+	ExitIP             string             `json:"exit_ip,omitempty"`
+	VerifiedAt         time.Time          `json:"verified_at,omitempty"`
 }
 
 type networkObservation struct {
 	Status int    `json:"status"`
 	IP     string `json:"ip"`
 }
+type macIPv6Probe struct {
+	Name          string `json:"name,omitempty"`
+	Result        string `json:"result"`
+	GlobalSources int    `json:"globalSources"`
+	BoundIndex    int    `json:"boundIndex"`
+	RouteVerified bool   `json:"routeVerified"`
+}
 type guestObservation struct {
+	IPv6UnscopedAbsent bool           `json:"ipv6_unscoped_absent,omitempty"`
+	IPv6Unbound        macIPv6Probe   `json:"ipv6_unbound,omitempty"`
+	IPv6Scoped         []macIPv6Probe `json:"ipv6_scoped,omitempty"`
+	IPv6LinkSent       bool           `json:"ipv6_link_sent,omitempty"`
+	IPv6LinkInterface  string         `json:"ipv6_link_interface,omitempty"`
+
+	ProcessLocale       string             `json:"process_locale,omitempty"`
+	SystemLocale        string             `json:"system_locale,omitempty"`
 	TZ                  string             `json:"tz"`
 	Lang                string             `json:"lang"`
 	LCAll               string             `json:"lc_all"`
@@ -82,6 +102,7 @@ func (s *Server) publishGate(state cage.GateStatus) {
 		if old == nil || old.RunID != state.RunID || old.Epoch != state.Epoch {
 			s.safety.Error = ""
 			s.safety.monitorError = ""
+			s.exitProbeError = ""
 		}
 	}
 }
@@ -89,10 +110,87 @@ func (s *Server) publishGate(state cage.GateStatus) {
 // A gate grant resolves a monitoring failure. Independent diagnostics, such
 // as a location lookup failure, are cleared by the operation that owns them.
 func (s *Server) currentNetworkErrorLocked() string {
+	if s.networkIntentError != "" {
+		return s.networkIntentError
+	}
 	if s.safety.monitorError != "" {
 		return s.safety.monitorError
 	}
-	return s.networkError
+	if s.exitProbeError != "" {
+		return s.exitProbeError
+	}
+	return s.locationError
+}
+
+// A probe can confirm the IP and still fail to resolve its location. Only
+// a successful location lookup resolves that second diagnostic.
+func (s *Server) recordLocationProbeLocked(loc Location, err error) {
+	if err != nil && loc.IP == "" {
+		s.exitProbeError = err.Error()
+		return
+	}
+	s.exitProbeError = ""
+	if err != nil {
+		s.locationError = err.Error()
+		return
+	}
+	s.location = &loc
+	if loc.CountryCode != "" {
+		s.locationError = ""
+	}
+}
+
+// Location probes outside the periodic monitor must revoke unsafe observations
+// too. Bind the result to the applied proxy generation so a late response from
+// a previous node cannot revoke the new node's authorization.
+func (s *Server) finishLocationProbe(cfg cage.Config, loc Location, probeErr error) error {
+	s.safetyOp.Lock()
+	defer s.safetyOp.Unlock()
+	current, err := loadConfig(s.configPath)
+	if err != nil {
+		return err
+	}
+	if current.ProxyURL != cfg.ProxyURL || current.ProxyRevision != cfg.ProxyRevision || current.DNSURL != cfg.DNSURL {
+		return nil
+	}
+	observed := loc.exitLocation()
+	state, reason := exitpolicy.CheckExitCountry(loc.IP, &observed)
+	s.mu.Lock()
+	// A fresh lookup supersedes any cached result for this address, including
+	// an older non-mainland result followed by a rejection or lookup failure.
+	delete(s.locations, loc.IP)
+	if probeErr != nil && s.location != nil && s.location.IP == loc.IP {
+		s.location = nil
+	}
+	s.recordLocationProbeLocked(loc, probeErr)
+	s.safety.ExitIP = loc.IP
+	unsafe := probeErr != nil || state != cage.CheckPassed
+	if unsafe {
+		if s.checkCancel != nil {
+			s.checkCancel()
+		}
+		if s.monitorCancel != nil {
+			s.monitorCancel()
+		}
+		s.safety.Error, s.safety.monitorError = reason, reason
+	}
+	s.mu.Unlock()
+	if !unsafe || !s.vmRunning() {
+		return nil
+	}
+	client, err := s.gateClient()
+	if err != nil {
+		return err
+	}
+	closed, err := client.Close(context.Background(), reason)
+	if err != nil {
+		return err
+	}
+	s.publishGate(closed)
+	if state == cage.CheckUnknown {
+		s.scheduleNetworkRecovery(closed)
+	}
+	return nil
 }
 
 func (s *Server) publishReport(report cage.SafetyReport) {
@@ -104,6 +202,10 @@ func (s *Server) publishReport(report cage.SafetyReport) {
 }
 
 func (s *Server) safetyCheck(w http.ResponseWriter, r *http.Request) {
+	if s.macosGuest != nil {
+		s.launch(w, "safety", s.checkMacOSNetwork)
+		return
+	}
 	s.launch(w, "safety", s.runSafetyCheck)
 }
 
@@ -170,20 +272,32 @@ func boundaryProbeInput(port int, nonce, privateFile, sharedFile, challenge stri
 }
 
 func (s *Server) guestObservation(ctx context.Context, input map[string]any) (guestObservation, error) {
+	if s.windowsGuest != nil {
+		return s.windowsGuestObservation(ctx, input)
+	}
+	if s.macosGuest != nil {
+		return s.macOSGuestObservation(ctx, input)
+	}
 	var observation guestObservation
 	data, err := json.Marshal(input)
 	if err != nil {
 		return observation, err
 	}
 	command := "python3 -c " + shellescape.Quote(guestSafetyProbe) + " " + shellescape.Quote(base64.StdEncoding.EncodeToString(data))
-	output, err := s.guest(ctx, "exec bash -lc "+shellescape.Quote(command))
-	if err != nil || json.Unmarshal(output, &observation) != nil {
-		return observation, errors.New("客机检测未返回完整结果")
+	output, err := s.guestControl(ctx, "exec bash -lc "+shellescape.Quote(command), "safety-probe")
+	if err != nil {
+		return observation, fmt.Errorf("客机检测未返回完整结果: %w", err)
+	}
+	if err = json.Unmarshal(output, &observation); err != nil {
+		return observation, errors.New("客机检测返回格式无效")
 	}
 	return observation, nil
 }
 
 func (s *Server) browserObservation(ctx context.Context, cfg cage.Config, network bool) (browserObservation, error) {
+	if s.macosGuest != nil {
+		return s.macOSBrowserObservation(ctx, cfg, network)
+	}
 	var observation browserObservation
 	s.mu.Lock()
 	token := s.credentials.Token
@@ -200,10 +314,33 @@ func guestSettingsMatch(v guestObservation, cfg cage.Config) bool {
 	return v.LocaleValid && v.TZ == cfg.Timezone && v.SystemTimezone == cfg.Timezone && v.Lang == cfg.Locale && v.LCAll == cfg.Locale
 }
 func browserSettingsMatch(v browserObservation, cfg cage.Config) bool {
-	return v.Timezone != "" && v.Timezone == v.ExpectedTimezone && strings.EqualFold(v.Language, cfg.BrowserLanguage) && strings.HasPrefix(v.Platform, "Linux")
+	return browserSettingsMismatch(v, cfg) == ""
+}
+
+func browserSettingsMismatch(v browserObservation, cfg cage.Config) string {
+	var mismatches []string
+	if v.Timezone == "" || v.Timezone != v.ExpectedTimezone {
+		mismatches = append(mismatches, fmt.Sprintf("时区不一致（期望 %q，实际 %q）", cfg.Timezone, v.Timezone))
+	}
+	// Chromium's Japanese UI locale may report the language-only tag even
+	// with ja-JP preferences. Keep other regional language distinctions.
+	japanese := strings.EqualFold(cfg.BrowserLanguage, "ja-JP") && strings.EqualFold(v.Language, "ja")
+	if !strings.EqualFold(v.Language, cfg.BrowserLanguage) && !japanese {
+		mismatches = append(mismatches, fmt.Sprintf("语言不一致（期望 %q，实际 %q）", cfg.BrowserLanguage, v.Language))
+	}
+	if !strings.HasPrefix(v.Platform, "Linux") {
+		mismatches = append(mismatches, fmt.Sprintf("系统标识不一致（期望 Linux，实际 %q）", v.Platform))
+	}
+	return strings.Join(mismatches, "；")
 }
 
 func (s *Server) inspectVMLayout() (bool, bool) {
+	if s.windowsGuest != nil {
+		return s.windowsVMLayout()
+	}
+	if s.macosGuest != nil {
+		return s.macOSVMLayout()
+	}
 	if containerenv.Configured(s.profile) {
 		environment, err := containerenv.Load(s.profile)
 		if err != nil {
@@ -231,8 +368,7 @@ func (s *Server) inspectVMLayout() (bool, bool) {
 			MountPoint string `yaml:"mountPoint"`
 			Writable   bool   `yaml:"writable"`
 			SSHFS      struct {
-				Driver        string   `yaml:"sftpDriver"`
-				ReadonlyNames []string `yaml:"readonlyNames"`
+				Driver string `yaml:"sftpDriver"`
 			} `yaml:"sshfs"`
 		} `yaml:"mounts"`
 		Networks  []any  `yaml:"networks"`
@@ -245,13 +381,6 @@ func (s *Server) inspectVMLayout() (bool, bool) {
 	if shares {
 		m := spec.Mounts[0]
 		shares = paths.Equal(paths.Host(m.Location), paths.Host(workspace)) && m.MountPoint == guestPath(workspace) && m.Writable && m.SSHFS.Driver == "builtin"
-		gitProtected := false
-		for _, name := range m.SSHFS.ReadonlyNames {
-			if name == ".git" {
-				gitProtected = true
-			}
-		}
-		shares = shares && gitProtected
 	}
 	return shares, len(spec.Networks) == 0
 }
@@ -308,17 +437,17 @@ func (s *Server) locationForIP(ctx context.Context, cfg cage.Config, ip string) 
 
 func (s *Server) checkExitPolicy(ctx context.Context, cfg cage.Config, ip string) (cage.CheckState, string) {
 	policy := cfg.ExitPolicy.Normalized()
-	if policy.Mode == "static" || policy.Scope == "any" {
-		return policy.Evaluate(ip, nil)
+	if state, message := exitpolicy.CheckExitCountry(ip, nil); state == cage.CheckFailed {
+		return state, message
 	}
 	loc, err := s.locationForIP(ctx, cfg, ip)
 	if err != nil {
-		return cage.CheckUnknown, "出口定位暂时不可用，无法确认允许的地区范围"
+		return cage.CheckUnknown, "出口定位暂时不可用，无法确认非中国大陆出口，外网保持关闭"
 	}
 	observed := loc.exitLocation()
 	state, message := policy.Evaluate(ip, &observed)
 	s.mu.Lock()
-	s.location = &loc
+	s.recordLocationProbeLocked(loc, nil)
 	s.mu.Unlock()
 	return state, message
 }
@@ -357,6 +486,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 	paused := s.networkPaused
 	if !paused {
 		s.checkCancel = cancel
+		s.safety.MacOSExitCandidate = nil
 	}
 	s.mu.Unlock()
 	if paused {
@@ -381,7 +511,11 @@ func (s *Server) runSafetyCheck() (returned error) {
 		paused := s.networkPaused
 		s.mu.Unlock()
 		if !granted && !paused {
-			closed, e := client.Close(context.Background(), "关键检查未通过或证据不完整，外网保持关闭")
+			reason := "联网检查尚未完成，还没有取得全部检测结果。外网保持关闭。"
+			if returned != nil {
+				reason = returned.Error()
+			}
+			closed, e := client.Close(context.Background(), reason)
 			if e == nil {
 				s.publishGate(closed)
 			}
@@ -395,6 +529,21 @@ func (s *Server) runSafetyCheck() (returned error) {
 		s.mu.Unlock()
 	}()
 	report := cage.SafetyReport{Policy: cage.SafetyPolicyVersion, ID: randomToken()[:32], RunID: state.RunID, CheckID: state.CheckID, Configuration: cfg.Fingerprint(), CreatedAt: time.Now()}
+	defer func() {
+		// Preserve partial reports too: cancellation or a transport failure must
+		// not leave the last successful report as the only diagnostic evidence.
+		s.publishReport(report)
+		if err := writePrivate(filepath.Join(s.profile, "last-safety-report.json"), report); err != nil {
+			_ = diagnostics.New(s.profile).Record("error", "safety", "保存检测报告失败: "+err.Error())
+		}
+		for _, check := range report.Checks {
+			level := "info"
+			if check.Critical && check.State != cage.CheckPassed {
+				level = "warn"
+			}
+			_ = diagnostics.New(s.profile).Record(level, "safety", fmt.Sprintf("check_started=%s check=%s state=%s critical=%t evidence=%s remedy=%s operation_error=%v", report.CreatedAt.UTC().Format(time.RFC3339Nano), check.ID, check.State, check.Critical, check.Evidence, check.Remedy, returned))
+		}
+	}()
 	for _, item := range [][2]string{{"egress_policy", "环境外出站约束"}, {"proxy_transport", "终端检测通道"}, {"dns_transport", "DNS 与解析约束"}, {"guest_settings", "系统时区与语言"}, {"browser_settings", "浏览器时区与语言"}, {"filesystem_boundary", "共享文件与宿主私有目录"}, {"management_boundary", "宿主管理接口"}, {"fail_closed", "代理故障关闭"}, {"udp_policy", "UDP 出站约束"}, {"ipv6_policy", "IPv6 出站约束"}, {"exit_consistency", "出口符合已保存规则"}} {
 		report.Checks = append(report.Checks, cage.SafetyCheck{ID: item[0], Title: item[1], Critical: true, State: cage.CheckUnknown, Evidence: "尚未取得证据", Remedy: "完成检测后查看结果；未知项目不会自动通过", CheckedAt: report.CreatedAt})
 	}
@@ -413,13 +562,25 @@ func (s *Server) runSafetyCheck() (returned error) {
 	shares, networkLayout := s.inspectVMLayout()
 	private, err := os.CreateTemp(s.profile, ".cage-private-probe-*")
 	if err != nil {
-		return err
+		return usererror.Wrap("创建私有目录检查文件", err, "请检查 Cage 配置目录的写入权限和磁盘剩余空间，然后重新检测。外网保持关闭。")
 	}
 	defer os.Remove(private.Name())
 	defer private.Close()
-	shared, err := os.CreateTemp(s.environmentDir(), ".cage-share-probe-*")
+	shareRoot := s.environmentDir()
+	if s.macosGuest != nil {
+		shareRoot = s.workspace()
+		approved, e := s.projectWorkspace(shareRoot)
+		if e != nil || isClientMountPath(approved) {
+			return errors.New("请先在 macOS 工作台连接默认工作区或已授权的主机项目，再验证文件边界")
+		}
+		if e = s.ensureProjectShare(approved); e != nil {
+			return e
+		}
+		shareRoot = approved
+	}
+	shared, err := os.CreateTemp(shareRoot, ".cage-share-probe-*")
 	if err != nil {
-		return err
+		return usererror.Wrap("创建项目共享检查文件", err, "请确认环境目录仍存在且可写，再重新检测；不要删除个人配置目录。外网保持关闭。")
 	}
 	defer os.Remove(shared.Name())
 	defer shared.Close()
@@ -434,24 +595,34 @@ func (s *Server) runSafetyCheck() (returned error) {
 	port, _ := strconv.Atoi(control.Port())
 	s.setMessage("正在验证离线约束、共享文件与系统配置…")
 	boundaryInput := boundaryProbeInput(port, report.ID, private.Name(), shared.Name(), challenge)
+	if s.windowsGuest != nil {
+		if err := s.windowsBoundaryInput(shareRoot, private.Name(), shared.Name(), challenge, boundaryInput); err != nil {
+			return err
+		}
+	}
+	if s.macosGuest != nil {
+		boundaryInput["run_id"] = state.RunID
+		boundaryInput["check_id"] = state.CheckID
+	}
 	if containerenv.Configured(s.profile) {
 		boundaryInput["management_host"] = containerenv.GatewayIP
 	}
 	boundary, boundaryErr := s.guestObservation(ctx, boundaryInput)
 	after, err := client.Status(ctx)
+	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=boundary error=%v status_error=%v observation=%+v counters_before=%+v counters_after=%+v shares=%t network_layout=%t", boundaryErr, err, boundary, state.Counters, after.Counters, shares, networkLayout))
 	if err != nil {
 		return err
 	}
 	if boundaryErr == nil {
-		if guestSettingsMatch(boundary, cfg) {
-			set("guest_settings", cage.CheckPassed, "登录终端的时区、LANG、LC_ALL 与系统时区均符合已应用配置", "")
+		if s.guestSettingsOK(boundary, cfg) {
+			set("guest_settings", cage.CheckPassed, "客机进程与系统的时区和语言读回结果符合已应用配置", "")
 		} else {
 			set("guest_settings", cage.CheckFailed, "系统读回结果与已应用配置不一致", "重新应用时区与语言后重启环境")
 		}
 		_, _ = shared.Seek(0, io.SeekStart)
 		sharedData, _ := io.ReadAll(io.LimitReader(shared, 256))
 		if shares && boundary.PrivateFile == "unreachable" && boundary.SharedFile && string(sharedData) == challenge+":guest" {
-			set("filesystem_boundary", cage.CheckPassed, "共享读写探针往返成功；宿主私有目录探针不可读；环境基础共享目录与明确打开的项目使用受目录约束的传输，并保护 Git 元数据", "")
+			set("filesystem_boundary", cage.CheckPassed, "共享读写探针往返成功；宿主私有目录探针不可读；环境基础共享目录与明确打开的项目使用受目录约束的传输，项目内允许 Git 读写", "")
 		} else {
 			set("filesystem_boundary", cage.CheckFailed, "共享读写、私有目录探针或挂载范围未符合预期", "检查共享目录；不要共享主目录或 Cage 配置目录")
 		}
@@ -470,20 +641,37 @@ func (s *Server) runSafetyCheck() (returned error) {
 		if boundary.UDPAttempted && after.Counters.UDPDenied > state.Counters.UDPDenied && after.PolicyVerified {
 			set("udp_policy", cage.CheckPassed, "客机 UDP 探针已发起，环境外网络层记录了拒绝；无响应本身不作为通过依据", "")
 		}
-		if !boundary.IPv6Connected && after.PolicyVerified && (boundary.IPv6DefaultRoutes == 0 || after.Counters.IPv6Denied > state.Counters.IPv6Denied) {
+		if s.macosGuest != nil && networkLayout && macOSIPv6LinkVerified(boundary, state, after) {
+			set("ipv6_policy", cage.CheckPassed, fmt.Sprintf("常规 IPv6 查路由明确不可达；%d 条接口限定的默认路由逐个绑定检查，均未连通或发现外部源地址。唯一客机网卡 %s 对本轮随机 IPv6 UDP 探针在以太帧入口实施丢弃。", boundary.IPv6DefaultRoutes, boundary.IPv6LinkInterface), "")
+		} else if !boundary.IPv6Connected && after.PolicyVerified && ((s.macosGuest == nil && (boundary.IPv6DefaultRoutes == 0 || after.Counters.IPv6Denied > state.Counters.IPv6Denied)) || (s.macosGuest != nil && networkLayout && boundary.IPv6DefaultRoutes == 0 && boundary.IPv6UnscopedAbsent && boundary.IPv6Unbound.Result == "no-route")) {
 			set("ipv6_policy", cage.CheckPassed, "客机公网 IPv6 策略为拒绝；连接采样未建立，路由或拒绝记录与策略一致。当前版本验证 IPv4 出口", "")
+		} else if s.macosGuest != nil {
+			set("ipv6_policy", cage.CheckUnknown, fmt.Sprintf("IPv6 默认路由记录为 %d。普通连接、逐接口观测与当前 VZ 网卡丢弃证据尚未全部匹配。", boundary.IPv6DefaultRoutes), "保持外网关闭。确认使用配套的客机诊断工具和虚拟机运行器，重启后重新检测")
+		}
+	} else {
+		message := usererror.Display("读取环境内的隔离检查结果", boundaryErr, "请确认环境仍在运行，再重新检测；持续失败时导出诊断包。").Error()
+		for _, id := range []string{"guest_settings", "filesystem_boundary", "egress_policy", "management_boundary", "udp_policy", "ipv6_policy"} {
+			set(id, cage.CheckUnknown, message, "重新检测；若同一检查持续无结果，请在设置中导出诊断包")
 		}
 	}
 	s.setMessage("正在通过固定检测通道检查代理与 DNS…")
 	network, networkErr := s.guestObservation(ctx, map[string]any{"stage": "network"})
 	normalState, err := client.Status(ctx)
+	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=network error=%v status_error=%v observation=%+v counters=%+v", networkErr, err, network, normalState.Counters))
 	if err != nil {
 		return err
 	}
 	if networkErr == nil && network.Egress.Status == 200 && network.Egress.IP != "" && normalState.Counters.ProbeTCP > after.Counters.ProbeTCP {
 		set("proxy_transport", cage.CheckPassed, "终端请求经过 环境网络层的固定检测通道，并由指定代理完成 HTTPS 出口查询；未放开任意网站", "")
 	} else {
-		set("proxy_transport", cage.CheckUnknown, "终端未能完成固定检测请求，或缺少 环境外通道记录", "检查指定代理和环境组件，然后重新检测")
+		evidence := fmt.Sprintf("环境未能完成代理出口查询（检测通道 HTTP %d），尚不能确认代理连接可用", network.Egress.Status)
+		if network.Egress.Status == 0 {
+			evidence = "环境没有收到代理出口查询的结果，尚不能确认代理连接可用"
+		}
+		if networkErr != nil {
+			evidence = usererror.Display("读取代理检测结果", networkErr, "请确认环境仍在运行。").Error()
+		}
+		set("proxy_transport", cage.CheckUnknown, evidence, "在网络与代理设置中确认节点已应用并能连接；再重新检测")
 	}
 	if networkErr == nil && boundaryErr == nil && !boundary.PublicDNSAnswered && after.Counters.DNSDenied > state.Counters.DNSDenied && network.DNS.Status == 200 && normalState.Counters.ProbeDNS > after.Counters.ProbeDNS {
 		set("dns_transport", cage.CheckPassed, "检查期间公共解析被拒绝；固定 DNS 查询经指定 DoH 与代理完成", "")
@@ -492,11 +680,12 @@ func (s *Server) runSafetyCheck() (returned error) {
 	}
 	s.setMessage("正在读取隔离浏览器的实际配置…")
 	browser, browserErr := s.browserObservation(ctx, cfg, true)
+	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=browser error=%v observation=%+v", browserErr, browser))
 	if browserErr == nil {
-		if browserSettingsMatch(browser, cfg) {
-			set("browser_settings", cage.CheckPassed, "隐藏诊断页面读到 Linux 浏览器；实际时区与首选语言符合已应用配置", "")
+		if s.browserSettingsIssue(browser, cfg) == "" {
+			set("browser_settings", cage.CheckPassed, "浏览器诊断页面读到客机平台；实际时区与首选语言符合已应用配置", "")
 		} else {
-			set("browser_settings", cage.CheckFailed, "浏览器实际时区、语言或系统标识与配置不一致", "重新应用设置并重启环境")
+			set("browser_settings", cage.CheckFailed, s.browserSettingsIssue(browser, cfg), "更新环境组件以补齐浏览器语言包并应用已保存设置；仍失败时查看各字段的期望值与实际值")
 		}
 	} else {
 		set("browser_settings", cage.CheckUnknown, browserErr.Error(), "停止并重启环境以加载最新浏览器组件，再重新检测")
@@ -509,6 +698,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 	fault, faultErr := s.guestObservation(ctx, map[string]any{"stage": "network"})
 	faultBrowser, faultBrowserErr := s.browserObservation(ctx, cfg, true)
 	faultEnd, err := client.Status(ctx)
+	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=fault terminal_error=%v browser_error=%v status_error=%v terminal=%+v browser=%+v counters_before=%+v counters_after=%+v", faultErr, faultBrowserErr, err, fault, faultBrowser, faultStart.Counters, faultEnd.Counters))
 	if err != nil {
 		return err
 	}
@@ -522,7 +712,8 @@ func (s *Server) runSafetyCheck() (returned error) {
 	}
 	s.setMessage("正在核对静态 IP 或动态地区范围…")
 	hostIP, hostErr := cage.ProbeExitIP(ctx, cfg)
-	result, message := cage.CheckPassed, "终端、浏览器与宿主检测请求均符合已保存的出口规则；此结论限于检测采样"
+	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=host-exit error=%v ip=%s", hostErr, hostIP))
+	result, message := cage.CheckPassed, "终端、浏览器与宿主检测出口均未命中大陆网段，定位为非中国大陆且符合已保存的 IP 变化规则；此结论限于检测采样"
 	if hostErr != nil || networkErr != nil || browserErr != nil || network.Egress.Status != 200 || browser.Network.Status != 200 {
 		result, message = cage.CheckUnknown, "出口采样不完整，无法确认配置范围"
 	} else {
@@ -537,7 +728,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 			}
 		}
 	}
-	set("exit_consistency", result, message, "在网络设置中核对静态 IP 或允许地区；已有基准不会随重检改变")
+	set("exit_consistency", result, message, "选择非中国大陆出口，并核对静态 IP 或允许地区；静态 IP 和不限地区均须确认出口国家，已有基准不会随重检改变")
 	report.Checks = append(report.Checks, cage.SafetyCheck{ID: "third_party_reputation", Title: "第三方 IP 信誉", State: cage.CheckUnknown, CheckedAt: time.Now(), Evidence: "未自动获取社区评分。可在 Cage 浏览器中打开补充检查；结果不替代底层隔离证据。"})
 	s.mu.Lock()
 	autoLanguage, location := s.preferences.AutoLanguage, s.location
@@ -548,8 +739,13 @@ func (s *Server) runSafetyCheck() (returned error) {
 	s.publishReport(report)
 	s.mu.Lock()
 	s.safety.ExitIP = hostIP
+	if s.macosGuest != nil {
+		s.safety.MacOSExitCandidate = nil
+		if hostErr == nil && networkErr == nil && browserErr == nil {
+			s.safety.MacOSExitCandidate = macOSStaticCandidate(cfg, state.RunID, hostIP, network.Egress, browser.Network)
+		}
+	}
 	s.mu.Unlock()
-	_ = writePrivate(filepath.Join(s.profile, "last-safety-report.json"), report)
 	if err = report.Authorizes(state.RunID, cfg.Fingerprint(), time.Now()); err != nil {
 		return err
 	}
@@ -581,14 +777,37 @@ func (s *Server) networkMonitorBlockedLocked() bool {
 }
 
 func (s *Server) monitorSafety() {
+	s.monitorSafetyWithProbe(cage.ProbeExitIP)
+}
+
+func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config) (string, error)) {
+	timing := s.startMonitorTiming()
+	defer s.recordMonitorTiming("safety", timing)
 	s.mu.Lock()
 	ready, busy, last := s.ready, s.networkMonitorBlockedLocked(), s.safety.VerifiedAt
+	paused, closing := s.networkPaused, s.closing
 	s.mu.Unlock()
-	if !ready || busy || time.Since(last) < 30*time.Second {
+	switch {
+	case closing:
+		timing.result = "closing"
+		return
+	case paused:
+		timing.result = "network_paused"
+		return
+	case busy:
+		timing.result = "job_running"
+		return
+	case !ready:
+		timing.result = "environment_not_ready"
+		return
+	case time.Since(last) < 30*time.Second:
+		timing.result = "not_due"
 		return
 	}
 	client, err := s.gateClient()
+	timing.stage("gate_client")
 	if err != nil {
+		timing.result = "gate_client_failed"
 		s.mu.Lock()
 		s.safety.Gate = nil
 		s.safety.Error = err.Error()
@@ -601,16 +820,24 @@ func (s *Server) monitorSafety() {
 	s.mu.Unlock()
 	defer func() { cancel(); s.mu.Lock(); s.monitorCancel = nil; s.mu.Unlock() }()
 	state, err := client.Status(ctx)
+	timing.stage("gate_status")
 	if err != nil {
+		timing.result = "gate_status_failed"
 		s.mu.Lock()
 		s.safety.Gate = nil
 		s.safety.Error = err.Error()
 		s.mu.Unlock()
 		return
 	}
+	timing.until = state.Until
 	s.publishGate(state)
 	if state.Mode != cage.GateOpen || state.Report == nil {
-		if state.Mode == cage.GateClosed && state.Reason == "检查或监测授权已到期" && state.Report != nil {
+		timing.result = "gate_not_open"
+		// A packet helper can reconnect before the next GUI status tick. Its
+		// gate stays closed until a fresh check, even though the helper never
+		// exited and the new receipt is already available.
+		recheckClosed := state.Reason == "检查或监测授权已到期" || s.windowsGuest != nil && state.Reason == windowsPacketDisconnectedReason
+		if state.Mode == cage.GateClosed && recheckClosed && state.Report != nil {
 			s.mu.Lock()
 			pending := s.recovery.RunID != ""
 			s.mu.Unlock()
@@ -631,34 +858,46 @@ func (s *Server) monitorSafety() {
 			issue = err.Error()
 		}
 	}
+	timing.stage("configuration_report")
 	var ip string
 	if issue == "" {
-		ip, err = cage.ProbeExitIP(ctx, cfg)
+		ip, err = probe(ctx, cfg)
+		timing.stage("exit_ip")
 		if err != nil {
 			issue = "当前无法经指定代理确认出口，外网已暂停"
 			recoverable = true
 		} else {
 			result, message := s.checkExitPolicy(ctx, cfg, ip)
+			timing.stage("exit_policy")
 			if result != cage.CheckPassed {
 				issue = message
+				recoverable = result == cage.CheckUnknown
 			}
 		}
 	}
 	if issue == "" {
 		guest, e := s.guestObservation(ctx, map[string]any{"stage": "environment"})
-		if e != nil || !guestSettingsMatch(guest, cfg) {
+		timing.stage("guest_settings")
+		if e != nil || !s.guestSettingsOK(guest, cfg) {
 			issue = "系统时区或语言的运行状态无法确认，请重新检测"
 			recoverable = e != nil
 		}
 	}
 	if issue == "" {
 		browser, e := s.browserObservation(ctx, cfg, false)
-		if e != nil || !browserSettingsMatch(browser, cfg) {
+		timing.stage("browser_settings")
+		if e != nil {
 			issue = "浏览器时区或语言的运行状态无法确认，请重新检测"
-			recoverable = e != nil
+			recoverable = true
+		} else if mismatch := s.browserSettingsIssue(browser, cfg); mismatch != "" {
+			issue = "浏览器配置检查未通过：" + mismatch
 		}
 	}
+	if issue != "" {
+		timing.result = "observation_failed"
+	}
 	s.finishSafetyObservation(ctx, client, state, ip, issue, recoverable)
+	timing.stage("finish_observation")
 }
 
 // Recheck the user operation and configuration at the actual lease write.
@@ -667,12 +906,17 @@ func (s *Server) finishSafetyMonitor(ctx context.Context, client *cage.GateClien
 }
 
 func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateClient, state cage.GateStatus, ip, issue string, recoverable bool) {
+	timing := s.startMonitorTiming()
+	timing.until = state.Until
+	defer s.recordMonitorTiming("renewal", timing)
 	s.safetyOp.Lock()
 	defer s.safetyOp.Unlock()
+	timing.stage("safety_lock")
 	s.mu.Lock()
 	busy := s.networkMonitorBlockedLocked()
 	s.mu.Unlock()
 	if busy {
+		timing.result = "operation_cancelled"
 		return
 	} // A user operation cancelled this monitor; it owns the next transition.
 	current, e := loadConfig(s.configPath)
@@ -680,8 +924,11 @@ func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateC
 		issue = "运行配置已变化，请重新应用设置"
 		recoverable = false
 	}
+	timing.stage("configuration")
 	if issue != "" {
+		timing.result = "observation_failed"
 		closed, e := client.Close(context.Background(), issue)
+		timing.stage("gate_close")
 		if e == nil {
 			s.publishGate(closed)
 			if recoverable {
@@ -696,8 +943,11 @@ func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateC
 		return
 	}
 	renewed, err := client.Renew(ctx, state.Report.ID)
+	timing.stage("gate_renew")
 	if err != nil {
+		timing.result = "renew_failed"
 		closed, e := client.Close(context.Background(), "运行监测未能续期，请重新检测")
+		timing.stage("gate_close")
 		if e == nil {
 			s.publishGate(closed)
 			s.scheduleNetworkRecovery(closed)
@@ -707,11 +957,13 @@ func (s *Server) finishSafetyObservation(ctx context.Context, client *cage.GateC
 		s.mu.Unlock()
 		return
 	}
+	timing.result = "renewed"
 	s.publishGate(renewed)
 	s.mu.Lock()
 	s.safety.VerifiedAt = time.Now()
 	s.safety.Error = ""
 	s.safety.monitorError = ""
+	s.exitProbeError = ""
 	s.safety.ExitIP = ip
 	s.mu.Unlock()
 }

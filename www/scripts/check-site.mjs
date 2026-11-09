@@ -33,6 +33,9 @@ for (const code of codes) {
   }
   assert.ok(!html.includes('/Users/'), `${code}: local developer path leaked`);
   assert.ok(html.includes(`href="${published.downloadURL}"`), `${code}: macOS download is missing`);
+  const downloadSection = html.match(/<section\b[^>]*id="download"[^>]*>([\s\S]*?)<\/section>/)?.[1];
+  assert.ok(downloadSection?.includes(`CLAUDE CAGE · v${published.version}`), `${code}: download release label must follow published metadata`);
+  assert.ok(!downloadSection?.includes('CLAUDE CAGE · ALPHA'), `${code}: stale release channel label`);
   assert.equal([...html.matchAll(/<a\b[^>]*\bdata-download-open(?:\s|>)/g)].length, 3, `${code}: all download entries must open the platform chooser`);
   assert.ok(html.includes('aria-labelledby="platform-title"'), `${code}: platform dialog has no accessible title`);
   for (const platform of ['macOS', 'Windows', 'Linux']) {
@@ -83,3 +86,22 @@ for (const code of codes) {
   assert.ok(html.includes('href="/Claude-Cage/docs/"'), `${code}: homepage needs a guide entry`);
 }
 console.log(`Verified ${guideFiles.length} user guide pages, local links, anchors, search and homepage entries.`);
+
+const agentGuide = fs.readFileSync(path.join(dist, 'agent.md'), 'utf8');
+assert.equal(agentGuide, fs.readFileSync(path.join(dist, 'llms-full.txt'), 'utf8'), 'Agent text copies must share the same source');
+assert.ok(agentGuide.includes('agent capabilities') && agentGuide.includes('job_not_found'), 'Agent guide lacks discovery or recovery contract');
+assert.ok(!agentGuide.includes('title: 让 Agent'), 'Agent Markdown must omit frontmatter');
+for (const name of ['llms.txt', 'agent-bootstrap.mjs', 'cage-install.sh']) assert.ok(fs.existsSync(path.join(dist, name)), `Missing Agent entry ${name}`);
+assert.ok(fs.readFileSync(path.join(dist, 'docs/agent/index.html'), 'utf8').includes('JSON 结果和异步任务'), 'Rendered Agent guide missing');
+console.log('Verified Agent Markdown, discovery, download helper and rendered guide.');
+
+const screenshotManifest = JSON.parse(fs.readFileSync(path.join(root, 'www/public/docs/screenshots/manifest.json'), 'utf8'));
+for (const shot of screenshotManifest) {
+  assert.ok(shot.version && shot.platform && shot.capturedAt && shot.source, `${shot.id}: screenshot provenance missing`);
+  assert.ok(fs.existsSync(path.join(dist, 'docs/screenshots', shot.file)), `${shot.id}: screenshot was not shipped`);
+  const article = fs.readFileSync(path.join(guideDir, shot.chapter, 'index.html'), 'utf8');
+  assert.ok(article.includes(`src="/Claude-Cage/docs/screenshots/${shot.file}"`), `${shot.id}: broken screenshot URL`);
+  assert.ok(article.includes(shot.version), `${shot.id}: version caption missing`);
+  assert.ok(article.includes(`width="${shot.width}" height="${shot.height}"`), `${shot.id}: original dimensions missing`);
+}
+console.log(`Verified ${screenshotManifest.length} screenshots, original dimensions and version captions.`);

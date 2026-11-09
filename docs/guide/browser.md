@@ -7,11 +7,13 @@ keywords: Chromium 浏览器 设置 无痕 Cookie 扩展 插件 ZIP 收藏 新�
 ---
 ## 打开网页与浏览器设置
 
-点击侧栏“浏览器”，用地址栏访问网站，顶部加号新建页面。`claude.ai` 入口直接打开 Claude 官网。`localhost` 属于 Cage 的 Linux 环境，预览服务需从 Cage 终端启动。
+点击侧栏“浏览器”，用地址栏访问网站，顶部加号新建页面。`claude.ai` 入口直接打开 Claude 官网。`localhost` 属于当前 Cage 客机，预览服务需从 Cage 终端启动。
 
 地址栏右侧的浏览器菜单提供设置、无痕和网站数据等操作。浏览器设置页可搜索“新标签页、外观、隐私与网站数据、扩展、关于浏览器”。新标签默认地址影响之后的新建标签；横排或竖排标签布局立即生效，保存在当前客户端。
 
 关闭浏览器视图只返回原工作区，页面和登录继续保留。需结束无痕会话时，关闭全部无痕标签或停止环境。
+
+地址栏右侧的下载按钮在右上角展开文件列表，可查看下载进度、另存为、打开文件或在文件夹中显示；保存失败时可重试。长列表在面板内滚动，点击外部或按 Esc 收起。侧栏“下载”也可打开此面板。
 
 浏览器设置的“隐私与网站数据”还提供“网站权限”和“清除浏览数据”，打开 Chromium 对应页面。摄像头、麦克风等权限应结合环境实际设备能力判断。“关于浏览器”中的“搜索引擎”和“下载设置”可以打开更多原生浏览器配置；网页显示这些选项不代表 Cage 已接通所有设备能力。
 
@@ -46,6 +48,11 @@ keywords: Chromium 浏览器 设置 无痕 Cookie 扩展 插件 ZIP 收藏 新�
 桌面版可从本机 Edge、Chrome、Brave 或 Chromium 复制扩展及启停状态。导入不会复制浏览器账户、Cookie 或扩展自身的登录数据，部分标识变化的扩展需要重新配置。扩展在 Cage 浏览器中运行，本机浏览器的操作环境与网络不会因此迁移。
 
 旧环境缺少入口或安装组件报错时，先更新应用与环境组件，再重新打开浏览器。
+
+<figure class="guide-shot">
+  <a href="../../www/public/docs/screenshots/password-vault.jpg" target="_blank" rel="noopener" aria-label="查看原图：密码保险箱的管理入口"><img src="../../www/public/docs/screenshots/password-vault.jpg" alt="密码保险箱的管理入口" width="2560" height="1764" loading="lazy" decoding="async" /></a>
+  <figcaption>密码保险箱的管理入口。截图版本：0.1.6-alpha-preview（开发构建） · macOS 原生应用 · 2026-11-07。<a href="../../www/public/docs/screenshots/password-vault.jpg" target="_blank" rel="noopener">查看原图（2560 × 1764） ↗</a></figcaption>
+</figure>
 
 ## 保存网站密码
 

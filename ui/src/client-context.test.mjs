@@ -103,6 +103,21 @@ test("quit still reaches the desktop when the CLI HTTP listener is gone", async 
   assert.deepEqual(actions, ["quitNow"]);
 });
 
+test("an offline quit cannot cross a connection change during account suspension", async (t) => {
+  environment(t);
+  setClientContext(localGateway("connected"));
+  let failRequest;
+  globalThis.fetch = (path) => {
+    if (path === "/api/diagnostics/events") return Promise.resolve(Response.json({}));
+    return new Promise((resolve, reject) => { failRequest = reject; });
+  };
+  window.webkit.messageHandlers.cage.postMessage = () => assert.fail("stale quit");
+  const quitting = native("quitNow");
+  setClientContext({ ...localGateway("connected"), connection_id: "replacement" });
+  failRequest(new TypeError("Failed to fetch"));
+  await assert.rejects(quitting, { code: "connection_changed" });
+});
+
 test("a reachable local controller must lock or report already locked before quit", async (t) => {
   environment(t);
   setClientContext(localGateway("connected"));

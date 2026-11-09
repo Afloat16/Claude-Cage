@@ -58,6 +58,13 @@
 .guide-prose th, .guide-prose td { border-bottom: 1px solid var(--line); padding: 11px 13px; vertical-align: top; }
 .guide-prose td:first-child { min-width: 100px; }
 .guide-prose img { border: 1px solid var(--line); border-radius: 7px; margin: 20px 0; }
+.guide-shot { margin: 27px 0 35px; }
+.guide-shot > a { display: block; }
+.guide-prose .guide-shot img { width: 100%; height: auto; margin: 0; background: #fff; }
+.guide-shot figcaption { margin-top: 10px; font-size: 12px; line-height: 1.85; color: var(--muted); }
+.guide-shot figcaption a { display: inline-block; margin-inline-start: 6px; }
+.guide-shot-phone { width: min(360px, 100%); margin-inline: auto; }
+.guide-shot-phone figcaption { text-align: center; }
 .guide-pagination { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; border-top: 1px solid var(--line); margin-top: 48px; padding: 25px 0; }
 .guide-pagination a { display: flex; flex-direction: column; gap: 7px; padding: 12px 0; }
 .guide-pagination a:last-child { text-align: right; }

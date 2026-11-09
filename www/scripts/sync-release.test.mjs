@@ -170,14 +170,14 @@ test('same-version unsigned Windows uses the version release and preserves the s
   assert.ok(!releaseMetadata(release, sums(fixture())).windowsPreview);
 });
 
-test('macOS verification checks both owned archives without requiring other-platform source files', () => {
+test('macOS verification checks all owned archives without requiring other-platform source files', () => {
   const directory = mkdtempSync(join(tmpdir(), 'cage-release-check-'));
   const script = new URL('../../scripts/verify-macos-release.sh', import.meta.url);
   const nativeReached = join(directory, 'native-check-reached');
   // Stop at the first macOS-specific validation. Hash verification above it
   // remains the actual shipped shell entry, including missing/duplicate checks.
   writeFileSync(join(directory, 'codesign'), '#!/bin/sh\nprintf reached > "$CAGE_TEST_NATIVE_MARKER"\nexit 42\n', { mode: 0o700 });
-  const owned = ['Cage-0.2.0-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz'];
+  const owned = ['Cage-0.2.0-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz', 'cage-macos-guest-0.2.0-source.tar.gz'];
   for (const name of owned) writeFileSync(join(directory, name), name);
   const valid = owned.map(name => `${createHash('sha256').update(name).digest('hex')}  ${name}\n`).join('');
   const extra = `${hash}  qemu-windows-full-source.zip\n${hash}  Cage-0.2.0-windows-amd64-setup.exe\n`;
@@ -189,9 +189,42 @@ test('macOS verification checks both owned archives without requiring other-plat
   try {
     assert.equal(run(valid + extra).status, 42, 'unrelated release assets blocked macOS checksum verification');
     assert.ok(existsSync(nativeReached));
-    for (const invalid of [extra, valid + valid, valid.replace(/^[a-f0-9]{64}/, '0'.repeat(64))]) {
+    const missingGuest = valid.split('\n').filter(line => !line.includes(owned[2])).join('\n');
+    for (const invalid of [extra, valid + valid, missingGuest, valid.replace(/^[a-f0-9]{64}/, '0'.repeat(64))]) {
       assert.notEqual(run(invalid).status, 42);
       assert.ok(!existsSync(nativeReached), 'invalid macOS checksum reached native signature verification');
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('explicit RC manifest exposes signed Windows and all platforms with complete QEMU sources', async () => {
+  const tag = 'v0.1.7-rc.1', version = tag.slice(1);
+  const names = [`Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`, `Cage-${version}-linux-amd64.deb`, `cage-macos-guest-${version}-source.tar.gz`, 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz', `qemu-${'a'.repeat(40)}-source.tar.gz`, `qemu-keycodemapdb-${'b'.repeat(40)}-source.tar.gz`, 'qemu-11.1.0-cage-changes-source.tar.gz'];
+  const manifest = names.map(name => `${hash}  ${name}\n`).join('');
+  const release = await publicManifestRelease(tag, async (url, options = {}) => {
+    assert.equal(options.headers?.Authorization, undefined);
+    if (url.endsWith('/SHA256SUMS')) return new Response(manifest);
+    assert.equal(options.method, 'HEAD');
+    return new Response('', { headers: { 'content-length': String(url.includes('full-source') ? 700 * 1024 * 1024 : 100) } });
+  });
+  assert.equal(release.prerelease, true);
+  assert.equal(releaseAssets(release).guestSource.name, `cage-macos-guest-${version}-source.tar.gz`);
+  const metadata = releaseMetadata(release, manifest);
+  assert.equal(metadata.version, version);
+  assert.equal(metadata.windowsDownloadURL, release.assets.find(asset => asset.name === names[1]).browser_download_url);
+  assert.equal(metadata.linuxDownloadURL, release.assets.find(asset => asset.name === names[2]).browser_download_url);
+  assert.ok(!metadata.windowsPreview);
+  assert.equal(metadata.releaseURL, `https://github.com/Lee-xeo/Claude-Cage/releases/tag/${tag}`);
+});
+
+test('manifest source allowance keeps installer and source size bounds separate and names constrained', async () => {
+  const names = ['Cage-0.1.7-rc.1-macos-arm64.dmg', 'mihomo-v1.19.33-source.tar.gz', 'qemu-11.1.0-windows-full-source.tar.gz'];
+  for (const [oversized, size] of [[names[0], 512 * 1024 * 1024 + 1], [names[2], 2048 * 1024 * 1024 + 1]]) {
+    await assert.rejects(publicManifestRelease('v0.1.7-rc.1', async url => url.endsWith('/SHA256SUMS')
+      ? new Response(names.map(name => `${hash}  ${name}\n`).join(''))
+      : new Response('', { headers: { 'content-length': String(url.endsWith(oversized) ? size : 100) } })), /Missing or incomplete public asset/);
+  }
+  for (const invalid of ['qemu-11.1.0-windows-full-source.tar.gz.exe', 'qemu-latest-windows-full-source.tar.gz', 'qemu-11.1.0-windows-full-source/escape.tar.gz']) {
+    await assert.rejects(publicManifestRelease('v0.1.7-rc.1', async () => new Response([...names, invalid].map(name => `${hash}  ${name}\n`).join(''))));
+  }
 });

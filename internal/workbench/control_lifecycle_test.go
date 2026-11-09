@@ -115,6 +115,15 @@ func TestDesktopRejectsUnknownAndDifferentBuildsWithoutStoppingThem(t *testing.T
 	for _, kind := range []string{"same", "same-version-other-build", "legacy"} {
 		t.Run(kind, func(t *testing.T) {
 			profile := t.TempDir()
+			lock, err := openControllerLock(profile, os.O_CREATE|os.O_RDWR)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer lock.Close()
+			if err := lockController(lock); err != nil {
+				t.Fatal(err)
+			}
+			defer unlockController(lock)
 			identity := current
 			if kind == "same-version-other-build" {
 				identity.Build = "different-build"
