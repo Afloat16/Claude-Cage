@@ -36,3 +36,11 @@ dist
 /.vite/
 
 /internal/tailnetassets/assets/*.gz
+
+# Local test/compiler output; keep test source and fixtures tracked.
+__pycache__/
+/scripts/guest-os/**/bin/
+/scripts/guest-os/**/obj/
+/.cage-mount-probe-*
+/config.log
+/logs/*.log

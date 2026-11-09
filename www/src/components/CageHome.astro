@@ -29,7 +29,7 @@ const platforms = [
     version: published.windowsDownloadURL ? published.version : published.windowsPreview?.version,
     preview: !published.windowsDownloadURL && !!published.windowsPreview,
     notes: published.windowsDownloadURL ? published.releaseURL : published.windowsPreview?.releaseURL, guide: 'windows.md' },
-  { name: 'Linux', icon: 'linux', requirements: 'Debian 12 / Ubuntu 24.04 · x86_64', format: '.deb',
+  { name: 'Linux', icon: 'linux', requirements: 'Debian 12 / Ubuntu 22.04 / 24.04 · x86_64', format: '.deb',
     url: published.linuxDownloadURL,
     version: published.linuxDownloadURL ? published.version : undefined,
     notes: published.linuxDownloadURL ? published.releaseURL : undefined, guide: 'linux.md' },

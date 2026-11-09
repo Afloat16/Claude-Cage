@@ -1,12 +1,10 @@
 # Linux 安装、使用与验收
 
-Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，所有本机项目共用一个持久 Linux 虚拟机。
+Cage 的 Linux 桌面版面向 Debian 12、Ubuntu 22.04/24.04 的 x86_64 电脑，使用 GTK 3 与 WebKitGTK 显示工作台。项目、终端、浏览器、编辑器和内置代理沿用其他平台的操作方式。选择本机时，默认创建持久 Debian 13 虚拟机，也可通过“自动匹配本机系统版本”下载官方镜像，创建与主机同发行版的 Linux 客机，包括 Ubuntu 22.04。所有本机项目共用所选的持久环境与 Linux 工具链。首次创建时可以直接选择 Ubuntu 22.04，无需主机也运行该版本。主机与客机可以是不同的 Linux 发行版；macOS、Windows、Debian 与 Ubuntu 的组合见[选择客机系统](guide/guest-systems.md)。
 
 同一个桌面应用也可以从侧栏 SSH 连接已部署 Cage 的服务器。使用远程工作台只需本机图形依赖，本机模式另需 KVM 和虚拟机工具。云服务器的无 KVM 容器部署见[云端部署设计](design/cloud-deployment.md)和[部署说明](../deploy/cloud/README.md)。
 
-Linux 支持处于开发验收阶段。安装包及真实测试范围以对应发行说明为准；云服务器中的窗口测试不能代表所有桌面环境、显卡和输入法均已通过验收。ARM64、RPM 发行版及 Wayland 的完整交互尚未验收。
-
-开发包已在 Debian 12 云端隔离环境验证原生工作台、窗口重开后的界面状态、代理生命周期、系统包安装与卸载保留数据。QEMU 软件模拟验证了客体启动、共享文件保护和迁移重启。KVM 硬件加速、Ubuntu 24.04 实机以及真实 Claude 业务网络仍需验收。
+Ubuntu 22.04 的桌面包采用兼容该系统的构建基线，已在隔离容器验证真实窗口、浏览器启动、重装与卸载数据保留。完整 KVM 客机安装、物理桌面输入法和 Claude 登录尚未实测，不能把容器验证视为这些操作通过。系统匹配、续装与各路线范围见[客机系统指南](guide/guest-systems.md)。
 
 ## 安装前准备
 
@@ -36,7 +34,9 @@ sudo apt install ./Cage-<版本>-linux-amd64.deb
 
 安装器随附 Cage 后台、工作台和 Mihomo 代理核心。APT 安装 WebKitGTK 等图形依赖。只连接 SSH 主机时可直接打开应用。要使用本机环境，请再运行 `sudo apt install qemu-system-x86 qemu-utils ovmf openssh-client iproute2 git` 并确认 KVM 可用。首次启动本机环境时会下载 Linux 镜像与客机工具。
 
-从应用菜单打开 **Cage**，也可运行 `cage-desktop`。系统包名和后台命令为 `claude-cage`，避免与发行版自带的同名 Wayland 程序冲突。导入自己的代理、选择节点，再按[开始使用](getting-started.md#2-导入并选择代理)打开项目。项目路径例如 `/home/alice/Projects/demo`，只共享默认工作区与明确选择的目录；项目中的修改和删除会同步到主机。Git 元数据保护沿用现有约束，提交在主机 Git 中完成。
+作为手机远程主机时，Cage 通过系统的 `systemd-inhibit` 和 logind 申请保持系统运行，屏幕仍可熄灭。完整安装包依赖 systemd；服务或用户权限不满足时，“设置 → 远程连接”会显示防休眠失败原因，不会自动改动系统电源策略。
+
+从应用菜单打开 **Cage**，也可运行 `cage-desktop`。系统包名和后台命令为 `claude-cage`，避免与发行版自带的同名 Wayland 程序冲突。导入自己的代理、选择节点，再按[开始使用](getting-started.md#2-导入并选择代理)打开项目。项目路径例如 `/home/alice/Projects/demo`，只共享默认工作区与明确选择的目录；项目中的修改和删除会同步到主机。已授权项目中的 Git 元数据可读写，客机提交直接更新主机仓库；共享范围仍限于授权目录。
 
 Linux 使用 Ctrl 快捷键：`Ctrl+O` 打开项目，`Ctrl+T` 新建网页，`Ctrl+L` 定位地址栏，`Ctrl+W` 关闭标签，`Ctrl+Shift+Enter` 新建终端。终端用 `Ctrl+Shift+C/V` 复制粘贴，`Ctrl+C` 中断命令。
 
@@ -67,7 +67,18 @@ sudo apt remove claude-cage
 
 ## 维护者构建与验收
 
-正式构建基线为 Debian 12 x86_64；从更新发行版构建的原生程序可能需要更高版本 glibc，不能标为兼容 Debian 12。GTK/WebKitGTK 依赖来自发行版软件源（[Debian 依赖](https://packages.debian.org/bookworm/libwebkit2gtk-4.1-0)、[Ubuntu 依赖](https://packages.ubuntu.com/noble/libwebkit2gtk-4.1-0)），动态库最低版本由打包脚本自动提取。
+### 平台验收记录
+
+Linux 支持处于开发验收阶段。安装包及真实测试范围以对应发行说明为准；云服务器中的窗口测试不能代表所有桌面环境、显卡和输入法均已通过验收。ARM64、RPM 发行版及 Wayland 的完整交互尚未验收。
+
+Ubuntu 22.04 的新增验证范围见 [Ubuntu 22.04 验收记录](test-reports/2026-11-09-ubuntu2204/README.md)。
+
+开发包已在 Debian 12 云端隔离环境验证原生工作台、窗口重开后的界面状态、代理生命周期、系统包安装与卸载保留数据。QEMU 软件模拟验证了客体启动、共享文件保护和迁移重启。KVM 硬件加速、Ubuntu 24.04 实机以及真实 Claude 业务网络仍需验收。
+
+
+正式构建基线为 Ubuntu 22.04 x86_64（glibc 2.35），同一安装包在 Debian 12、Ubuntu 22.04/24.04 上执行兼容检查。从更新发行版构建的原生程序可能需要更高版本 glibc，不能标为兼容 Ubuntu 22.04。GTK/WebKitGTK 依赖来自发行版软件源（[Debian 依赖](https://packages.debian.org/bookworm/libwebkit2gtk-4.1-0)、[Ubuntu 22.04 依赖](https://packages.ubuntu.com/jammy/libwebkit2gtk-4.1-0)），动态库最低版本由打包脚本自动提取。
+
+Ubuntu 22.04 需要启用 `universe`、`jammy-updates` 与 `jammy-security`，安装更新后的 WebKitGTK 4.1（至少 2.40）。系统初始镜像中的旧 WebKit 不能用于构建或运行当前工作台。
 
 构建需要遵循 `go.mod` 的 Go、Node.js 24、C 编译器和以下系统包：
 

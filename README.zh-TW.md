@@ -18,7 +18,7 @@
 
 作為一個只是想和 Claude 對話與合作的正常使用者，受夠了折騰各種 VPS，指紋瀏覽器，環境檢測，面對封號的擔驚受怕和財產損失。我們提出 **Claude Cage** 專案：**一個開箱即用的桌面程式，配置好自己的網路代理，集中管理隔離環境、時區語言和環境檢查。**
 
-Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和檔案編輯器放進同一個桌面應用。支援以下幾個重點功能：
+Claude Cage 讓你在熟悉的系統裡與 Claude 一起工作：Mac 上使用 macOS 虛擬機器，Windows 上使用 Windows 虛擬機器，也可以選擇輕量的 Linux 環境。終端、瀏覽器、編輯器和官方 Claude Desktop 集中在同一個工作臺，專案按需共享，網路獨立管理；還能連接自己的伺服器，或用手機接續電腦上的工作。主要功能包括：
 
 - 和主機隔離的網路設定，Cage 自己接管和代理內部的所有網路流量
 - 和主機隔離的指紋設定，包括時區、語言等，支援自動與代理 IP 同步
@@ -38,12 +38,14 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 ## 你可以用它做什麼
 
 - **在一個視窗裡完成工作。** 用終端執行 Claude Code，用編輯器檢視改動，用 Cage 瀏覽器預覽服務和完成登入。
+- **用熟悉的系統開發。** 選擇 macOS、Windows 或 Linux 客機，使用對應平台的工具；也可自動匹配本機系統版本，建立乾淨的獨立環境。 [選擇客機系統](docs/guide/guest-systems.md)
 - **控制共享範圍。** 只共享預設工作區和明確開啟的專案資料夾；主機的 Claude 登入、瀏覽器配置和 SSH 金鑰不會自動匯入。
 - **看清網路狀態。** 內建代理管理支援匯入訂閱、選擇節點和檢查出口。關鍵檢查未透過時，環境保持離線；代理不可用時沒有直連回退。
 - **下次繼續使用。** 工具、檔案和登入狀態儲存在虛擬磁碟裡，關閉視窗可以保留後臺任務。
-- **管理多個 Claude Code 帳號。** 為新建的 Claude 終端分配帳號，查看 5 小時／7 天額度；執行中的終端不會自動換號。
-- **用手機接續工作。** 手機開發客戶端連接電腦，使用結構化 CLI 會話及工具審批；遠端瀏覽器需單獨授權。手機端需自行建置開發版本，無法接管任意普通終端。
+- **管理多個 Claude Code 帳號。** 查看額度、為新會話分配帳號，並在明確授權後切換帳號接續歷史。 [Claude Code](docs/guide/accounts.md)
+- **用手機接續工作。** Android / iPhone 透過 QR Code 或配對碼連接電腦，接續同一份 Claude Code 對話、傳送訊息和處理工具審批，也可操作遠端瀏覽器和電腦上的 Claude Desktop。
 - **在雲端執行環境。** 透過 SSH 連接部署在符合條件的 Linux x86_64 VPS 上的 Cage，無需 KVM；資料與網路出口位於伺服器。
+- **透過私網連接。** 在 Cage 內登入 Tailscale，讓本機與環境透過 SSH 雙向連接。 [Tailscale / SSH](docs/guide/tailscale.md)
 
 ## 快速開始
 
@@ -57,17 +59,19 @@ Claude Cage 是一個輕量 Linux 虛擬機器，把 Linux 終端、瀏覽器和
 
 ## 下載與安裝
 
-Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 24.04 x86_64。Windows 和 Linux 仍處於開發驗收階段；安裝包供應、簽章與實測範圍以各平台發行說明為準。Intel Mac、Windows ARM64 和 Linux ARM64 尚不受支援。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
+Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 22.04 / 24.04 x86_64。 Intel Mac、Windows ARM64 和 Linux ARM64 尚不受支援。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
 
 1. 開啟[專案主頁](https://lee-xeo.github.io/Claude-Cage/zh-TW/#download)，點選「下載應用程式」並選擇平台。
 2. macOS：開啟安裝包，將 **Cage** 拖入 **Applications（應用程式）**，再從“應用程式”啟動。Windows：[安裝說明](docs/windows.md#安装并开始工作) · Linux：[安裝說明](docs/linux.md#安装并开始工作)。
 3. 按應用內引導配置自己的代理，啟動環境後開啟專案。
 
-安裝包隨附工作臺和代理核心，日常使用無需安裝 Go、Node.js、Docker 或 Clash。首次啟動仍需聯網下載 Linux 映象與開發工具；Cage 不提供代理服務或 Claude 賬戶。
+安裝包隨附工作臺和代理核心，無需先安裝 Go、Node.js、Docker 或 Clash。首次建立環境時選擇客機系統與儲存位置，再準備對應的官方系統映像和開發工具。Cage 不提供作業系統授權、代理服務或 Claude 帳戶。
 
-公開版本以 [Releases](https://github.com/Lee-xeo/Claude-Cage/releases) 為準。原始碼、主頁與發行物公開；安裝包的簽名、公證和驗收範圍以對應 Release 說明為準。乾淨機器安裝、macOS 14 實機相容性、真實 Claude 授權與模型請求仍需完整驗收。
+原始碼與安裝包公開，版本說明和校驗檔案見 [Releases](https://github.com/Lee-xeo/Claude-Cage/releases)。
 
-支援應用程式內更新的 macOS 和 Windows 版本透過所選代理下載，無直連回退；安裝前請儲存並停止工作。macOS 要求相同發布者的 Developer ID 簽章並通過 Apple 驗證，Windows 要求可信 Authenticode 簽章及相同發布者公鑰。Windows 未簽章預覽版和 Linux 系統包需手動更新。詳見[升級與解除安裝](docs/getting-started.md#升级与卸载)。
+功能以所用建置為準，公開安裝包的能力與驗證範圍以發行說明為準。
+
+macOS 和已簽章 Windows 版本支援透過所選代理更新；Windows 未簽章預覽版與 Linux 使用安裝包手動更新。更新前儲存並停止工作，個人資料繼續保留。 [升級與解除安裝](docs/guide/maintenance.md)
 
 ## 三步開始
 
@@ -77,7 +81,7 @@ Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 ### 2. 啟動環境
 
-返回工作臺，點選“啟動 Cage 環境”。如果本機 Git 需要安全保護，應用先說明影響，由你點選“啟用保護並繼續”後設定；普通專案的提交與拉取不受影響。隨後下載映象、安裝工具並執行網路檢查，可以在“操作詳情”檢視進度。看到環境就緒、關鍵檢查透過後，即可聯網工作；失敗時按頁面提示修復並重試。
+首次選擇客機系統或「自動匹配本機系統版本」，再選擇儲存位置。點擊「啟動 Cage 環境」，按引導完成安裝與授權；進度和錯誤可在「操作詳情」查看。以後啟動沿用原環境。
 
 ### 3. 開啟專案，執行 Claude
 
@@ -86,8 +90,8 @@ Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 ## 使用前瞭解這些邊界
 
 - 共享專案中的修改和刪除會直接影響 本機 上的檔案。請使用版本控制或備份；專案內的 `.git` 可讀寫，可直接在 Cage 中暫存、提交與切換分支。
-- 所有專案共用一個 Cage 環境，也共用其中的工具、賬戶與 Linux 檔案系統。專案之間沒有獨立隔離。
-- 當前允許客機透過代理訪問公網 IPv4 TCP，DNS 透過同一代理傳送；公網 UDP、IPv6、ICMP，以及客機主動訪問主機和區域網的連線受到阻斷。依賴這些能力的工具可能無法使用。
+- 所有專案共用一個 Cage 環境，也共用其中的工具、賬戶與 macOS / Windows / Debian / Ubuntu 22.04 檔案系統。專案之間沒有獨立隔離。
+- 預設公網出站支援 IPv4 TCP，DNS 透過同一代理；公網 UDP、IPv6、ICMP 及主機和區域網路直連受限。主動啟用 Tailscale 後，可依私網權限連接裝置。
 - 網路檢查展示當前配置和取樣證據，無法保證賬戶不會受到平臺限制，也不能代替完整的虛擬化安全審計。
 
 詳細機制見[網路與資料邊界](docs/getting-started.md#网络与数据边界)、[網路檢查設計](docs/design/network-checks.md)和[內建代理設計](docs/design/managed-proxy.md)。
@@ -98,6 +102,7 @@ Cage 支援 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 | 你要做什麼 | 從這裡開始 |
 |---|---|
+| macOS / Windows / Debian / Ubuntu 22.04 | [選擇客機系統](https://lee-xeo.github.io/Claude-Cage/docs/guest-systems/) |
 | 第一次安裝、配置代理、開啟專案 | [開始使用](docs/getting-started.md) |
 | 處理下載、啟動、聯網和登入問題 | [常見問題與恢復](docs/troubleshooting.md) |
 | 瞭解按鍵、外觀、資料儲存和退出行為 | [日常使用](docs/getting-started.md#日常使用) |

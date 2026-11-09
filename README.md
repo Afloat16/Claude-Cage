@@ -18,7 +18,7 @@
 
 作为一个只是想和 Claude 对话与合作的正常用户，受够了折腾各种 VPS，指纹浏览器，环境检测，面对封号的担惊受怕和财产损失。我们提出 **Claude Cage** 项目：**一个开箱即用的桌面程序，配置好自己的网络代理，集中管理隔离环境、时区语言和环境检查。**
 
-Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Claude Desktop 放进同一个桌面工作台。可以在本机运行轻量虚拟机，也可以通过 SSH 将工作环境部署到自己的 Linux 服务器；手机开发客户端可连接电脑，处理 Claude Code 会话与工具审批。支持以下几个重点功能：
+Claude Cage 让你在熟悉的系统里与 Claude 一起工作：Mac 上用 macOS 虚拟机，Windows 上用 Windows 虚拟机，也可以选择轻量的 Linux 环境。终端、浏览器、编辑器和官方 Claude Desktop 汇集在同一个工作台，项目按需共享，网络独立管理；还可以连接自己的服务器，或用手机接续电脑上的任务。支持以下几个重点功能：
 
 - 和主机隔离的网络设置，Cage 自己接管和代理内部的所有网络流量
 - 和主机隔离的指纹设置，包括时区、语言等，支持自动与代理 IP 同步
@@ -38,14 +38,16 @@ Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Cla
 ## 你可以用它做什么
 
 - **在一个窗口里完成工作。** 用终端运行 Claude Code，用编辑器查看改动，用 Cage 浏览器预览服务和完成登录。
+- **用熟悉的系统开发。** 选择 macOS、Windows 或 Linux 客机，使用对应平台的工具；也可自动匹配本机系统版本，下载官方镜像并创建独立环境。 [选择客机系统](docs/guide/guest-systems.md)
 - **控制共享范围。** 只共享默认工作区和明确打开的项目文件夹；主机的 Claude 登录、浏览器配置和 SSH 密钥不会自动导入。
 - **看清网络状态。** 内置代理管理支持导入订阅、选择节点和检查出口。关键检查未通过时，环境保持离线；代理不可用时没有直连回退。
 - **下次继续使用。** 工具、文件和登录状态保存在虚拟磁盘里，关闭窗口可以保留后台任务。
-- **管理多个 Claude Code 订阅。** 独立登录多个账号，查看五小时和七天额度，为新建 Claude 终端分配账号；正在运行的终端保留原账号。[多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/)
-- **从手机继续处理任务。** Android / iPhone 开发客户端通过二维码或配对码连接电脑，创建和继续结构化 Claude Code 会话、处理工具审批，以及操作远程浏览器和 Claude Desktop。需要包含移动功能的构建，普通终端会话仍在原终端操作。[手机连接](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)
-- **把环境放到自己的服务器。** 从侧栏添加 SSH 主机，核验指纹后部署或连接，在符合条件的 Linux x86_64 VPS 运行环境，无需 KVM。项目、账户和网络配置保存在服务器，断开客户端可保留任务。[云端部署与 SSH](https://lee-xeo.github.io/Claude-Cage/docs/cloud/)
+- **管理多个 Claude Code 订阅。** 查看额度、为新会话分配账号，并在明确授权后切换账号接续历史。 [Claude Code](docs/guide/accounts.md)
+- **从手机继续处理任务。** Android / iPhone 配对电脑，接续 Claude Code 对话与工具审批，或操作远程浏览器和 Claude Desktop。[手机连接](docs/guide/mobile.md)
+- **把环境放到自己的服务器。** 通过 SSH 部署或连接 Linux VPS，工具、任务和数据留在服务器，无需 KVM。[云端部署与 SSH](docs/guide/cloud.md)
+- **通过私网连接。** 在 Cage 内登录 Tailscale，让本机与环境通过 SSH 双向连接。 [Tailscale / SSH](docs/guide/tailscale.md)
 
-浏览器还提供收藏夹、无痕会话、Cookie 管理、扩展导入和密码保险箱；外观、资源上限、环境存储位置与工具更新都可以在工作台管理。各项入口、使用步骤和错误处理见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。功能以所用构建为准，手机端目前需要开发构建，公开安装包范围以对应 Release 说明为准。
+浏览器收藏、无痕会话、Cookie、扩展、密码保险箱，以及外观、资源、存储和工具更新，见[完整使用文档](https://lee-xeo.github.io/Claude-Cage/docs/)。
 
 ## 快速开始
 
@@ -59,27 +61,29 @@ Claude Cage 把 Linux 终端、浏览器、文件编辑器和按需安装的 Cla
 
 ## 下载与安装
 
-Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 24.04 x86_64。Windows 和 Linux 仍处于开发验收阶段；安装包是否可用、签名与实测范围以各平台的发行说明为准。Intel Mac、Windows ARM64 和 Linux ARM64 尚不受支持。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
+Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Windows 10 22H2 / 11 x64，以及 Debian 12 / Ubuntu 22.04 / 24.04 x86_64。Windows 11 客机需要支持 Hyper-V 的 Windows 11 专业版、企业版或教育版主机；其他受支持的 Windows 主机可使用 Debian 或 Ubuntu 22.04。Intel Mac、Windows ARM64 和 Linux ARM64 暂不支持。 [macOS](docs/getting-started.md) · [Windows](docs/windows.md) · [Linux](docs/linux.md)。
 
 1. 打开[项目主页](https://lee-xeo.github.io/Claude-Cage/#download)，点击“下载应用”并选择平台。
 2. macOS：打开安装包，将 **Cage** 拖入 **Applications（应用程序）**，再从“应用程序”启动。Windows：[安装说明](docs/windows.md#安装并开始工作) · Linux：[安装说明](docs/linux.md#安装并开始工作)。
 3. 按应用内引导配置自己的代理，启动环境后打开项目。
 
-安装包随附工作台和代理核心，日常使用无需安装 Go、Node.js、Docker 或 Clash。首次启动仍需联网下载 Linux 镜像与开发工具；Cage 不提供代理服务或 Claude 账户。
+安装包随附工作台和代理核心，无需先安装 Go、Node.js、Docker 或 Clash。首次创建环境时选择客机系统与存储位置，再准备对应的官方系统镜像和开发工具。macOS、Windows 系统按各自许可使用；Cage 不提供系统授权、代理服务或 Claude 账户。
 
-源码、主页与发行物公开；可下载版本、功能、签名、公证和平台验收范围以[公开 Release](https://github.com/Lee-xeo/Claude-Cage/releases)说明为准。源码中的新增能力可能尚未进入公开包，手机开发客户端的安装与连接方式见[移动端文档](https://lee-xeo.github.io/Claude-Cage/docs/mobile/)。
+源码与安装包公开，版本说明和校验文件见 [GitHub Releases](https://github.com/Lee-xeo/Claude-Cage/releases)。系统选择、镜像来源与数据保留方式见[客机系统指南](docs/guide/guest-systems.md)。
 
-支持应用内更新的 macOS 和 Windows 版本通过所选代理下载，无直连回退；安装前请保存并停止任务。macOS 要求同一发布者的 Developer ID 签名并通过 Apple 验证，Windows 要求可信 Authenticode 签名和相同发布者公钥。Windows 未签名预览版和 Linux 系统包需手动更新。详见[升级与卸载](docs/getting-started.md#升级与卸载)。
+功能以所用构建为准，公开安装包的能力与验证范围以发行说明为准。
+
+macOS 和已签名 Windows 版本支持通过所选代理更新；Windows 未签名预览版与 Linux 使用安装包手动更新。更新前保存并停止任务，个人数据继续保留。 [升级与卸载](docs/guide/maintenance.md)
 
 ## 三步开始
 
 ### 1. 选择代理
 
-点击首页“配置网络与代理”，再点击“添加来源”，导入 Clash/Mihomo YAML 订阅或本地 YAML 文件，在“节点”中选择最终出口并点击“应用代理”。需要通过中转连接住宅代理时，选择“链式代理”，按顺序选择中转与最终出口。没有可用代理时，可以明确勾选“通过主机网络下载这份订阅”，或直接导入本地文件。后续可从“设置 → 网络与代理”管理节点。
+导入 Clash/Mihomo YAML 订阅或本地配置，选择节点并点击“应用代理”；需要中转时可配置链式代理。[网络与代理](docs/guide/network.md)
 
 ### 2. 启动环境
 
-返回工作台，点击“启动 Cage 环境”。如果本机 Git 需要安全保护，应用先说明影响，由你点击“启用保护并继续”后设置；普通项目的提交与拉取不受影响。随后下载镜像、安装工具并执行网络检查，可以在“操作详情”查看进度。看到环境就绪、关键检查通过后，即可联网工作；失败时按页面提示修复并重试。
+首次选择客机系统或“自动匹配本机系统版本”，再选择存储位置。点击“安装客户机”或“启动 Cage 环境”，按引导完成安装与授权；进度和错误可在“操作详情”查看。以后启动复用原环境。
 
 ### 3. 打开项目，运行 Claude
 
@@ -87,9 +91,9 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 
 ## 使用前了解这些边界
 
-- 共享项目中的修改和删除会直接影响本机上的文件。请使用版本控制或备份；`.git` 等元数据默认只读，Git 提交在主机上完成。
-- 所有项目共用一个 Cage 环境，也共用其中的工具、账户与 Linux 文件系统。项目之间没有独立隔离。
-- 当前允许客机通过代理访问公网 IPv4 TCP，DNS 通过同一代理发送；公网 UDP、IPv6、ICMP，以及客机主动访问主机和局域网的连接受到阻断。依赖这些能力的工具可能无法使用。
+- 共享项目中的修改和删除直接影响本机原文件，包括 Git 操作。请使用版本控制或备份，并核对提交结果。
+- 同一份 Cage 配置中的项目共用所选客机系统、工具、账户与文件系统，项目之间没有独立隔离。更换客机系统需要独立安装，原环境的数据继续保留。
+- 默认公网出站支持 IPv4 TCP，DNS 通过同一代理；公网 UDP、IPv6、ICMP 及主机和局域网直连受限。主动启用 Tailscale 后，可按私网权限连接设备。
 - 网络检查展示当前配置和采样证据，无法保证账户不会受到平台限制，也不能代替完整的虚拟化安全审计。
 
 详细机制见[网络与数据边界](docs/getting-started.md#网络与数据边界)、[网络检查设计](docs/design/network-checks.md)和[内置代理设计](docs/design/managed-proxy.md)。
@@ -101,6 +105,7 @@ Cage 支持 macOS、Windows 和 Linux：macOS 14+ 的 Apple Silicon Mac、Window
 | 你要做什么 | 从这里开始 |
 |---|---|
 | 第一次安装、配置代理、打开项目 | [安装与首次启动](https://lee-xeo.github.io/Claude-Cage/docs/installation/) |
+| 选择 macOS、Windows、Debian 或 Ubuntu 22.04 客机，使用原生开发工具 | [选择客机系统](https://lee-xeo.github.io/Claude-Cage/docs/guest-systems/) |
 | 添加多个订阅、查看额度和分配终端 | [多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/) |
 | 手机扫码、工具审批、远程浏览器 | [手机连接与远程会话](https://lee-xeo.github.io/Claude-Cage/docs/mobile/) |
 | 在自己的 VPS 部署和连接环境 | [云端部署与 SSH](https://lee-xeo.github.io/Claude-Cage/docs/cloud/) |
@@ -131,7 +136,7 @@ Cage 是独立社区项目，与 Anthropic 无隶属关系。
 感谢以下项目为 Cage 提供基础能力或设计参考：
 
 - [agent-vm](https://github.com/sylvinus/agent-vm)：Cage 的二次开发底座。
-- [Lima](https://github.com/lima-vm/lima)：Linux 虚拟机管理。
+- [Lima](https://github.com/lima-vm/lima)：虚拟机管理与 macOS、Linux 客机的运行基础。
 - [gvisor-tap-vsock](https://github.com/containers/gvisor-tap-vsock)：虚拟机网络能力。
 - [sshocker](https://github.com/lima-vm/sshocker) 和 [SFTP](https://github.com/pkg/sftp)：虚拟机与主机之间的文件共享能力。
 - [noVNC](https://github.com/novnc/noVNC)：浏览器中的远程画面与交互。

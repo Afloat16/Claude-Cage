@@ -9,6 +9,7 @@
 | 你要做什么 | 从这里开始 |
 |---|---|
 | 选择 macOS、Windows、Linux 安装包，配置代理并打开第一个项目 | [开始使用](getting-started.md) |
+| 选择与主机同类的客机系统，了解原生工具、镜像与数据保留 | [选择客机系统](guide/guest-systems.md) |
 | 查看快捷键、文件保存、关闭与退出行为 | [日常使用](getting-started.md#日常使用) |
 | 在 Windows 上安装、使用和更新 | [Windows 支持](windows.md) |
 | 在 Linux 上安装、使用和更新 | [Linux 支持](linux.md) |
@@ -23,11 +24,15 @@
 | 你要做什么 | 从这里开始 |
 |---|---|
 | 从源码构建、修改和验证代码 | [参与开发](../CONTRIBUTING.md) |
-| 理解工作台、浏览器与后台的职责 | [工作台设计](design/workbench.md) |
+| 理解工作台、浏览器与后台的职责 | [工作台设计](design/workbench.md) · [浏览器设置与扩展](design/browser-settings.md) |
 | 在同一个 Cage 中选择本机或远程，按需启用本机运行环境 | [桌面入口与资源设计](design/desktop-environments.md) |
+| 自动匹配本机系统版本，核对版本匹配、首次权限与平台验证范围 | [客机系统指南](guide/guest-systems.md) · [客机系统设计](design/guest-systems.md) |
+| 理解 macOS、Windows 与 Debian 的统一工作台和平台约束 | [客机系统设计](design/guest-systems.md) |
 | 将运行环境部署到无 KVM 的 Linux 云服务器，再从桌面连接 | [云端部署设计](design/cloud-deployment.md) · [部署文件](../deploy/cloud/) |
+| 在手机开发版上连接自己的 Cage，使用 Claude Code CLI 会话 | [手机构建与连接](../mobile/README.md) · [主机配对与撤销](../cmd/cage-mobile-link/README.md) · [移动工作台设计](design/mobile-remote.md) |
 | 保存网站账号密码，了解本地加密与填充范围 | [使用密码保险箱](getting-started.md#保存网站账号密码) · [密码保险箱设计](design/password-vault.md) |
-| 将多个订阅用于新建的 Claude Code 终端，了解调度、额度与 Desktop 的适用范围 | [账号面板](design/workbench.md#claude-code-账号面板) · [调研与集成取舍](research/2026-11-04-claude-account-pool.md) |
+| 分配多个 Claude Code 订阅，按授权接续历史，共享技能和记忆 | [多账号与额度](guide/accounts.md) · [账号面板设计](design/workbench.md#claude-code-账号面板) |
+| 登录 Tailscale，配置双向 SSH、公钥与私网生命周期 | [Tailscale 指南](guide/tailscale.md) · [Tailscale 设计](design/tailscale.md) |
 | 评估主机输入法、原位拼音与候选窗跟随 | [原生输入法研究](research/2026-11-04-native-ime.md) |
 | 定位作业、终端、浏览器连接与退出流程的代码 | [控制服务职责](design/control-service.md) |
 | 理解网络检查、暂停与恢复 | [网络检查设计](design/network-checks.md) |

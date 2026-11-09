@@ -11,13 +11,15 @@ keywords: 云端 远程部署 VPS SSH 无KVM rootless 服务器 主机 指纹 �
 
 服务器模式通过 rootless 容器运行，不需要 KVM。它仍需要满足系统、权限和资源条件，并非所有 VPS 都可以直接部署。
 
+云端使用 Linux 环境，与本机选择 macOS、Windows 或 Debian 分开。需要 Mac 或 Windows 原生工具时，使用对应的本机客机；需要服务器常驻任务时，选择云端。两种方式沿用同一套工作台。见[选择客机系统](guest-systems.md)。
+
 ## 准备服务器
 
 当前目标为 Linux x86_64，具备 systemd 用户服务、cgroup v2、rootless 用户命名空间、至少 65,536 个 subordinate UID/GID，以及 `/dev/fuse`、`/dev/net/tun`。普通 SSH 用户需要相应权限；还需 OpenSSH、curl、tar、sha256sum、iproute2 与 iptables 等基础工具。
 
 完整前提和维护命令见[部署说明](https://github.com/Lee-xeo/Claude-Cage/blob/main/deploy/cloud/README.md)。权限缺失应修复服务器配置，不要改用特权容器或把 Docker socket 暴露给工作环境。
 
-无人登录时常驻需要服务器管理员核对 systemd 用户服务与 linger；无人登录、宿主重启恢复及不同原生客户端的验收需要分别完成，单次连接成功不能保证这些场景。
+需要在退出 SSH 后持续运行或在服务器重启后恢复服务时，由服务器管理员配置 systemd 用户服务、linger 与相应启动策略。
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/ssh-sidebar.jpg" target="_blank" rel="noopener" aria-label="查看原图：SSH 主机侧栏：添加自己的服务器"><img src="../../www/public/docs/screenshots/ssh-sidebar.jpg" alt="SSH 主机侧栏：添加自己的服务器" width="2560" height="1764" loading="lazy" decoding="async" /></a>
