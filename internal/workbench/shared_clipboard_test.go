@@ -60,7 +60,9 @@ func TestClipboardCopyRejectsMissingRevisionAndInvalidPhaseBeforeGuestAccess(t *
 		`{"phase":"read","session":"","revision":1}`,
 	} {
 		response := httptest.NewRecorder()
-		s.clipboardCopy(response, httptest.NewRequest(http.MethodPost, "/api/clipboard/copy", strings.NewReader(body)))
+		request := httptest.NewRequest(http.MethodPost, "/api/clipboard/copy", strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+		s.clipboardCopy(response, request)
 		if response.Code != http.StatusBadRequest {
 			t.Fatalf("invalid copy request reached the guest: %d", response.Code)
 		}

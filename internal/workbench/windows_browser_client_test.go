@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,6 +19,7 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 		return
 	}
 	var uploaded []byte
+	downloaded := bytes.Repeat([]byte{0xab}, 131089)
 	direction := ""
 	const transfer = "0123456789abcdef0123456789abcdef"
 	read := bufio.NewScanner(os.Stdin)
@@ -26,6 +28,10 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 		var request struct {
 			Path  string `json:"path"`
 			Input struct {
+				ID        string `json:"id"`
+				Tab       string `json:"tab"`
+				Context   string `json:"context"`
+				Document  string `json:"document"`
 				Direction string `json:"direction"`
 				Data      string `json:"data"`
 				Sequence  int    `json:"sequence"`
@@ -57,7 +63,22 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 				result = map[string]any{"transfer": transfer}
 			}
 			if request.Input.Direction == "download" {
-				result = map[string]any{"transfer": transfer, "size": 131089, "name": "binary.bin"}
+				downloaded = bytes.Repeat([]byte{0xab}, 131089)
+				metadata := map[string]any{"transfer": transfer, "size": len(downloaded), "name": "binary.bin"}
+				if request.Input.Tab != "" {
+					if request.Input.Tab != strings.Repeat("a", 32) || request.Input.Context != strings.Repeat("b", 32) || request.Input.Document != strings.Repeat("c", 32) {
+						result = map[string]any{"error": "copy_changed", "code": "copy_changed"}
+						break
+					}
+					metadata["name"], metadata["mime"] = "clipboard.txt", "text/plain"
+					downloaded = []byte(strings.Repeat("中", (2<<20)/3) + "ab")
+					if strings.HasPrefix(request.Input.ID, "11111111") {
+						metadata["name"], metadata["mime"] = "clipboard.png", "image/png"
+						downloaded, _ = base64.StdEncoding.DecodeString(testPNG(t))
+					}
+					metadata["size"] = len(downloaded)
+				}
+				result = metadata
 			}
 		case "/file-chunk":
 			chunk, err := base64.StdEncoding.DecodeString(request.Input.Data)
@@ -88,11 +109,11 @@ func TestWindowsBrowserRelayHelper(t *testing.T) {
 			result = map[string]any{"ok": true, "size": len(uploaded), "clipboard": map[string]any{"revision": 1, "available": true}}
 		case "/file-read":
 			start := request.Input.Sequence * 65536
-			remaining := 131089 - start
+			remaining := len(downloaded) - start
 			if remaining > 65536 {
 				remaining = 65536
 			}
-			result = map[string]any{"data": base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0xab}, remaining)), "sequence": request.Input.Sequence + 1, "eof": start+remaining == 131089}
+			result = map[string]any{"data": base64.StdEncoding.EncodeToString(downloaded[start : start+remaining]), "sequence": request.Input.Sequence + 1, "eof": start+remaining == len(downloaded)}
 		}
 		data, _ := json.Marshal(result)
 		_, _ = os.Stdout.Write(append(data, '\n'))
