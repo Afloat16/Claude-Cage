@@ -85,7 +85,7 @@ Guji 'Mashruuca Furan' si aad u dooratid galka kombiyuutarka kaaga, fur terminal
 
 ## Fahmo xadkan ka hor intaanad isticmaalin
 
-- Wax ka beddelka iyo tirtiridda mashaariicda la wadaago waxay si toos ah u saameeyaan faylasha kombiyuutarka kaaga. Isticmaal xakamaynta nooca ama kaydinta. `.git` iyo xogta kale ee badan waxaa loo akhriyaa-kaliya si macquul ah; Git ku samee kombiyuutarka.
+- Wax ka beddelka iyo tirtiridda mashaariicda la wadaago waxay si toos ah u saameeyaan faylasha kombiyuutarka kaaga. Isticmaal xakamaynta nooca ama kaydinta. Galka `.git` ee mashruuca waa la akhriyi karaa lana qori karaa; Cage gudaheeda waxaad ku diyaarin kartaa isbeddelada, samayn kartaa commits, kuna beddeli kartaa branches.
 - Dhammaan mashruucyada waxay wadaagaan hal deegaan Cage, oo ay ku jiraan qalabkeeda, xisaabaadka, iyo nidaamka faylka Linux. Mashruucyadu maaha kuwo midba midka kale ka soocan.
 - Martidu hadda waxay marin u heli karaan IPV4 TCP dadweynaha iyada oo loo marayo wakiilka shabakadda, iyadoo DNS loo soo diray isla wakiilkii. UDP dadweynaha, IPv6, ICMP, iyo isku xidhka martida-bilaabatay ee martigeliyaha ama shabakada maxaliga ah waa la xannibay. Aaladaha ku xiran awoodahaan waxaa laga yaabaa inaysan shaqeynin.
 - Jeegaga shabakada waxay tusinaysaa qaabka hadda jira iyo cadaymaha la muunada ah. Ma dammaanad qaadi karaan in akoonku uu ka fogaanayo xannibaadaha goobta, mana beddelaan xisaab-xidhka amniga oo dhammaystiran.

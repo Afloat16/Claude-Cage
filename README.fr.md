@@ -85,7 +85,7 @@ Cliquez sur « Ouvrir le projet » pour sélectionner un dossier sur votre ordin
 
 ## Comprendre ces limites avant utilisation
 
-- Les modifications et suppressions dans les projets partagés affectent directement les fichiers sur votre ordinateur. Utilisez le contrôle de version ou les sauvegardes. `.git` et les autres métadonnées sont en lecture seule par défaut ; effectuer les commits Git sur l’ordinateur hôte.
+- Les modifications et suppressions dans les projets partagés affectent directement les fichiers sur votre ordinateur. Utilisez le contrôle de version ou les sauvegardes. Le dossier `.git` du projet est accessible en lecture et en écriture ; vous pouvez préparer des modifications, créer des commits et changer de branche dans Cage.
 - Tous les projets partagent un environnement Cage, y compris ses outils, ses comptes et son système de fichiers Linux. Les projets ne sont pas isolés les uns des autres.
 - L'invité a actuellement accès au TCP IPv4 public via le proxy réseau, le DNS étant envoyé via le même proxy. Les connexions publiques UDP, IPv6, ICMP et initiées par l'invité à l'hôte ou au réseau local sont bloquées. Les outils qui dépendent de ces capacités peuvent ne pas fonctionner.
 - Les vérifications du réseau montrent la configuration actuelle et des échantillons de preuves. Ils ne peuvent pas garantir qu’un compte évitera les restrictions de la plateforme et ne remplacent pas un audit complet de sécurité de la virtualisation.

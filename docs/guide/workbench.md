@@ -9,9 +9,11 @@ keywords: 项目 Claude Code 编辑器 code-server 文件 复制 粘贴 快捷�
 
 点击左侧“项目”旁的加号，选择已有项目，或点“添加本机项目…”打开主机目录。没有项目时也可使用默认工作区。项目列表会保存，下次启动继续可用。
 
-项目旁的打开图标（↗）在 code-server 中编辑该目录，终端图标（>_）用于选择终端类型。文件会直接写入共享目录，重要项目请先备份；`.git` 等元数据默认只读，在主机 Git 工具审查和提交代码。
+项目旁的打开图标（↗）在 code-server 中编辑该目录，终端图标（>_）用于选择终端类型。文件会直接写入共享目录，重要项目请先备份；项目内的 `.git` 可读写，可直接在 Cage 中暂存、提交和切换分支。
 
 所有项目共用一个环境、工具和账户。切换项目不会改变已有终端的目录，也不会关闭网页或撤销之前的共享。云端的目录与权限见[云端部署与 SSH](cloud.md)。
+
+共享文件在环境内显示为当前用户所有，Git 可正常读取已打开项目的状态与历史。文件内容仍属于原来的主机目录，Git 元数据与项目一起共享，环境中的 Git 操作会直接更新主机仓库。授权目录内的隐藏文件、工具配置、Git 配置和钩子均按普通项目文件共享。Cage 不按文件名额外隐藏文件或禁止写入；云端共享的整目录只读授权仍然生效。
 
 <figure class="guide-shot">
   <a href="../../www/public/docs/screenshots/first-start.jpg" target="_blank" rel="noopener"><img src="../../www/public/docs/screenshots/first-start.jpg" alt="工作台侧栏、默认项目与终端入口（环境未启动）" width="2560" height="1764" loading="lazy" decoding="async" /></a>

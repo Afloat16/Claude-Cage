@@ -231,8 +231,7 @@ func (s *Server) inspectVMLayout() (bool, bool) {
 			MountPoint string `yaml:"mountPoint"`
 			Writable   bool   `yaml:"writable"`
 			SSHFS      struct {
-				Driver        string   `yaml:"sftpDriver"`
-				ReadonlyNames []string `yaml:"readonlyNames"`
+				Driver string `yaml:"sftpDriver"`
 			} `yaml:"sshfs"`
 		} `yaml:"mounts"`
 		Networks  []any  `yaml:"networks"`
@@ -245,13 +244,6 @@ func (s *Server) inspectVMLayout() (bool, bool) {
 	if shares {
 		m := spec.Mounts[0]
 		shares = paths.Equal(paths.Host(m.Location), paths.Host(workspace)) && m.MountPoint == guestPath(workspace) && m.Writable && m.SSHFS.Driver == "builtin"
-		gitProtected := false
-		for _, name := range m.SSHFS.ReadonlyNames {
-			if name == ".git" {
-				gitProtected = true
-			}
-		}
-		shares = shares && gitProtected
 	}
 	return shares, len(spec.Networks) == 0
 }
@@ -451,7 +443,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 		_, _ = shared.Seek(0, io.SeekStart)
 		sharedData, _ := io.ReadAll(io.LimitReader(shared, 256))
 		if shares && boundary.PrivateFile == "unreachable" && boundary.SharedFile && string(sharedData) == challenge+":guest" {
-			set("filesystem_boundary", cage.CheckPassed, "共享读写探针往返成功；宿主私有目录探针不可读；环境基础共享目录与明确打开的项目使用受目录约束的传输，并保护 Git 元数据", "")
+			set("filesystem_boundary", cage.CheckPassed, "共享读写探针往返成功；宿主私有目录探针不可读；环境基础共享目录与明确打开的项目使用受目录约束的传输，项目内允许 Git 读写", "")
 		} else {
 			set("filesystem_boundary", cage.CheckFailed, "共享读写、私有目录探针或挂载范围未符合预期", "检查共享目录；不要共享主目录或 Cage 配置目录")
 		}

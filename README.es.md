@@ -85,7 +85,7 @@ Haga clic en 'Abrir proyecto' para seleccionar una carpeta en su equipo, abra un
 
 ## Comprenda estos límites antes de usarlo
 
-- Las ediciones y eliminaciones en proyectos compartidos afectan directamente a los archivos de su equipo. Utilice control de versiones o copias de seguridad. `.git` y otros metadatos son de sólo lectura de forma predeterminada; realizar confirmaciones de Git en equipo.
+- Las ediciones y eliminaciones en proyectos compartidos afectan directamente a los archivos de su equipo. Utilice control de versiones o copias de seguridad. El directorio `.git` del proyecto permite lectura y escritura; puede preparar cambios, crear commits y cambiar de rama en Cage.
 - Todos los proyectos comparten un entorno Cage, incluidas sus herramientas, cuentas y sistema de archivos Linux. Los proyectos no están aislados unos de otros.
 - Actualmente, el invitado tiene acceso al TCP IPv4 público a través del proxy de red, y el DNS se envía a través del mismo proxy. Se bloquean las conexiones públicas UDP, IPv6, ICMP y iniciadas por invitados al host o a la red local. Es posible que las herramientas que dependen de estas capacidades no funcionen.
 - Las comprobaciones de red muestran la configuración actual y pruebas de muestra. No pueden garantizar que una cuenta evite las restricciones de la plataforma y no reemplazan una auditoría completa de seguridad de virtualización.

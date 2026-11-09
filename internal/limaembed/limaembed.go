@@ -125,11 +125,16 @@ func Run(args []string) bool {
 	}
 	// The user is asked before the VM changes a file their machine runs on
 	// its own (guard): the shares' SFTP server runs here.
-	g, err := guard.Load(string(st), args[len(args)-1])
-	if err != nil {
-		logrus.Fatal(err)
+	if os.Getenv(cage.ConfigEnv) == "" {
+		g, err := guard.Load(string(st), args[len(args)-1])
+		if err != nil {
+			logrus.Fatal(err)
+		}
+		reversesshfs.Guard = g.Allow
+	} else {
+		// Cage grants normal file access inside explicitly shared directories.
+		reversesshfs.Guard = nil
 	}
-	reversesshfs.Guard = g.Allow
 	root := &cobra.Command{
 		Use:           "agent-vm",
 		SilenceUsage:  true,

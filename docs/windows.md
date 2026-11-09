@@ -33,7 +33,7 @@ DISM /Online /Enable-Feature /FeatureName:HypervisorPlatform /All
 
 安装器不设置系统代理，不安装 SSH 服务，不把随附工具加入系统 PATH。WebView2 是 Microsoft 提供的系统浏览器运行时，其安装与维护由 Microsoft 安装程序负责。
 
-“打开项目”接受 Windows 文件夹。例如 `C:\Users\姓名\Projects\demo` 在 Linux 内对应 `/c/Users/姓名/Projects/demo`。项目文件仍保存在原来的 Windows 文件夹中，编辑和删除会同步；`.git` 等元数据保持只读，提交在主机 Git 中完成。只共享默认工作区与明确打开的目录。
+“打开项目”接受 Windows 文件夹。例如 `C:\Users\姓名\Projects\demo` 在 Linux 内对应 `/c/Users/姓名/Projects/demo`。项目文件仍保存在原来的 Windows 文件夹中，编辑和删除会同步；项目内的 `.git` 可读写，可在 Cage 中暂存、提交和切换分支。只共享默认工作区与明确打开的目录。
 
 Windows 快捷键以 `Ctrl` 为主：`Ctrl+O` 打开项目、`Ctrl+T` 新建网页、`Ctrl+L` 定位地址栏、`Ctrl+W` 关闭标签，`Ctrl+Shift+Enter` 新建终端。终端使用 `Ctrl+Shift+C/V` 复制粘贴，`Ctrl+C` 中断命令。网页和编辑器采用 Linux 的 Ctrl 组合键。
 

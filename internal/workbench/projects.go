@@ -15,7 +15,6 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/lima-vm/sshocker/pkg/reversesshfs"
-	"github.com/sylvinus/agent-vm/internal/mounts"
 )
 
 // connectProject is the shared project entry point. Callers hold the lifecycle
@@ -191,7 +190,7 @@ func (s *Server) ensureProjectShare(path string) (returned error) {
 	}
 	go func() {
 		defer close(share.done)
-		_ = reversesshfs.ServeConfined(share.transport, path, false, mounts.BaseNames)
+		_ = reversesshfs.ServeConfined(share.transport, path, false, nil)
 		share.stop()
 		_ = cmd.Wait()
 	}()
