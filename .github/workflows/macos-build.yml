@@ -56,6 +56,10 @@ jobs:
         run: |
           node scripts/check-version.mjs
           node --test scripts/macos-sshfs-sources.test.mjs
+      - name: Install SSHFS build dependencies
+        run: |
+          brew install glib gettext pcre2
+          brew upgrade glib gettext pcre2
       - name: Build the macOS application without release credentials
         env:
           CAGE_SIGNING_IDENTITY: '-'
