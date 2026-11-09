@@ -15,6 +15,7 @@ export function ProjectDialog({
   activate = true,
   onClose,
   onOpened,
+  onRemoved,
   onSettings,
 }) {
   const projects = status.projects || [];
@@ -24,6 +25,8 @@ export function ProjectDialog({
   const [recovery, setRecovery] = useState("");
   const [pending, setPending] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState("");
+  const [removed, setRemoved] = useState([]);
   const [directories, setDirectories] = useState(null);
   const [browsing, setBrowsing] = useState(false);
   const remote = isRemoteClient();
@@ -65,9 +68,21 @@ export function ProjectDialog({
     } catch (e) { setError(e.message); }
     finally { setSubmitting(false); }
   };
-  const projectList = [...new Set([...projects, ...shares.map((s) => s.guest_path)])];
+  const projectList = [...new Set([...projects, ...shares.map((s) => s.guest_path)])].filter(project => !removed.includes(project));
   const selectedShare = shares.find((item) => item.guest_path === path);
   const busy = submitting || Boolean(status.job?.running);
+  const remove = async () => {
+    if (busy || !removeTarget) return;
+    setSubmitting(true); setError("");
+    try {
+      const result = await api("/projects/remove", { workspace: removeTarget });
+      setRemoved(previous => [...previous, removeTarget]);
+      setPath(result.workspace || status.environment_directory || "");
+      setRemoveTarget("");
+      await onRemoved?.(removeTarget, result.workspace);
+    } catch (e) { setError(e.message); }
+    finally { setSubmitting(false); }
+  };
   const browse = async (directory = path.trim()) => {
     setBrowsing(true); setError("");
     try { setDirectories(await api(`/projects/directories?${new URLSearchParams({ path: directory })}`)); }
@@ -95,7 +110,7 @@ export function ProjectDialog({
   };
   const open = async (event) => {
     event?.preventDefault();
-    if (busy || sharing || !path.trim()) return;
+    if (busy || sharing || removeTarget || !status.ready || !path.trim()) return;
     setSubmitting(true);
     setError("");
     setRecovery("");
@@ -130,7 +145,7 @@ export function ProjectDialog({
         <>
           <span className="save-note">
             {busy
-              ? submitting ? "正在连接项目…" : status.job?.message
+              ? submitting ? removeTarget ? "正在移除项目…" : "正在连接项目…" : status.job?.message
               : adding ? "添加到 Cage 项目列表" : "使用已授权的 Cage 项目"}
           </span>
           <button disabled={busy} onClick={onClose}>
@@ -140,7 +155,7 @@ export function ProjectDialog({
             className="primary"
             form="open-project"
             type="submit"
-            disabled={!path.trim() || busy || sharing}
+            disabled={!path.trim() || busy || sharing || Boolean(removeTarget) || !status.ready}
           >
             {busy ? (
               <LoaderCircle className="spin" size={15} />
@@ -170,7 +185,7 @@ export function ProjectDialog({
           </fieldset>}
         </>}
         {!sharing && !adding && <>
-          <fieldset className="project-picker-list" disabled={busy}>
+          <fieldset className="project-picker-list" disabled={busy || Boolean(removeTarget)}>
             <legend>Cage 项目</legend>
             {projectList.map((project) => <label className={`project-picker-item ${path === project ? "selected" : ""}`} key={project}>
               <input type="radio" name="project" value={project} checked={path === project} onChange={() => { setPath(project); setError(""); }} />
@@ -183,7 +198,14 @@ export function ProjectDialog({
             </label>)}
           </fieldset>
           {selectedShare && <button type="button" disabled={submitting} onClick={() => revoke(selectedShare)}>停止共享本机项目（{selectedShare.readonly ? "只读" : "读写"}）</button>}
-          <button type="button" className="quiet-button project-picker-add" onClick={add} disabled={busy}><Plus size={16} />{remote ? "添加云端项目…" : "添加本机项目…"}</button>
+          {activate && !selectedShare && path && path !== status.environment_directory && !removeTarget && <button type="button" className="quiet-button" disabled={busy} onClick={() => { setRemoveTarget(path); setError(""); setRecovery(""); }}>从 Cage 移除此项目</button>}
+          {removeTarget && <section className="project-picker-list" aria-label="确认移除项目">
+            <p>移除“{projectName(removeTarget)}”将解除目录共享。原文件和会话历史保留，重新添加相同目录后可继续使用历史。</p>
+            <p className="field-help">请先保存文件，并关闭此项目的终端、运行中会话和编辑器。移除当前项目后会选中默认工作区。</p>
+            <button type="button" disabled={busy} onClick={() => { setRemoveTarget(""); setError(""); }}>取消移除</button>
+            <button type="button" disabled={busy} onClick={remove}>确认移除项目</button>
+          </section>}
+          <button type="button" className="quiet-button project-picker-add" onClick={add} disabled={busy || Boolean(removeTarget) || !status.ready}><Plus size={16} />{remote ? "添加云端项目…" : "添加本机项目…"}</button>
         </>}
         {!sharing && adding && <>
           {projects.length > 0 && <button type="button" className="quiet-button project-picker-add" disabled={busy} onClick={() => { setAdding(false); setPath(status.workspace || projects[0]); setError(""); }}>返回已有项目</button>}
@@ -221,6 +243,7 @@ export function ProjectDialog({
         <p className="field-help">
           {remote ? "云端项目保存在服务器上。" : "这个文件夹中的改动会同步到本机。"}所有项目共用 Cage 环境，已有终端和网页会保持运行。
         </p>
+        {!status.ready && <p className="field-help">环境就绪后可添加或打开项目。已有项目仍可从列表移除。</p>}
         {error && (
           <div className="error-message" role="alert">
             <SafetyMessage message={error} />

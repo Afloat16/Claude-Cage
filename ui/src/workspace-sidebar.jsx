@@ -136,7 +136,7 @@ export function WorkspaceSidebar({
             onClick={() => onOpenProject()}
             aria-label="添加项目"
             title="添加项目"
-            disabled={busy || !running}
+            disabled={busy}
           >
             <Plus size={15} />
           </button>
