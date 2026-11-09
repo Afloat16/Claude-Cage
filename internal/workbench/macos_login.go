@@ -27,6 +27,9 @@ func (s *Server) macSetupPending() bool {
 }
 
 func macOSSetupRoute(path string) bool {
+	if strings.HasPrefix(path, "/api/agent/jobs/") {
+		return true
+	}
 	if !strings.HasPrefix(path, "/api/") {
 		return true
 	}

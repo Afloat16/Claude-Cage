@@ -13,6 +13,7 @@ import (
 )
 
 type Job struct {
+	Canceled      bool           `json:"canceled,omitempty"`
 	SetupProgress *SetupProgress `json:"setup_progress,omitempty"`
 	ID            string         `json:"id"`
 	Kind          string         `json:"kind"`
@@ -154,6 +155,7 @@ func (m *jobManager) finishLocked(execution *jobExecution, err error) {
 	m.state.Running = false
 	switch {
 	case errors.Is(err, context.Canceled):
+		m.state.Canceled = true
 		m.state.Message = "已取消"
 		diagnostics.Log("info", "task", m.state.Kind+" canceled")
 	case err != nil:

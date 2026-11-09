@@ -8,6 +8,7 @@
 
 | 你要做什么 | 从这里开始 |
 |---|---|
+| 让自己的 Agent 下载、安装、配置 Cage，跟踪任务并排查故障 | [Agent 使用指南](guide/agent.md) |
 | 选择 macOS、Windows、Linux 安装包，配置代理并打开第一个项目 | [开始使用](getting-started.md) |
 | 选择与主机同类的客机系统，了解原生工具、镜像与数据保留 | [选择客机系统](guide/guest-systems.md) |
 | 查看快捷键、文件保存、关闭与退出行为 | [日常使用](getting-started.md#日常使用) |

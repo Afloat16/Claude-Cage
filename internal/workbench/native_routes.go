@@ -9,6 +9,8 @@ func nativeWorkbenchRoute(path string) bool {
 		return true
 	}
 	switch path {
+	case "/api/agent/settings":
+		return true
 	case "/api/account", "/api/session", "/api/launch", "/api/handoff", "/api/remote/manifest",
 		"/api/appearance", "/api/favorites", "/api/status", "/api/settings", "/api/settings/probe",
 		"/api/start", "/api/stop", "/api/restore", "/api/host/git", "/api/projects/open", "/api/projects/directories",
@@ -20,6 +22,7 @@ func nativeWorkbenchRoute(path string) bool {
 		return true
 	}
 	for _, prefix := range []string{
+		"/api/agent/jobs/",
 		"/api/account/", "/api/terminals/", "/api/claude-accounts/", "/api/cli/sessions/", "/api/proxy/",
 		"/api/browser/", "/api/clipboard/files/", "/api/input/files/browser/", "/api/input/files/terminal/",
 		"/api/tailscale/", "/api/mobile/cli/", "/api/mobile/browser/", "/api/mobile/desktop/", "/api/diagnostics",

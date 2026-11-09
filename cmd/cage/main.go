@@ -34,6 +34,7 @@ import (
 const help = `Claude Cage — local isolated Claude development
 
 cage desktop       Open the unified Cage workbench (desktop launcher)
+cage agent         Discover and use the versioned, JSON-only external Agent interface
 cage serve         Run its private localhost control service
 cage server-entry --json  Issue a private SSH remote connection entry
 cage container-configure --json  Configure a Linux container from JSON stdin
@@ -88,6 +89,9 @@ func run() int {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		fmt.Print(help)
 		return 0
+	}
+	if args[0] == "agent" {
+		return runAgent(args[1:], os.Stdin, os.Stdout)
 	}
 	if args[0] == "verify-web-assets" {
 		if len(args) != 1 {

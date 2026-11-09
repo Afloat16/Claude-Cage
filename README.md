@@ -104,6 +104,7 @@ macOS 和已签名 Windows 版本支持通过所选代理更新；Windows 未签
 
 | 你要做什么 | 从这里开始 |
 |---|---|
+| 让自己的 Agent 下载、安装、配置和排查 Cage | [Agent 使用指南](https://lee-xeo.github.io/Claude-Cage/docs/agent/) |
 | 第一次安装、配置代理、打开项目 | [安装与首次启动](https://lee-xeo.github.io/Claude-Cage/docs/installation/) |
 | 选择 macOS、Windows、Debian 或 Ubuntu 22.04 客机，使用原生开发工具 | [选择客机系统](https://lee-xeo.github.io/Claude-Cage/docs/guest-systems/) |
 | 添加多个订阅、查看额度和分配终端 | [多账号与额度](https://lee-xeo.github.io/Claude-Cage/docs/accounts/) |

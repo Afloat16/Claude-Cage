@@ -312,6 +312,7 @@ func serve(configPath string, clientOnly bool, fullConfigPath string) (returned 
 }
 func (s *Server) handler() http.Handler {
 	mux := http.NewServeMux()
+	s.agentRoutes(mux)
 	s.mobileCLIRoutes(mux)
 	s.mobileSurfaceRoutes(mux)
 	mux.HandleFunc("GET /api/mobile-pair", s.phoneStatus)
@@ -323,7 +324,7 @@ func (s *Server) handler() http.Handler {
 		if !s.launcherAuthenticated(w, r) {
 			return
 		}
-		jsonReply(w, launchResponse{DesktopGateway: s.desktopEntry, URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket(), Controller: s.identity})
+		jsonReply(w, launchResponse{ConfigPath: s.configPath, ClientOnly: s.clientOnly, DesktopGateway: s.desktopEntry, URL: s.origin + "/?launch=" + randomToken()[:8] + "#" + s.issueTicket(), Controller: s.identity})
 	})
 	if s.desktopEntry || s.clientOnly {
 		mux.HandleFunc("POST /api/handoff", s.handoffEntry)

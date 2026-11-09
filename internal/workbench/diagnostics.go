@@ -109,6 +109,16 @@ func ExportDiagnostics(configPath, destination string) error {
 }
 
 func ExportDiagnosticsForConnection(configPath, connectionID, destination string) error {
+	return exportDiagnostics(configPath, connectionID, destination, false)
+}
+
+// ExportAgentDiagnostics pins the owning local workload and uses its native
+// launcher proof. The output is exclusive even if another writer races it.
+func ExportAgentDiagnostics(configPath, destination string) error {
+	return exportDiagnostics(configPath, "local", destination, true)
+}
+
+func exportDiagnostics(configPath, connectionID, destination string, agentLocal bool) error {
 	if !filepath.IsAbs(destination) {
 		return errors.New("请选择本机绝对保存路径")
 	}
@@ -126,7 +136,13 @@ func ExportDiagnosticsForConnection(configPath, connectionID, destination string
 		return err
 	}
 	export := func() error {
-		c, e := connectController(profile)
+		var c *controllerClient
+		var e error
+		if agentLocal {
+			c, e = agentConnect(context.Background(), configPath)
+		} else {
+			c, e = connectController(profile)
+		}
 		if e != nil {
 			if connectionID != "" && connectionID != "local" {
 				return errors.New("远程连接不可用，无法导出云端诊断包")
@@ -137,20 +153,25 @@ func ExportDiagnosticsForConnection(configPath, connectionID, destination string
 			return store.Export(f, version.Version, nil, "controller unavailable or invalid; host logs only")
 		}
 		defer c.close()
-		parsed, e := url.Parse(c.launch.URL)
-		if e != nil {
-			return e
-		}
-		ticket := parsed.Fragment
-		code, e := c.call("POST", "/api/session", map[string]string{"token": ticket}, nil)
-		if e != nil || code != 200 {
-			return errors.New("无法创建诊断导出会话，请重新打开 Cage")
-		}
-		if _, err := c.bindConnection(connectionID); err != nil {
-			return err
+		if !agentLocal {
+			parsed, e := url.Parse(c.launch.URL)
+			if e != nil {
+				return e
+			}
+			ticket := parsed.Fragment
+			code, e := c.call("POST", "/api/session", map[string]string{"token": ticket}, nil)
+			if e != nil || code != 200 {
+				return errors.New("无法创建诊断导出会话，请重新打开 Cage")
+			}
+			if _, err := c.bindConnection(connectionID); err != nil {
+				return err
+			}
 		}
 		c.client.Timeout = 30 * time.Second
 		req, _ := http.NewRequest("GET", c.origin+"/api/diagnostics/export", nil)
+		if agentLocal {
+			req.Header.Set(connectionHeader, "local")
+		}
 		response, e := c.client.Do(req)
 		if e != nil {
 			return e
@@ -184,6 +205,9 @@ func ExportDiagnosticsForConnection(configPath, connectionID, destination string
 		return errors.New("诊断包未完整生成，请重新导出")
 	}
 	_ = archive.Close()
+	if agentLocal {
+		return os.Link(temp, destination)
+	}
 	// Never follow a destination symlink or replace a directory.
 	if st, e := os.Lstat(destination); e == nil && !st.Mode().IsRegular() {
 		return errors.New("请选择普通文件作为保存位置")

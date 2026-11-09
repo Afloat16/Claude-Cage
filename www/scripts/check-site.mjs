@@ -84,6 +84,14 @@ for (const code of codes) {
 }
 console.log(`Verified ${guideFiles.length} user guide pages, local links, anchors, search and homepage entries.`);
 
+const agentGuide = fs.readFileSync(path.join(dist, 'agent.md'), 'utf8');
+assert.equal(agentGuide, fs.readFileSync(path.join(dist, 'llms-full.txt'), 'utf8'), 'Agent text copies must share the same source');
+assert.ok(agentGuide.includes('agent capabilities') && agentGuide.includes('job_not_found'), 'Agent guide lacks discovery or recovery contract');
+assert.ok(!agentGuide.includes('title: 让 Agent'), 'Agent Markdown must omit frontmatter');
+for (const name of ['llms.txt', 'agent-bootstrap.mjs', 'cage-install.sh']) assert.ok(fs.existsSync(path.join(dist, name)), `Missing Agent entry ${name}`);
+assert.ok(fs.readFileSync(path.join(dist, 'docs/agent/index.html'), 'utf8').includes('JSON 结果和异步任务'), 'Rendered Agent guide missing');
+console.log('Verified Agent Markdown, discovery, download helper and rendered guide.');
+
 const screenshotManifest = JSON.parse(fs.readFileSync(path.join(root, 'www/public/docs/screenshots/manifest.json'), 'utf8'));
 for (const shot of screenshotManifest) {
   assert.ok(shot.version && shot.platform && shot.capturedAt && shot.source, `${shot.id}: screenshot provenance missing`);

@@ -35,6 +35,8 @@ func (identity ControllerIdentity) matches(other ControllerIdentity) bool {
 }
 
 type launchResponse struct {
+	ConfigPath     string             `json:"config_path,omitempty"`
+	ClientOnly     bool               `json:"client_only,omitempty"`
 	DesktopGateway bool               `json:"desktop_gateway,omitempty"`
 	URL            string             `json:"url"`
 	Controller     ControllerIdentity `json:"controller"`

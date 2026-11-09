@@ -73,6 +73,8 @@ jobs:
           go vet ./cmd/cage ./internal/cage ./internal/managedproxy ./internal/workbench
       - name: Native application updater
         run: bash scripts/test-app-updates.sh
+      - name: External Agent CLI with an isolated profile
+        run: node scripts/agent-cli-smoke.mjs "$PWD/_output/Cage.app/Contents/Resources/cage"
       - name: Native account credential status
         run: bash scripts/test-account-device.sh
       - name: Patched networking and shared files
