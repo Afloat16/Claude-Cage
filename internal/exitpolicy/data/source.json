@@ -1,0 +1,8 @@
+{
+  "upstream": "https://github.com/gaoyifan/china-operator-ip",
+  "commit": "62bc1fc8b015bece77271b568e10d6337915bc96",
+  "url": "https://raw.githubusercontent.com/gaoyifan/china-operator-ip/62bc1fc8b015bece77271b568e10d6337915bc96/china.txt",
+  "sha256": "1b7c2c74c475fd5732bb4eda9c5d82e2e99d7d62872f3ff7938550d752fb4849",
+  "ipv4_prefixes": 6204,
+  "license": "MIT"
+}

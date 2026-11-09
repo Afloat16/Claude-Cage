@@ -155,7 +155,7 @@ func startWindowsCore(ctx context.Context, profile string, s Store) error {
 
 	cmd := exec.Command(core, "-d", Dir(profile), "-f", path)
 	cmd.Env, cmd.Stdout, cmd.Stderr = coreEnvironment(Dir(profile)), log, log
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.DETACHED_PROCESS}
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NEW_PROCESS_GROUP | windows.CREATE_NO_WINDOW}
 	if err := cmd.Start(); err != nil {
 		_ = log.Close()
 		return err
