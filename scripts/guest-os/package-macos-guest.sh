@@ -33,3 +33,6 @@ cp "$src/../../internal/cage/claude-account.py" "$src/../../internal/workbench/"
 # Shared component maintenance is installed separately from first-run accounts.
 cp "$src/maintain-macos-workbench.sh" "$src/native-component-manifest.pl" "$dest/"
 cp "$src/configure-macos-session.sh" "$dest/"
+# Final signing runs after every helper has been built. Component manifests are
+# computed from these final bytes by RequiredNativeComponents at installation.
+bash "$src/sign-macos-guest.sh" "$dest" "${CAGE_SIGNING_IDENTITY:--}"

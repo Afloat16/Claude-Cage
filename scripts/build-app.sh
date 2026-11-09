@@ -36,6 +36,7 @@ short_version="${version%%-*}"
 build_version="${CAGE_BUILD_NUMBER:-1}"
 if [[ ! "$build_version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then echo 'Invalid CAGE_BUILD_NUMBER.' >&2; exit 1; fi
 identity="${CAGE_SIGNING_IDENTITY:--}"
+export CAGE_SIGNING_IDENTITY="$identity"
 # The host SDK may default to the developer's newer macOS version. Set the
 # deployment target for the Go/cgo helper as well as the Swift launcher.
 export MACOSX_DEPLOYMENT_TARGET=14.0
@@ -59,6 +60,9 @@ cp _output/bin/cage "$bundle/Contents/Resources/cage"
 if [[ "$(uname -m)" == arm64 ]]; then "$bundle/Contents/Resources/cage" verify-macos-guest; fi
 if [[ "$(uname -m)" == arm64 ]]; then
   bash scripts/guest-os/package-macos-guest.sh "$bundle/Contents/Resources/guest-os"
+  # The kit signs all nested native code before this outer App is sealed.
+  # Do not generate or reuse an unsigned component manifest here: installation
+  # hashes the final signed kit, including each nested bundle's CodeResources.
 fi
 node scripts/bundle-cloud-kit.mjs "$bundle/Contents/Resources"
 cp _output/proxy-core/mihomo "$bundle/Contents/Resources/mihomo"

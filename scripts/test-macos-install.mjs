@@ -28,6 +28,8 @@ const run = (exe, args, options = {}) => execFileSync(exe, args, { encoding: "ut
 const cli = (...args) => run(path.join(installed, "Contents/Resources/cage"), args, { env });
 const hash = async file => createHash("sha256").update(await fs.readFile(file)).digest("hex");
 const password = randomUUID() + "7z";
+const username = "install_smoke";
+const evidence = process.env.CAGE_REMOTE_QA_DIR;
 let browser, mounted = false, running = false;
 
 try {
@@ -45,10 +47,13 @@ try {
     launcher_sha256: await hash(path.join(source, "Contents/MacOS/Cage")),
   };
 
-  browser = await chromium.launch({ headless: true });
+  if (evidence) await fs.mkdir(evidence, { recursive: true });
+  browser = await chromium.launch({ headless: true, executablePath: process.env.CAGE_TEST_BROWSER_PATH });
+  let savedAccountHash;
   for (const phase of ["install", "reinstall"]) {
     if (phase === "reinstall") await fs.rm(installed, { recursive: true });
     run("ditto", [path.join(mount, "Cage.app"), installed]);
+    if (savedAccountHash) assert.equal(await hash(path.join(profile, "account.json")), savedAccountHash, "reinstall changed the account file");
     run("codesign", ["--verify", "--deep", "--strict", installed]);
     assert.equal(await hash(path.join(installed, "Contents/Resources/cage")), result.backend_sha256);
     cli("verify-web-assets");
@@ -57,12 +62,14 @@ try {
     const entry = JSON.parse(cli("desktop", "--json"));
     assert.equal(entry.status, "ready");
     const page = await browser.newPage();
+    const errors = [];
+    page.on("pageerror", error => errors.push(error.message));
     try {
       await page.goto(entry.url);
       if (phase === "install") {
-        await page.getByRole("button", { name: "使用用户名和密码", exact: true }).click();
+        await page.getByRole("heading", { name: "注册 Cage 账户", exact: true }).waitFor();
         await page.getByRole("checkbox", { name: /^记住我/ }).uncheck();
-        await page.getByLabel("用户名", { exact: true }).fill("整包验收");
+        await page.getByLabel("用户名", { exact: true }).fill(username);
         await page.getByLabel("设置密码", { exact: true }).fill(password);
         await page.getByLabel("确认密码", { exact: true }).fill(password);
         await page.getByRole("button", { name: "创建本地账户", exact: true }).click();
@@ -70,24 +77,37 @@ try {
         await page.getByLabel("账户密码", { exact: true }).fill(password);
         await page.getByRole("button", { name: "解锁 Cage", exact: true }).click();
       }
-      await page.getByRole("button", { name: "设置", exact: true }).waitFor();
+      await page.getByRole("heading", { name: "为 Cage 准备独立环境", exact: true }).waitFor();
+      assert.equal(await page.getByRole("navigation", { name: "主导航" }).count(), 0, "workbench must remain hidden before initialization");
+      if (evidence) await page.screenshot({ animations: "disabled", path: path.join(evidence, `${phase}-initialization.png`) });
+      await page.getByRole("button", { name: "下一步：配置代理", exact: true }).click();
+      await page.getByRole("heading", { name: "连接你的网络代理", exact: true }).waitFor();
+      assert.ok(await page.getByRole("button", { name: "开始安装", exact: true }).isDisabled(), "a fresh profile must require a proxy before installing");
+      // Do not start a VM or configure real network credentials in package-preservation QA.
+      await page.getByRole("button", { name: "上一步", exact: true }).click();
+      await page.getByRole("heading", { name: "为 Cage 准备独立环境", exact: true }).waitFor();
       const account = await page.evaluate(async () => {
         const context = await (await fetch("/api/client/context")).json();
         return (await fetch("/api/account", { headers: { "X-Cage-Connection": context.connection_id } })).json();
       });
-      assert.equal(account.username, "整包验收");
+      assert.equal(account.username, username);
       assert.equal(account.unlocked, true);
-      result[phase] = { original_account: true, preserved: await verify(qaHome, manifest) };
+      const status = await page.evaluate(async () => (await fetch("/api/client/local-status")).json());
+      assert.ok(status.known && status.service_running && !status.running, "installation QA must leave the VM stopped");
+      assert.deepEqual(errors, []);
+      result[phase] = { original_account: true, initialization_wizard: true, proxy_required: true, vm_stopped: true, preserved: await verify(qaHome, manifest) };
     } finally {
       await page.close();
     }
     cli("prepare-update", "--json");
     running = false;
+    savedAccountHash = await hash(path.join(profile, "account.json"));
   }
   const accountHash = await hash(path.join(profile, "account.json"));
   await fs.rm(installed, { recursive: true });
   assert.equal(await hash(path.join(profile, "account.json")), accountHash);
   result.uninstall = { account_preserved: true, preserved: await verify(qaHome, manifest) };
+  if (evidence) await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 } finally {
   try {
