@@ -21,6 +21,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/diagnostics"
 	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/host"
+	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 	"github.com/sylvinus/agent-vm/internal/managedproxy"
 	"github.com/sylvinus/agent-vm/internal/workbench"
@@ -75,6 +76,7 @@ func main() {
 	os.Exit(code)
 }
 func run() int {
+	hostproxy.CaptureEnvironment()
 	// Apply this before desktop/serve dispatch: the control service and every
 	// child process must keep Cage's isolation even when launched from a shell
 	// configured to relax agent-vm's protections.
@@ -473,6 +475,9 @@ func run() int {
 			return fail(err)
 		}
 		defer lease.Close()
+		// Keep image caches on the same volume the initialization page shows,
+		// including the default location. The saved path survives app updates.
+		os.Setenv("CAGE_LIMA_CACHE_DIR", filepath.Join(location.Directory, "cache", "lima"))
 		if location.Custom {
 			// Resolve the profile prefix once, as Lima did before migration.
 			// Keep state itself logical so its original disk and socket paths survive.
@@ -481,7 +486,6 @@ func run() int {
 				return fail(err)
 			}
 			state = filepath.Join(realProfile, "state")
-			os.Setenv("CAGE_LIMA_CACHE_DIR", filepath.Join(location.Directory, "cache", "lima"))
 			os.Setenv("CAGE_LOGICAL_LIMA_HOME", filepath.Join(state, "lima"))
 		}
 	}
@@ -491,6 +495,9 @@ func run() int {
 	for _, name := range []string{"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "FTP_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "ftp_proxy", "no_proxy", "ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"} {
 		os.Unsetenv(name)
 	}
+	// Lima's host-side image downloader follows system proxy settings/TUN.
+	// Guest traffic keeps the isolated hostagent hooks in limaembed.Run.
+	http.DefaultTransport = hostproxy.NewTransport()
 	if limaembed.Run(args) {
 		return 0
 	}
@@ -541,13 +548,6 @@ func run() int {
 		return fail(err)
 	}
 
-	// Host-side image downloads also use the selected proxy. Guest traffic
-	// uses the separate hostagent hooks installed by limaembed.Run.
-	egress, err := cage.NewEgress(cfg)
-	if err != nil {
-		return fail(err)
-	}
-	http.DefaultTransport = &http.Transport{Proxy: nil, DialContext: egress.DialContext, ForceAttemptHTTP2: true}
 	if args[0] == "check" {
 		e, err := cage.NewEgress(cfg)
 		if err != nil {

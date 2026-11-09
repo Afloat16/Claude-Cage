@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/containerenv"
@@ -29,7 +30,21 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 			requestError(w, err)
 			return
 		}
-		jsonReply(w, location)
+		suggested := ""
+		if !location.Custom && !location.HasEnvironment {
+			initialization, err := s.initializationState()
+			if err != nil {
+				requestError(w, err)
+				return
+			}
+			if initialization.Required && !initialization.Started && !initialization.Prepared {
+				suggested = cage.InitialStorageDirectory(s.exe)
+			}
+		}
+		jsonReply(w, struct {
+			cage.StorageLocation
+			SuggestedDirectory string `json:"suggested_directory,omitempty"`
+		}{location, suggested})
 		return
 	}
 
@@ -53,6 +68,9 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 			return errors.New("环境或存储位置已改变，请重新打开设置后再选择")
 		}
 		if err = cage.ValidateStorageTarget(s.profile, input.Directory); err != nil {
+			if errors.Is(err, os.ErrPermission) {
+				return errors.New("无法读取或写入所选存储目录，请在当前页面选择有权限的本地文件夹后重试，已有数据已保留")
+			}
 			return err
 		}
 		if err = s.validateStoragePlacement(input.Directory); err != nil {
@@ -71,6 +89,9 @@ func (s *Server) environmentStorage(w http.ResponseWriter, r *http.Request) {
 		_, err = cage.MoveStorageWithRuntime(s.operationContext(), s.profile, input.Directory, current, runtime, func(copied, total int64) {
 			s.setMessage(fmt.Sprintf("正在迁移环境数据 · %.1f / %.1f GiB", float64(copied)/(1<<30), float64(total)/(1<<30)))
 		})
+		if errors.Is(err, os.ErrPermission) {
+			return errors.New("无法写入所选存储目录。请在当前页面选择有写入权限的本地文件夹后重试，已有数据已保留")
+		}
 		return err
 	})
 }

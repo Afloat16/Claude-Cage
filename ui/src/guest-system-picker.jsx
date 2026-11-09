@@ -99,7 +99,8 @@ export function GuestSystemPicker({ system, onChange, preserveOnUnmount = false,
         <option value="macos" disabled={view.system !== "macos" || !view.available}>macOS{view.system === "macos" ? view.available ? "" : "（暂不可用）" : "（需要 Apple Silicon Mac）"}</option>
         <option value="windows-11" disabled={view.system !== "windows-11" || !view.available}>Windows 11{view.system === "windows-11" ? view.available ? "" : "（暂不可用）" : "（需要 Windows 11 与 Hyper-V）"}</option>
       </InlineSelect>
-      {system.clone && !system.activate && (deferMatch ? <small className="guest-install-fields">Cage 会检测本机系统版本。配置代理后匹配官方镜像，并显示下载量与空间要求。</small> : <HostCloneSummary pending={system.pending} onChange={onChange} />)}
+      {system.clone && !system.activate && (deferMatch ? <small className="guest-install-fields">Cage 会检测本机系统版本，在下一步显示匹配的官方镜像、下载量与空间要求。</small> : <HostCloneSummary pending={system.pending} onChange={onChange} />)}
+      {!system.activate && <small className="guest-install-fields">系统镜像通过主机网络下载，遵循主机系统代理或 TUN 设置，不使用 Cage 的客机代理。使用 Clash 等软件时，请先开启系统代理或 TUN；代理规则决定镜像网站的实际出口。</small>}
       {!system.clone && os !== "debian-13" && !system.activate && <div className="guest-install-fields">
         {os === "ubuntu-22.04" ? <>
           <small>从 Ubuntu 官方源下载 Ubuntu 22.04 LTS 镜像，并校验 SHA-256。Cage 按主机架构选择 ARM64 或 x86_64。</small>

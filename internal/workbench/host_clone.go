@@ -6,11 +6,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"time"
 
-	"github.com/sylvinus/agent-vm/internal/cage"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostimage"
+	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/limaembed"
 )
 
@@ -31,25 +30,9 @@ func (s *Server) hostClonePlan(ctx context.Context) (hostimage.Plan, error) {
 		}
 	}
 	cache := filepath.Join(s.profile, "state", "guest-media", identity.System)
-	transport, err := s.hostCloneTransport()
-	if err != nil {
-		return hostimage.Plan{}, err
-	}
+	transport := hostproxy.NewTransport()
 	defer transport.CloseIdleConnections()
 	return hostimage.Resolve(ctx, identity, cache, filepath.Join(home, "Downloads"), template, transport)
-}
-
-func (s *Server) hostCloneTransport() (*http.Transport, error) {
-	cfg, err := loadConfig(s.configPath)
-	if err != nil {
-		return nil, err
-	}
-	egress, err := cage.NewEgress(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return &http.Transport{Proxy: nil, DialContext: egress.DialContext, ForceAttemptHTTP2: true,
-		TLSHandshakeTimeout: 15 * time.Second, ResponseHeaderTimeout: 30 * time.Second}, nil
 }
 
 func (s *Server) hostClone(w http.ResponseWriter, r *http.Request) {

@@ -30,7 +30,7 @@ http.createServer(async (req, res) => {
   const showProgress = scenario === "progress" || session.installing;
   const showFailure = scenario === "failure";
   const showReady = scenario === "ready";
-  const job = showProgress || showFailure ? { id: "preview-install", kind: "guest-install", running: !showFailure, error: showFailure ? "系统镜像下载中断。请检查代理连接，已下载文件和虚拟磁盘会保留。" : "", message: "正在下载系统镜像", setup_progress: { system, phase: "image", operation: "download", label: `正在下载 ${system === "macos" ? "macOS" : system === "windows-11" ? "Windows 11" : "Ubuntu"} 系统镜像`, received: Math.floor(host.bytes * .43), total: host.bytes, bytes_per_second: 26 * 1048576 }, log: "正在通过所选代理下载官方系统镜像。" } : { running: false };
+  const job = showProgress || showFailure ? { id: "preview-install", kind: "guest-install", running: !showFailure, error: showFailure ? "系统镜像下载中断。请检查代理连接，已下载文件和虚拟磁盘会保留。" : "", message: "正在下载系统镜像", setup_progress: { system, phase: "image", operation: "download", label: `正在下载 ${system === "macos" ? "macOS" : system === "windows-11" ? "Windows 11" : "Ubuntu"} 系统镜像`, received: Math.floor(host.bytes * .43), total: host.bytes, bytes_per_second: 26 * 1048576 }, log: "正在通过主机系统代理或 TUN 下载官方系统镜像。" } : { running: false };
   const status = { local_vm_storage: true, ready: showReady, vm_running: showReady, safety: showReady ? { gate: { mode: "open", until: new Date(Date.now()+3600000).toISOString() } } : {}, keyboard: host.platform === "darwin" ? "mac" : "native", job, projects: [], environment_workspace: true, environment_directory: "/preview/workspace", workspace: "/preview/workspace" };
   const pending = scenario === "resume" ? { version: 1, id: "preview-install", system, source: plan, editor_terms: true } : undefined;
   if (url.pathname.startsWith("/api/")) {
@@ -47,7 +47,7 @@ http.createServer(async (req, res) => {
       }
       value=session;
     }
-    else if (url.pathname === "/api/environment/storage") value={directory: host.platform === "windows" ? "D:\\CageData" : "/preview/cage-state",has_environment:false};
+    else if (url.pathname === "/api/environment/storage") value={directory: host.platform === "windows" ? "D:\\Cage\\CageData" : "/preview/cage-state",has_environment:false};
     else if (url.pathname === "/api/settings") value = { workspace: "/preview/workspace", browser_home_url: "https://www.bing.com/", timezone: "Asia/Shanghai", locale: "zh_CN.UTF-8", keyboard: status.keyboard };
     else if (url.pathname === "/api/appearance") value = { ...defaultAppearance, mode: "light" };
     else if (url.pathname === "/api/proxy") value = { active: true, selected: "preview-node", port: 17896, core_available: true, state: "prepared", sources: [{ id: "preview", name: "预览代理", nodes: [{ id: "preview-node", name: "预览节点", type: "http" }] }] };

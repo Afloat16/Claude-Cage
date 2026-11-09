@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/http"
@@ -18,15 +17,6 @@ import (
 	"testing"
 	"time"
 )
-
-func trustRestoreServer(t *testing.T, server *httptest.Server) {
-	t.Helper()
-	cert := filepath.Join(t.TempDir(), "ca.pem")
-	if err := os.WriteFile(cert, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: server.Certificate().Raw}), 0600); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("CURL_CA_BUNDLE", cert)
-}
 
 func TestMacRestoreDownloadResumesAndReportsVerification(t *testing.T) {
 	body := bytes.Repeat([]byte("restore-image"), 10000)
@@ -42,14 +32,13 @@ func TestMacRestoreDownloadResumesAndReportsVerification(t *testing.T) {
 		_, _ = w.Write(body[offset:])
 	}))
 	defer server.Close()
-	trustRestoreServer(t, server)
 	media := filepath.Join(t.TempDir(), "MacOS.ipsw")
 	if err := os.WriteFile(media+".partial", body[:offset], 0600); err != nil {
 		t.Fatal(err)
 	}
 	hash := sha256.Sum256(body)
 	var log bytes.Buffer
-	if err := prepareMacRestoreMedia(t.Context(), media, server.URL, hex.EncodeToString(hash[:]), int64(len(body)), &log); err != nil {
+	if err := prepareMacRestoreMediaWithTransport(t.Context(), media, server.URL, hex.EncodeToString(hash[:]), int64(len(body)), &log, server.Client().Transport); err != nil {
 		t.Fatal(err)
 	}
 	actual, err := os.ReadFile(media)
@@ -66,7 +55,7 @@ func TestMacRestoreDownloadResumesAndReportsVerification(t *testing.T) {
 	}
 	log.Reset()
 	// A verified cached archive must not make another request to the server.
-	if err := prepareMacRestoreMedia(t.Context(), media, "https://invalid.invalid", hex.EncodeToString(hash[:]), int64(len(body)), &log); err != nil {
+	if err := prepareMacRestoreMediaWithTransport(t.Context(), media, "https://invalid.invalid", hex.EncodeToString(hash[:]), int64(len(body)), &log, server.Client().Transport); err != nil {
 		t.Fatal(err)
 	}
 	if strings.Contains(log.String(), "macos download") {
@@ -81,13 +70,12 @@ func TestMacRestoreCancelledDownloadKeepsPartial(t *testing.T) {
 		<-r.Context().Done()
 	}))
 	defer server.Close()
-	trustRestoreServer(t, server)
 	media := filepath.Join(t.TempDir(), "MacOS.ipsw")
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	done := make(chan error, 1)
 	go func() {
-		done <- prepareMacRestoreMedia(ctx, media, server.URL, strings.Repeat("0", 64), 1<<20, &bytes.Buffer{})
+		done <- prepareMacRestoreMediaWithTransport(ctx, media, server.URL, strings.Repeat("0", 64), 1<<20, &bytes.Buffer{}, server.Client().Transport)
 	}()
 	deadline := time.After(5 * time.Second)
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -119,9 +107,8 @@ func TestMacRestoreCancelledDownloadKeepsPartial(t *testing.T) {
 func TestMacRestoreDigestFailureDoesNotPublishMedia(t *testing.T) {
 	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("invalid restore")) }))
 	defer server.Close()
-	trustRestoreServer(t, server)
 	media := filepath.Join(t.TempDir(), "MacOS.ipsw")
-	if err := prepareMacRestoreMedia(t.Context(), media, server.URL, strings.Repeat("0", 64), 15, &bytes.Buffer{}); err == nil {
+	if err := prepareMacRestoreMediaWithTransport(t.Context(), media, server.URL, strings.Repeat("0", 64), 15, &bytes.Buffer{}, server.Client().Transport); err == nil {
 		t.Fatal("invalid digest accepted")
 	}
 	for _, p := range []string{media, media + ".partial"} {

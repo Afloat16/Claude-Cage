@@ -7,12 +7,22 @@ if (evidence) await fs.mkdir(evidence, { recursive: true });
 
 for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"], ["linux", "ubuntu-22.04"]]) {
   let starts = 0, rejectComplete = true;
+  let directory = "/preview/cage-state";
+  const initialDirectory = platform === "windows" ? "/preview/Cage/CageData" : directory;
   const fixture = await createWorkbench({
     initialization: { required: true, tracked: true, started: false },
     clientContext: { mode: "local", connection_id: "local", client_platform: platform, server_platform: platform },
     beforeNavigate: async (page, state) => {
       state.status.local_vm_storage = true;
-      await page.route("**/api/environment/storage", route => route.fulfill({ json: { directory: "/preview/cage-state", has_environment: false } }));
+      await page.route("**/api/environment/storage", route => {
+        if (route.request().method() === "POST") {
+          assert.equal(route.request().postDataJSON().previous, directory);
+          directory = route.request().postDataJSON().directory;
+          state.status.job = { id: "storage-default", kind: "storage", running: false };
+          return route.fulfill({ json: state.status.job });
+        }
+        return route.fulfill({ json: { directory, has_environment: false, suggested_directory: directory === "/preview/cage-state" ? initialDirectory : undefined } });
+      });
       await page.route("**/api/environment/guest-systems", route => route.fulfill({ json: { fresh: true, available: true, system, linux_systems: ["ubuntu-22.04"] } }));
       await page.route("**/api/environment/guest-systems/clone", route => route.fulfill({ json: { key: "matched-image", enough_space: true, minimum_free_gib: 51, free_gib: 120, download_bytes: 19769944180, plan: { host: { system, version: system === "windows-11" ? "25H2" : "26.5", build: "123", edition: "Professional", language: "zh-CN" }, version: "26.5", build: "456", bytes: 19769944180 } } }));
       await page.route("**/api/start", route => {
@@ -38,7 +48,8 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     const picker = page.getByRole("combobox", { name: "客户机系统" });
     const storage = page.getByRole("region", { name: "环境存储目录" });
     await storage.getByLabel("存储目录", { exact: true }).waitFor();
-    assert.equal(await storage.getByLabel("存储目录", { exact: true }).inputValue(), "/preview/cage-state");
+    assert.equal(await storage.getByLabel("存储目录", { exact: true }).inputValue(), initialDirectory);
+    await storage.getByText("这是 Cage 的环境数据目录。更新、重装或卸载应用会保留这里的数据；请勿手动删除。").waitFor();
     assert.equal(await storage.getByText("当前环境目录", { exact: true }).count(), 0);
     assert.equal(await storage.getByText("新存储位置", { exact: true }).count(), 0);
     const before = await storage.boundingBox();
@@ -52,7 +63,8 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     assert.ok(menu.x >= 0 && menu.y >= 0 && menu.x + menu.width <= 1280 && menu.y + menu.height <= 850, "floating menu must stay inside the viewport");
     if (evidence) await page.screenshot({ path: `${evidence}/${platform}-systems-floating.png`, fullPage: true });
     await picker.press("Home"); await picker.press("Enter");
-    await page.getByText("Cage 会检测本机系统版本。配置代理后匹配官方镜像，并显示下载量与空间要求。").waitFor();
+    await page.getByText("Cage 会检测本机系统版本，在下一步显示匹配的官方镜像、下载量与空间要求。").waitFor();
+    await page.getByText(/系统镜像通过主机网络下载.*系统代理或 TUN/).waitFor();
     if (system === "windows-11") await page.getByRole("checkbox").check();
     if (evidence) await page.screenshot({ path: `${evidence}/${platform}-system.png`, fullPage: true });
     await page.getByRole("button", { name: "下一步：配置代理" }).click();

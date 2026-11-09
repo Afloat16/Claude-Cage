@@ -16,6 +16,7 @@ if (-not $AppDirectory) { $AppDirectory = Join-Path $repository '_output/windows
 if (-not $OutputDirectory) { $OutputDirectory = Join-Path $repository "_output/releases/$version/windows" }
 $AppDirectory = [IO.Path]::GetFullPath($AppDirectory)
 $OutputDirectory = [IO.Path]::GetFullPath($OutputDirectory)
+if (Test-Path -LiteralPath (Join-Path $AppDirectory 'CageData')) { throw 'App directory contains CageData user data. Package a clean build directory; do not package an installed application.' }
 if (-not $SkipBuild) { & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release -Sign:$Sign -OutputDirectory $AppDirectory }
 if ((Get-Content -LiteralPath (Join-Path $AppDirectory 'Cage.install-id') -Raw) -ne 'io.github.lee-xeo.claude-cage') { throw 'Invalid Cage app directory.' }
 if ((Get-Content -LiteralPath (Join-Path $AppDirectory 'version.txt') -Raw).Trim() -ne $version) { throw 'App version differs from VERSION; rebuild before packaging.' }

@@ -74,6 +74,9 @@ try {
         Write-File (Join-Path $old 'resources/customizable.txt') 'user customization'
         Write-File (Join-Path $scenario 'outside/config.txt') 'outside data'
         [IO.Directory]::CreateDirectory((Join-Path $old 'empty-project')) | Out-Null
+        foreach ($file in @('state/guest-media/system.img','state/lima/instance/disk','cache/lima/image')) {
+            Write-File (Join-Path $old ('CageData/' + $file)) ('persistent-' + $file)
+        }
         Prepare $old $stage $receipt
         Check ((Get-Content (Join-Path $old 'program.txt') -Raw) -eq 'old') 'Preparation modified the original installation.'
         $backup = Commit $old $stage $receipt
@@ -84,6 +87,9 @@ try {
         $copies = @(Get-ChildItem (Join-Path $old 'Cage-preserved-files') -File -Recurse | Where-Object { (Get-Content $_.FullName -Raw) -eq 'user customization' })
         Check ($copies.Count -eq 1) 'Modified same-name program content was not retained exactly once.'
         Check (!(Test-Path $backup)) 'Completed transfer left a full old application copy.'
+        foreach ($file in @('state/guest-media/system.img','state/lima/instance/disk','cache/lima/image')) {
+            Check ((Get-Content (Join-Path $old ('CageData/' + $file)) -Raw) -eq ('persistent-' + $file)) 'Update changed CageData.'
+        }
         $embedded = Join-Path $scenario 'embedded.json'
         Copy-Item (Join-Path $old 'Cage.install-files.json') $embedded
         Write-File (Join-Path $old 'resources/customizable.txt') 'new customization'
@@ -93,10 +99,16 @@ try {
         Check ((Get-Content (Join-Path $old 'resources/customizable.txt') -Raw) -eq 'new customization') 'Uninstall deleted a modified program file.'
         Check (Test-Path (Join-Path $old 'empty-project') -PathType Container) 'Uninstall deleted an unknown empty project.'
         Check (Test-Path (Join-Path $old 'Cage.install-id')) 'Retained data directory cannot be recognized on reinstall.'
+        foreach ($file in @('state/guest-media/system.img','state/lima/instance/disk','cache/lima/image')) {
+            Check ((Get-Content (Join-Path $old ('CageData/' + $file)) -Raw) -eq ('persistent-' + $file)) 'Uninstall changed CageData.'
+        }
         App $stage 'reinstalled'
         Prepare $old $stage $receipt
         $null = Commit $old $stage $receipt
         Check ((Get-Content (Join-Path $old 'my-project/work.txt') -Raw) -eq 'project data') 'Reinstall after uninstall lost the project.'
+        foreach ($file in @('state/guest-media/system.img','state/lima/instance/disk','cache/lima/image')) {
+            Check ((Get-Content (Join-Path $old ('CageData/' + $file)) -Raw) -eq ('persistent-' + $file)) 'Reinstall changed CageData.'
+        }
     }
     $scenario = Join-Path $root 'concurrent'
     $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
@@ -115,6 +127,7 @@ try {
     $old = Join-Path $scenario 'installed'; $stage = Join-Path $scenario 'staged'; $receipt = Join-Path $scenario 'receipt.json'
     App $old 'old'; App $stage 'new'
     Write-File (Join-Path $old 'project.txt') 'rollback project'
+    Write-File (Join-Path $old 'CageData/state/lima/disk') 'rollback disk'
     Prepare $old $stage $receipt
     $backup = $old + '-backup'
     [IO.Directory]::Move($old, $backup)
@@ -124,6 +137,7 @@ try {
     Invoke-Helper @('-Operation','complete','-Target',$old,'-Receipt',$receipt)
     Check ((Get-Content (Join-Path $old 'project.txt') -Raw) -eq 'rollback project') 'Failed replacement lost the original project.'
     Check ((Get-Content (Join-Path $old 'program.txt') -Raw) -eq 'old') 'Failed replacement changed the original program.'
+    Check ((Get-Content (Join-Path $old 'CageData/state/lima/disk') -Raw) -eq 'rollback disk') 'Failed replacement changed CageData.'
     $stage = Join-Path $scenario 'staged-again'; App $stage 'new'
     $locked = [IO.File]::Open((Join-Path $old 'program.txt'), 'Open', 'ReadWrite', 'None')
     try { Invoke-Helper @('-Operation','prepare','-Source',$old,'-Target',$stage,'-Receipt',$receipt) 1 }

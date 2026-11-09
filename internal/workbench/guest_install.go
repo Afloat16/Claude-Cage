@@ -16,6 +16,7 @@ import (
 	"github.com/sylvinus/agent-vm/internal/guestos"
 	"github.com/sylvinus/agent-vm/internal/host"
 	"github.com/sylvinus/agent-vm/internal/hostimage"
+	"github.com/sylvinus/agent-vm/internal/hostproxy"
 )
 
 type guestInstallRequest struct {
@@ -291,10 +292,7 @@ func (s *Server) beginGuestInstall(w http.ResponseWriter, r *http.Request, in gu
 				return fmt.Errorf("创建所选系统至少需要 %d GiB 可用空间，当前有 %d GiB，请在存储设置中选择空间充足的位置", minimumGiB, available)
 			}
 			s.setMessage("正在准备 " + guestProgressName(install.System) + " 官方系统镜像…")
-			transport, transportErr := s.hostCloneTransport()
-			if transportErr != nil {
-				return transportErr
-			}
+			transport := hostproxy.NewTransport()
 			defer transport.CloseIdleConnections()
 			prepared, prepareErr := hostimage.Prepare(s.operationContext(), cache, install.Source, s.jobs.execution(), transport)
 			if prepareErr != nil {

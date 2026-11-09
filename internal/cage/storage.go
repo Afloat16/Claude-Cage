@@ -124,7 +124,7 @@ func StoragePathsOverlap(a, b string) bool {
 	return StorageContains(a, b) || StorageContains(b, a)
 }
 
-// Upgrades replace the entire application folder including its resources.
+// Resolve the application folder, including macOS bundles and Windows resources.
 func runningApplicationDir() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
@@ -306,6 +306,14 @@ func openStorageLockWithRuntime(ctx context.Context, profile string, exclusive b
 }
 
 func ValidateStorageTarget(profile, directory string) error {
+	app, err := runningApplicationDir()
+	if err != nil {
+		return err
+	}
+	return validateStorageTarget(profile, directory, app, runtime.GOOS)
+}
+
+func validateStorageTarget(profile, directory, app, platform string) error {
 	if _, err := os.Readlink(storageAnchor(profile)); err == nil {
 		r, err := readStorageRecord(profile)
 		if err != nil {
@@ -350,11 +358,12 @@ func ValidateStorageTarget(profile, directory string) error {
 		return err
 	}
 	private = append(private, profile, EnvironmentDir(profile))
-	app, err := runningApplicationDir()
-	if err != nil {
-		return err
+	appData := windowsApplicationDataDirectory(app, platform)
+	// Windows reserves this one data folder beside its program files. The
+	// installer preserves it by file ownership during update and uninstall.
+	if appData == "" || !sameStoragePath(directory, appData) {
+		private = append(private, app)
 	}
-	private = append(private, app)
 	for _, p := range private {
 		real, e := StoragePhysicalPath(p)
 		if e != nil && !errors.Is(e, os.ErrNotExist) {

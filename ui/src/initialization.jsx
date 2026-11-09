@@ -203,7 +203,7 @@ function Initialization({ initial, onComplete }) {
   return <InitializationFrame>
     <section className="initialization-content">
       <ol className="initialization-steps" aria-label="初始化步骤">{steps.map(([key, label], position) => <li key={key} aria-current={step === key ? "step" : undefined}><span>{position < index ? <Check size={14} /> : position + 1}</span>{label}</li>)}</ol>
-      <div className="initialization-title"><h1>{title}</h1><p>{step === "system" ? "选择客机系统和存储位置。初始化完成后，再进入工作台。" : step === "proxy" ? "系统镜像与开发工具通过所选代理下载。配置会保留供环境日常使用。" : ready ? "系统、开发组件和网络检查均已完成，可以进入工作台开始使用。" : "下载、安装、必要授权和检查都在这里完成。中断后可以继续原任务。"}</p></div>
+      <div className="initialization-title"><h1>{title}</h1><p>{step === "system" ? "选择客机系统和存储位置。初始化完成后，再进入工作台。" : step === "proxy" ? "这里的代理供客机内的进程和开发工具使用。系统镜像通过主机代理下载，遵循 Clash 等软件的系统代理或 TUN 设置。" : ready ? "系统、开发组件和网络检查均已完成，可以进入工作台开始使用。" : "下载、安装、必要授权和检查都在这里完成。中断后可以继续原任务。"}</p></div>
       {connectionError && <div className="initialization-notice" role="alert"><SafetyMessage message={connectionError} /><button onClick={() => pollNow.current?.()}>重新连接</button></div>}
       {!status ? <p role="status"><LoaderCircle size={18} className="spin" />正在读取安装状态…</p> : <>
         <div className="initialization-stage" key={step}>
@@ -216,7 +216,8 @@ function Initialization({ initial, onComplete }) {
             {progress ? <SetupProgress job={progress} onDetails={() => setDetails(true)} onStop={stop} onRetry={install} disconnected={Boolean(connectionError) || submitting} /> : <div className="initialization-operation" role="status">{busy && <LoaderCircle size={22} className="spin" />}<p>{job.message || (status.vm_running ? "请完成客机连接和网络检查。" : "准备继续原安装，已有文件和磁盘会保留。")}</p>{!busy && !job.error && <button className="primary" disabled={Boolean(connectionError)} onClick={install}>{status.ready ? "重新启动并检查" : "继续安装"}</button>}{busy && <button onClick={stop} disabled={submitting}>停止安装</button>}</div>}
             {job.error && !progress && <div className="initialization-notice" role="alert"><SafetyMessage message={job.error} /><button className="primary" disabled={busy || Boolean(connectionError)} onClick={install}>继续安装</button></div>}
             {status.ready && network.mode !== "open" && !busy && <div className="initialization-network"><p>{status.network_error || status.safety?.error || "客机已经连接，请完成网络和隔离检查后进入工作台。"}</p><button className="primary" disabled={Boolean(connectionError)} onClick={checkNetwork}>运行网络与隔离检查</button></div>}
-            <div className="initialization-recovery"><button onClick={() => setStep("proxy")} disabled={busy}>检查代理配置</button>{!progress && <button onClick={() => setDetails(true)}>查看操作详情</button>}</div>
+            {(progress?.setup_progress.phase === "image" || failed) && <p>系统镜像下载使用主机代理；下载失败请检查 Clash 等主机代理软件。客机联网与开发工具使用 Cage 代理。</p>}
+            <div className="initialization-recovery"><button onClick={() => setStep("proxy")} disabled={busy}>检查 Cage 代理配置</button>{!progress && <button onClick={() => setDetails(true)}>查看操作详情</button>}</div>
           </>)}
         </div>
         {git && <section className="initialization-notice" aria-label="Git 安全保护"><h2>安装前，保护本机 Git</h2><p>{git.message}</p>{git.can_enable && <><p>启用后，Git 会忽略未经你明确指定的裸仓库。该操作会修改当前用户的全局设置，影响本机其他 Git 工具，普通项目保持原有操作。</p><pre>git config --global safe.bareRepository explicit</pre><button className="primary" disabled={busy} onClick={enableGit}>启用 Git 保护</button></>}<button disabled={busy} onClick={install}>重新检查并安装</button></section>}
