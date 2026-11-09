@@ -89,7 +89,18 @@ var (
 )
 
 func (s *Server) macOSWindowRPC(w http.ResponseWriter, r *http.Request, input macOSWindowRequest) {
-	reply, err := s.macOSWindowCall(r.Context(), input)
+	var reply []byte
+	var err error
+	if input.Action == "status" {
+		reply, err = s.desktopStatus.read(r.Context(), s.lifetimeContext(), func(ctx context.Context) ([]byte, error) { return s.macOSWindowCall(ctx, input) })
+	} else {
+		// Input and capture retain their own live guest ownership validation.
+		if input.Action == "launch" {
+			s.desktopStatus.invalidate()
+			defer s.desktopStatus.invalidate()
+		}
+		reply, err = s.macOSWindowCall(r.Context(), input)
+	}
 	if err != nil {
 		code := http.StatusServiceUnavailable
 		if errors.Is(err, errMacWindowInput) {

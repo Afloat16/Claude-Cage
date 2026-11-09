@@ -307,6 +307,8 @@ func (s *Server) runCage(args ...string) error {
 	return nil
 }
 func (s *Server) startEnvironment(syncTimezone bool) error {
+	s.desktopStatus.invalidate()
+	defer s.desktopStatus.invalidate()
 	if err := s.requireStorageReady(); err != nil {
 		return err
 	}
@@ -480,6 +482,8 @@ func (s *Server) startEnvironment(syncTimezone bool) error {
 	return errors.New("环境已启动，但浏览器连接尚未就绪。请重试连接或查看操作详情。")
 }
 func (s *Server) stopEnvironment() (returned error) {
+	s.desktopStatus.invalidate()
+	defer s.desktopStatus.invalidate()
 	explicitStop := s.jobs.snapshot().Kind == "stop"
 	defer func() {
 		if explicitStop && returned == nil {

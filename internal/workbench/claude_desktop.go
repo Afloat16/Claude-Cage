@@ -45,15 +45,18 @@ func (s *Server) claudeDesktopStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	var b []byte
-	var err error
-	if s.windowsGuest != nil {
-		var result claudeDesktopState
-		err = s.windowsDesktopRequest(ctx, "status", nil, &result)
-		b, _ = json.Marshal(result)
-	} else {
-		b, err = s.guest(ctx, claudeDesktopSnapshot)
-	}
+	b, err := s.desktopStatus.read(ctx, s.lifetimeContext(), func(ctx context.Context) ([]byte, error) {
+		ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		defer cancel()
+		if s.windowsGuest != nil {
+			var result claudeDesktopState
+			if err := s.windowsDesktopRequest(ctx, "status", nil, &result); err != nil {
+				return nil, err
+			}
+			return json.Marshal(result)
+		}
+		return s.guest(ctx, claudeDesktopSnapshot)
+	})
 	var state claudeDesktopState
 	if err != nil {
 		_ = diagnostics.New(s.profile).Record("warn", "claude-desktop", fmt.Sprintf("read state: %v", err))
@@ -82,6 +85,8 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.launch(w, "claude-desktop-"+action, func() error {
+		s.desktopStatus.invalidate()
+		defer s.desktopStatus.invalidate()
 		if s.windowsGuest != nil {
 			if action == "install" {
 				return errors.New("Windows 客机的自动安装尚未接通，请保留已有官方应用")
@@ -132,6 +137,8 @@ func (s *Server) claudeDesktopAction(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) startClaudeDesktop() error {
+	s.desktopStatus.invalidate()
+	defer s.desktopStatus.invalidate()
 	s.setMessage("正在打开 Claude Desktop…")
 	key, err := s.account.desktopKey()
 	if err != nil {
