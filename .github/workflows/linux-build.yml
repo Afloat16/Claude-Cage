@@ -18,7 +18,7 @@ permissions:
   contents: read
 jobs:
   debian:
-    # Debian 12's bubblewrap requires unprivileged user namespace mappings.
+    # Build with glibc 2.35 so the same package can run on Ubuntu 22.04.
     # Ubuntu 24.04's host policy restricts them even in an unconfined container.
     runs-on: ubuntu-22.04
     timeout-minutes: 60
@@ -26,7 +26,7 @@ jobs:
       run:
         shell: bash
     container:
-      image: debian:12
+      image: ubuntu:22.04
       # docker-default AppArmor denies bubblewrap's private mount namespace.
       # Relax only this disposable outer container; WebKit keeps its sandbox.
       options: --security-opt seccomp=unconfined --security-opt systempaths=unconfined --security-opt apparmor=unconfined
@@ -34,8 +34,9 @@ jobs:
       - name: Install build and test dependencies
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libjson-glib-dev dpkg-dev curl ca-certificates git qemu-system-x86 qemu-utils ovmf openssh-client iproute2 dbus-x11 xvfb xauth fonts-noto-cjk zsh
+          DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libjson-glib-dev dpkg-dev curl ca-certificates git qemu-system-x86 qemu-utils ovmf openssh-client iproute2 dbus-x11 xvfb xauth fonts-noto-cjk zsh sudo
           useradd -m -s /bin/bash cage
+          echo "cage ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/cage
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref }}
@@ -77,6 +78,8 @@ jobs:
           runuser -u cage -- go test ./internal/... ./cmd/...
           runuser -u cage -- go vet ./internal/managedproxy ./internal/workbench ./cmd/cage
           runuser -u cage -- env UV_CACHE_DIR=/home/cage/.cache/uv uv run --no-project --python 3.11 internal/cage/desktop-downloads.test.py
+      - name: Ubuntu guest browser, extensions and noVNC dependencies
+        run: runuser -u cage -- bash scripts/test-ubuntu-guest.sh
       - name: Install, render native workbench, reinstall and remove
         run: |
           runuser -u cage -- bwrap --unshare-user --unshare-pid --ro-bind / / --proc /proc --dev /dev -- true
@@ -114,3 +117,37 @@ jobs:
           overwrite: true
           retention-days: 14
       # KVM and physical desktop acceptance remain separate real-machine checks.
+
+  package-compatibility:
+    needs: debian
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        image: [debian:12, ubuntu:24.04]
+    container:
+      image: ${{ matrix.image }}
+      options: --security-opt seccomp=unconfined --security-opt systempaths=unconfined --security-opt apparmor=unconfined
+    steps:
+      - name: Install package test tools
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install -y ca-certificates git dbus-x11 xvfb xauth fonts-noto-cjk
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: _output/compatibility
+      - name: Test the Ubuntu 22.04-built package unchanged
+        shell: bash
+        run: |
+          package=$(find _output/compatibility -name 'Cage-*-linux-amd64.deb' -print -quit)
+          test -n "$package"
+          bash scripts/test-linux-install.sh "$package"

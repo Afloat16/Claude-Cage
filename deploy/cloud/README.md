@@ -69,6 +69,8 @@ cage_engine="$HOME/.claude-cage/container-engine/tools/docker"
 
 通过 `Dockerfile.guest` 构建基础层，再创建独立的镜像构建容器。构建容器不挂载项目、个人主目录、代理配置或账户；安装下载使用单独的构建网络。默认 Debian 镜像已经固定 digest，APT 继续验证发行版签名。若部署网络需要镜像站，只调整构建阶段的 Debian 软件源，保留签名验证；基础层和完整镜像提交前均恢复 `deb.debian.org` 官方源，以符合运行环境的维护下载来源限制。
 
+基础层在批量安装前使用共同的 `internal/cage/apt-bootstrap.sh` 检查 APT；Debian 13 低于 3.0.4 时先通过官方安全源升级，升级下载禁用重试。`build-guest.sh` 将该脚本与 Dockerfile 复制到本次构建的临时上下文，部署工具包包含同一份脚本。升级失败会保留构建证据并停止后续安装。
+
 使用[完整镜像构建脚本](build-guest.sh)建立本次构建独占的父 slice、网络和容器。脚本检查实际 rootless 引擎和父层上限，再执行共同安装脚本；命名带唯一后缀，避免覆盖已有环境。
 
 ```sh

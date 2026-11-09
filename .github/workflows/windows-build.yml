@@ -45,13 +45,29 @@ jobs:
         with:
           dotnet-version: 10.0.403
       - uses: astral-sh/setup-uv@v10.3.3
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make patch diffutils
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman
+            mingw-w64-ucrt-x86_64-libslirp
+            mingw-w64-ucrt-x86_64-dtc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-pkgconf
       - uses: actions/cache@v4
         with:
           path: _output/windows-deps
-          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json') }}
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
       - name: Build, test and install the unsigned development package
         env:
           CAGE_BUILD_REF: ${{ inputs.ref }}
+          CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
         run: ./scripts/ci-windows-build.ps1
       - uses: actions/upload-artifact@v4
         with:
@@ -94,10 +110,25 @@ jobs:
         with:
           dotnet-version: 10.0.403
       - uses: astral-sh/setup-uv@v10.3.3
+      - uses: msys2/setup-msys2@v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            make patch diffutils
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-glib2
+            mingw-w64-ucrt-x86_64-pixman
+            mingw-w64-ucrt-x86_64-libslirp
+            mingw-w64-ucrt-x86_64-dtc
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-python
+            mingw-w64-ucrt-x86_64-pkgconf
       - uses: actions/cache@v4
         with:
           path: _output/windows-deps
-          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json') }}
+          key: cage-windows-deps-${{ hashFiles('packaging/windows/dependencies.json', 'patches/qemu/**', 'scripts/build-qemu-windows.*') }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -105,6 +136,7 @@ jobs:
       - name: Build, sign, test and install the release candidate
         env:
           CAGE_BUILD_REF: ${{ inputs.ref }}
+          CAGE_MSYS2_ROOT: ${{ steps.msys2.outputs.msys2-location }}
           CAGE_WINDOWS_SIGNING_PROVIDER: ${{ vars.CAGE_WINDOWS_SIGNING_PROVIDER }}
           CAGE_ESIGNER_USERNAME: ${{ secrets.CAGE_ESIGNER_USERNAME }}
           CAGE_ESIGNER_PASSWORD: ${{ secrets.CAGE_ESIGNER_PASSWORD }}

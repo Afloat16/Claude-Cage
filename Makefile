@@ -49,7 +49,7 @@ GO_BUILD := CGO_ENABLED=$(CGO_ENABLED) $(GO) build -trimpath -tags $(TAGS) -ldfl
 all: agent-vm
 
 # Claude Cage ships a separate entry point with a mandatory proxy profile.
-cage: cage-ui assets
+cage: cage-ui assets tailnet-assets
 	$(GO_BUILD) -o _output/bin/cage$(EXE) ./cmd/cage
 ifeq ($(GOOS),darwin)
 	codesign -f --entitlements third_party/lima/vz.entitlements -s - _output/bin/cage
@@ -96,18 +96,26 @@ ifeq ($(GOOS),darwin)
 	codesign -f -v --entitlements third_party/lima/vz.entitlements -s - _output/bin/limactl
 endif
 
-# The guest agent runs in the Linux guest: built for it, without cgo.
+# Build each guest helper for the OS in which it will run.
 assets:
 	CGO_ENABLED=0 GOOS=linux GOARCH=$(GOARCH) $(GO) build -trimpath \
 		-ldflags "-s -w -X github.com/lima-vm/lima/v2/pkg/version.Version=$(LIMA_VERSION)" \
 		-o $(ASSETS)/lima-guestagent.Linux-$(GUEST_ARCH) github.com/lima-vm/lima/v2/cmd/lima-guestagent
 	gzip -9 -n -f $(ASSETS)/lima-guestagent.Linux-$(GUEST_ARCH)
+ifeq ($(GOOS)/$(GOARCH),darwin/arm64)
+	mkdir -p $(ASSETS)/Darwin
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 $(GO) build -trimpath -tags $(TAGS) \
+		-ldflags "-s -w -X github.com/lima-vm/lima/v2/pkg/version.Version=$(LIMA_VERSION)" \
+		-o $(ASSETS)/Darwin/lima-guestagent.Darwin-aarch64 github.com/lima-vm/lima/v2/cmd/lima-guestagent
+	gzip -9 -n -f $(ASSETS)/Darwin/lima-guestagent.Darwin-aarch64
+endif
 	rm -rf $(ASSETS)/templates && cp -R third_party/lima/templates $(ASSETS)/templates
 
 test: test-go
 
 test-go:
 	$(GO) test -tags $(TAGS) . ./cmd/... ./internal/...
+	cd tools/tailnet && GOFLAGS= $(GO) test ./...
 
 # The Windows build and its tests compile and vet, from any OS. The Windows
 # paths' logic is tested everywhere (paths.Windows); the tests themselves
@@ -144,3 +152,10 @@ fuzz:
 clean:
 	rm -rf _output
 	find $(ASSETS) -mindepth 1 ! -name README -exec rm -rf {} +
+
+.PHONY: tailnet-assets
+tailnet-assets:
+	bash scripts/build-tailnet.sh linux amd64 "$(CURDIR)/_output/tailnet/cage-tailnet-linux-amd64"
+	bash scripts/build-tailnet.sh linux arm64 "$(CURDIR)/_output/tailnet/cage-tailnet-linux-arm64"
+	gzip -n -c _output/tailnet/cage-tailnet-linux-amd64 > internal/tailnetassets/assets/cage-tailnet-linux-amd64.gz
+	gzip -n -c _output/tailnet/cage-tailnet-linux-arm64 > internal/tailnetassets/assets/cage-tailnet-linux-arm64.gz

@@ -34,3 +34,5 @@ dist
 # Rendered promo export; reproducible source and assets are in promo/.
 /claude-cage-promo.mp4
 /.vite/
+
+/internal/tailnetassets/assets/*.gz

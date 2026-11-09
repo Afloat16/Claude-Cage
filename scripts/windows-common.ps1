@@ -9,6 +9,35 @@ function Invoke-BuildTool {
     if ($LASTEXITCODE -ne 0) { throw "$Tool failed with exit code $LASTEXITCODE" }
 }
 
+function Assert-WindowsWorkbench {
+    param([Parameter(Mandatory)][string]$AppDirectory)
+    if (-not $IsWindows) { throw 'Workbench acceptance requires Windows.' }
+    $testRoot = Join-Path ([IO.Path]::GetTempPath()) ('cage-build-ui-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
+    $report = Join-Path $testRoot 'smoke.json'
+    $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $AppDirectory 'Cage.exe'))
+    $start.UseShellExecute = $false
+    $start.WorkingDirectory = $AppDirectory
+    $start.Environment['CLAUDE_CAGE_CONFIG'] = Join-Path $testRoot 'profile/config.json'
+    $start.ArgumentList.Add('--smoke-test')
+    $start.ArgumentList.Add($report)
+    $window = [Diagnostics.Process]::Start($start)
+    $passed = $false
+    try {
+        if (-not $window.WaitForExit(180000)) { throw "Cage workbench acceptance timed out. Diagnostics retained at $testRoot" }
+        if ($window.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $report)) { throw "Cage workbench acceptance failed. Diagnostics retained at $testRoot" }
+        $result = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+        if ($result.success -ne $true -or $result.nativeBridgeReady -ne $true) { throw "Cage workbench/bridge acceptance failed. Diagnostics retained at $testRoot" }
+        $passed = $true
+    } finally {
+        if (-not $window.HasExited) { $window.Kill($true); $window.WaitForExit() }
+        $window.Dispose()
+        # A successful smoke report is written only after the isolated backend
+        # confirms shutdown. Failed profiles remain available for diagnosis.
+        if ($passed) { Remove-Item -LiteralPath $testRoot -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 function Get-CageVersion {
     param([string]$Repository)
     $value = (Get-Content -LiteralPath (Join-Path $Repository 'VERSION') -Raw).Trim()
