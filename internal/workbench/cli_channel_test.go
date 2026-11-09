@@ -138,12 +138,12 @@ func TestArchivedCLIHistoryIsNotRediscovered(t *testing.T) {
 	s, id, project := metadataFixture(t)
 	home, _ := filepath.EvalSymlinks(t.TempDir())
 	bin := filepath.Join(home, "bin")
-	if err := os.Mkdir(bin, 0700); err != nil {
+	if err := os.MkdirAll(bin, 0700); err != nil {
 		t.Fatal(err)
 	}
-	// Discovery queries the CLI through the guest login shell. Keep that
-	// command local to the fixture while exercising the real discovery path.
-	const cli = "#!/bin/sh\n[ \"$#\" -eq 2 ] && [ \"$1\" = agents ] && [ \"$2\" = --json ] || exit 2\nprintf '[]\\n'\n"
+	// This archived history has no live CLI process. Keep the real discovery
+	// helper and SSH path independent of a developer's installed Claude CLI.
+	cli := "#!/bin/sh\n[ \"$#\" -eq 2 ] && [ \"$1\" = agents ] && [ \"$2\" = --json ] || exit 64\nprintf '[]\\n'\n"
 	if err := os.WriteFile(filepath.Join(bin, "claude"), []byte(cli), 0700); err != nil {
 		t.Fatal(err)
 	}
