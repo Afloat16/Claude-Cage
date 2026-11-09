@@ -309,6 +309,12 @@ def discover(request):
             configs.add(state["config"])
     for config_name in configs:
         config = Path(config_name)
+        running_ids = None
+        def observed_running():
+            nonlocal running_ids
+            if running_ids is None:
+                running_ids = {row.get("sessionId") for row in running_sessions(config_name)}
+            return running_ids
         paths = sorted((config / "projects").glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         found = set()
         for path in paths:
@@ -324,6 +330,7 @@ def discover(request):
             connection, state = connection_for(session_id, config)
             item = {"cli_id": session_id, "config": config_name, "connection": connection,
                     "workspace": workspace, "title": title or "Claude Code", "updated_at": path.stat().st_mtime,
+                    "running": session_id in observed_running() or bool(live(state.get("pid")) and not state.get("closed")),
                     "active": bool(live(state.get("pid")) and not state.get("closed") and (state.get("busy") or state.get("approvals")))}
             found.add(session_id)
             sessions.append(item)
@@ -334,6 +341,7 @@ def discover(request):
             if state.get("config") != config_name or not session_id or session_id in found or not any(workspace_within(workspace, root) for root in allowed):
                 continue
             item = view(config, session_id)
+            item["running"] = item["running"] or session_id in observed_running()
             item.pop("turns")
             sessions.append(item)
     return sessions
@@ -424,13 +432,17 @@ def active_session(session_id, config=""):
 
 
 def active_sessions(session_id, config=""):
+    return [row for row in running_sessions(config) if row.get("sessionId") == session_id]
+
+
+def running_sessions(config=""):
     env = dict(os.environ)
     if config:
         env["CLAUDE_CONFIG_DIR"] = config
     listing = subprocess.run(["claude", "agents", "--json"], env=env, capture_output=True, text=True, timeout=10)
     if listing.returncode != 0:
         raise ValueError("无法检查原会话是否仍在运行")
-    return [row for row in json.loads(listing.stdout) if row.get("sessionId") == session_id and live(row.get("pid"))]
+    return [row for row in json.loads(listing.stdout) if live(row.get("pid"))]
 
 
 def handoff_session(request):

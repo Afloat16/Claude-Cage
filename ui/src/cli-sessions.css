@@ -5,6 +5,7 @@
 }
 .sidebar-session > span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .sidebar-session > svg { flex: none; color: var(--muted); }
+.sidebar-session-open-error { margin: 2px 8px 10px; color: var(--muted); font-size: .8571rem; line-height: 1.5; overflow-wrap: anywhere; }
 .settings-content.settings-content--archives { padding: 32px clamp(24px, 4vw, 64px); }
 .archived-sessions { display: grid; gap: 28px; min-width: 0; width: 100%; max-width: 1120px; margin-inline: auto; }
 .archived-sessions :is(h2,h3,h4,p) { margin: 0; }

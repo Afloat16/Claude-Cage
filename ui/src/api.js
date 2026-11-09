@@ -32,16 +32,21 @@ async function renewSession() {
   }
   return sessionRenewal;
 }
-export async function api(path, body, method, headers = {}) {
+export async function api(path, body, method, headers = {}, { signal } = {}) {
   const connection = getClientContext().connection_id;
   const options = {
     method: method || (body === undefined ? "GET" : "POST"),
     headers: { ...connectionHeaders(path), ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
+    signal,
   };
   const send = async () => {
     try { return await fetch("/api" + path, options); }
-    catch (error) { reportDiagnostic("frontend", error); throw new Error(connectionErrorMessage(path, options.method), { cause: error }); }
+    catch (error) {
+      if (signal?.aborted) throw signal.reason;
+      reportDiagnostic("frontend", error);
+      throw new Error(connectionErrorMessage(path, options.method), { cause: error });
+    }
   };
   let response = await send();
   // Authentication fails before a handler runs, so retrying this rejected

@@ -33,6 +33,7 @@ type mobileSummary struct {
 	CustomTitle  string    `json:"custom_title,omitempty"`
 	Pinned       bool      `json:"pinned"`
 	Active       bool      `json:"active"`
+	Running      bool      `json:"running"`
 	MetadataSet  bool      `json:"metadata_set"`
 	Deleted      bool      `json:"deleted,omitempty"`
 	Archived     bool      `json:"archived,omitempty"`
@@ -133,6 +134,7 @@ type mobileCLIStore struct {
 	mu         sync.Mutex
 	active     map[string]*mobileRun
 	catalog    map[string]mobileSummary
+	running    map[string]bool // Fresh guest process observation, never restored from disk.
 	generation string
 }
 
@@ -269,6 +271,7 @@ func (m *mobileCLIStore) summaries(profile string, granted map[string]bool, arch
 			summary = run.record.summary()
 			summary.Active = run.record.turnActive()
 		}
+		summary.Running = m.running[id]
 		if granted[summary.Workspace] && !summary.Deleted && summary.Archived == archived {
 			if summary.CustomTitle != "" {
 				summary.Title = summary.CustomTitle

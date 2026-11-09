@@ -52,3 +52,28 @@ func TestSessionSummaryAccountAfterRestartAndSwitch(t *testing.T) {
 	store = &mobileCLIStore{}
 	check("second-account")
 }
+
+func TestSessionSummaryRunningRequiresFreshProcessObservation(t *testing.T) {
+	profile, workspace, id := t.TempDir(), t.TempDir(), uuid.NewString()
+	record := &mobileRecord{mobileSession: mobileSession{mobileSummary: mobileSummary{
+		ID: id, Workspace: workspace, Running: true,
+	}, Turns: []mobileTurn{}}, Terminal: true, CLIID: uuid.NewString()}
+	if err := writePrivate(mobileRecordPath(profile, id), record); err != nil {
+		t.Fatal(err)
+	}
+	store := &mobileCLIStore{}
+	check := func(want bool) {
+		t.Helper()
+		list, err := store.summaries(profile, map[string]bool{workspace: true}, false)
+		if err != nil || len(list) != 1 || list[0].Running != want {
+			t.Fatalf("running = %v, want %v; error = %v", list, want, err)
+		}
+	}
+	check(false) // Persisted activity cannot disable a session after restart.
+	store.running = map[string]bool{id: true}
+	check(true) // An idle external process is running even without a busy turn.
+	store.active = map[string]*mobileRun{id: {record: record}}
+	check(true)
+	store.running = map[string]bool{}
+	check(false)
+}

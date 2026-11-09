@@ -13,6 +13,7 @@ export function projectSessionRows(tabs, sessions, saved, manualOrder, baseline)
     const session = sessions.find(session => session.id === tab.cli_session_id);
     return { ...tab, claudeAccountNumber: session?.account_id ? session.claudeAccountNumber : tab.claudeAccountNumber,
       sessionActive: Boolean(session?.active),
+      sessionRunningElsewhere: Boolean(tab.historySession && session?.running),
       sessionPinned: Boolean(session ? session.pinned : saved[tab.id]?.pinned) };
   });
   for (const row of rows) if (!baseline.has(sessionKey(row))) baseline.set(sessionKey(row), baseline.size);

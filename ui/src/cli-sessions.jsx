@@ -39,12 +39,12 @@ export function useCLISessions(enabled, visible) {
       try {
         const result = await desktopSessionRequest("/sessions");
         if (!live) return;
-        setSessions((result.sessions || []).map(session => result.notice ? { ...session, active: false } : session));
+        setSessions((result.sessions || []).map(session => result.notice ? { ...session, active: false, running: false } : session));
         setError(result.notice || "");
       } catch (error) {
         if (live) {
           setError(error.message);
-          setSessions(previous => previous.map(session => ({ ...session, active: false })));
+          setSessions(previous => previous.map(session => ({ ...session, active: false, running: false })));
         }
       } finally { if (live) setLoading(false); }
       if (live) timer = setTimeout(load, 5000);

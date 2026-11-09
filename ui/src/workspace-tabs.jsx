@@ -59,6 +59,7 @@ export function WorkspaceTabs({
   onReorder,
   splitDrag,
   openingSession,
+  sessionOpenError,
 }) {
   const [menu, setMenu] = useState(null);
   const [drag, setDrag] = useState(null);
@@ -95,6 +96,9 @@ export function WorkspaceTabs({
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
+  const firstFocusable = tabs.findIndex(tab => tab.historySession
+    ? !busy && openingSession !== tab.cli_session_id && !tab.sessionRunningElsewhere
+    : ready || tab.kind === "terminal");
   const finishDrag = (commit, event) => {
     const current = pointer.current;
     pointer.current = null;
@@ -293,10 +297,16 @@ export function WorkspaceTabs({
       >
         {tabs.map((tab, index) => {
           const title = tabName(tab, saved);
+          const opening = Boolean(openingSession) && openingSession === tab.cli_session_id;
+          const runningElsewhere = tab.sessionRunningElsewhere;
+          const runningNotice = "其他窗口运行中，退出原会话后可在 Cage 接续";
+          const openError = tab.historySession && sessionOpenError?.id === tab.cli_session_id ? sessionOpenError.message : "";
+          const errorID = `session-open-error-${tab.cli_session_id}`;
           return (
+            <React.Fragment key={tab.id}>
             <div
-              key={tab.id}
               data-tab-id={tab.id}
+              title={runningElsewhere ? runningNotice : undefined}
               className={`${horizontal || vertical ? "browser-tab" : "sidebar-tab"} ${tab.id === active ? "active" : ""} ${tab.closed ? "ended" : ""} ${drag?.id === tab.id ? "dragging" : ""} ${horizontal && tabWidth(tab.id) < 96 ? "compact" : ""} ${horizontal && tabWidth(tab.id) < 40 ? "tiny" : ""} ${horizontal && tabWidth(tab.id) < 24 ? "sliver" : ""}`}
               style={
                 horizontal
@@ -326,17 +336,19 @@ export function WorkspaceTabs({
               <button
                 role={tab.historySession ? undefined : "tab"}
                 className={tab.historySession ? "sidebar-session" : undefined}
-                aria-busy={openingSession && openingSession === tab.cli_session_id || undefined}
+                aria-busy={opening || undefined}
+                aria-describedby={openError ? errorID : undefined}
+                aria-description={runningElsewhere ? runningNotice : undefined}
                 aria-label={tab.claudeLabel ? `${title} · ${tab.claudeLabel}` : title}
                 aria-selected={tab.historySession ? undefined : tab.id === active}
                 tabIndex={
                   tab.id === active ||
-                  (!tabs.some((t) => t.id === active) && index === 0)
+                  (!tabs.some((t) => t.id === active) && index === firstFocusable)
                     ? 0
                     : -1
                 }
-                disabled={tab.historySession ? busy || Boolean(openingSession) : !ready && tab.kind !== "terminal"}
-                title={tab.url ? `${title}\n${tab.url}` : [title, tab.claudeAccountNumber && `账号 ${tab.claudeAccountNumber}`, tab.claudeLabel].filter(Boolean).join(" · ")}
+                disabled={tab.historySession ? busy || opening || runningElsewhere : !ready && tab.kind !== "terminal"}
+                title={runningElsewhere ? `${title}\n${runningNotice}` : tab.url ? `${title}\n${tab.url}` : [title, tab.claudeAccountNumber && `账号 ${tab.claudeAccountNumber}`, tab.claudeLabel].filter(Boolean).join(" · ")}
                 onClick={() => onSelect(tab.id)}
                 onContextMenu={(event) => showMenu(tab, event)}
                 onKeyDown={(event) => {
@@ -354,17 +366,20 @@ export function WorkspaceTabs({
                   const next = horizontal ? "ArrowRight" : "ArrowDown";
                   if (![prev, next, "Home", "End"].includes(event.key)) return;
                   event.preventDefault();
-                  const at =
+                  const buttons = [...list.current.querySelectorAll('[role="tab"], .sidebar-session')];
+                  const enabled = buttons.map((button, at) => ({button, at})).filter(item => !item.button.disabled);
+                  const from = enabled.findIndex(item => item.at === index);
+                  const target = enabled[
                     event.key === "Home"
                       ? 0
                       : event.key === "End"
-                        ? tabs.length - 1
-                        : (index +
+                        ? enabled.length - 1
+                        : (from +
                             (event.key === prev ? -1 : 1) +
-                            tabs.length) %
-                          tabs.length;
-                  list.current.querySelectorAll('[role="tab"], .sidebar-session')[at]?.focus();
-                  if (!tabs[at].historySession) onSelect(tabs[at].id, false);
+                            enabled.length) %
+                          enabled.length];
+                  target?.button.focus();
+                  if (target && !tabs[target.at].historySession) onSelect(tabs[target.at].id, false);
                 }}
               >
                 <TabIcon kind={tab.kind} favicon={tab.favicon} size={15}
@@ -373,8 +388,8 @@ export function WorkspaceTabs({
                 <span>{title}</span>
                 {tab.claudeLabel && <small className="claude-tab-profile">{tab.claudeLabel}</small>}
                 {saved[tab.id]?.pinned && <Pin size={11} className="tab-pin" />}
-                {!horizontal && !vertical && (tab.sessionActive || openingSession === tab.cli_session_id) &&
-                  <LoaderCircle size={13} className="spin session-activity" role="img" aria-label={tab.sessionActive ? "会话正在运行" : "正在打开会话"} />}
+                {!horizontal && !vertical && (runningElsewhere || tab.sessionActive || opening) &&
+                  <LoaderCircle size={13} className="spin session-activity" role="img" aria-label={runningElsewhere ? "其他窗口运行中" : opening ? "正在打开会话" : "会话正在运行"} />}
               </button>
               {horizontal || vertical ? (
                 <button
@@ -394,6 +409,8 @@ export function WorkspaceTabs({
                 </div>
               )}
             </div>
+            {openError && <p id={errorID} className="sidebar-session-open-error" role="alert">{openError}</p>}
+            </React.Fragment>
           );
         })}
       </div>

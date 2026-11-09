@@ -157,21 +157,45 @@ class ChannelTests(unittest.TestCase):
             with self.assertRaises(ValueError): channel.handoff_session(request)
             kill.assert_not_called()
 
-    def test_catalog_activity_requires_live_busy_process(self):
+    @patch.object(channel, "running_sessions", return_value=[])
+    def test_catalog_activity_requires_live_busy_process(self, _registry):
         self.history(self.session, self.project, [{"type":"user", "message":{"content":"hello"}}])
         connection = str(uuid.uuid4())
         with channel.state_file(connection) as state:
             state.update(cli_id=self.session, config=str(self.home / ".claude"), workspace=self.project,
                          pid=os.getpid(), busy=True)
         request = {"accounts":["default"], "workspaces":{self.project:self.project}}
-        self.assertTrue(channel.discover(request)[0]["active"])
+        item = channel.discover(request)[0]
+        self.assertTrue(item["active"])
+        self.assertTrue(item["running"])
         self.assertTrue(channel.view(self.home / ".claude", self.session)["active"])
         with channel.state_file(connection) as state:
             state["busy"] = False
-        self.assertFalse(channel.discover(request)[0]["active"], "idle CLI was shown as active")
+        item = channel.discover(request)[0]
+        self.assertFalse(item["active"], "idle CLI was shown as active")
+        self.assertTrue(item["running"], "idle owned process was shown as stopped")
         with channel.state_file(connection) as state:
             state.update(busy=True, closed=True)
-        self.assertFalse(channel.discover(request)[0]["active"], "closed CLI retained activity")
+        item = channel.discover(request)[0]
+        self.assertFalse(item["active"], "closed CLI retained activity")
+        self.assertFalse(item["running"])
+
+    def test_discovery_reports_external_idle_process_and_clears_after_exit(self):
+        self.history(self.session, self.project, [{"type":"user", "message":{"content":"hello"}}])
+        other = str(uuid.uuid4())
+        self.history(other, self.project, [{"type":"user", "message":{"content":"other"}}])
+        request = {"accounts":["default"], "workspaces":{self.project:self.project}}
+        registry = [{"sessionId": self.session, "pid": os.getpid(), "status":"idle"}]
+        completed = subprocess.CompletedProcess([], 0, json.dumps(registry), "")
+        with patch.object(channel.subprocess, "run", return_value=completed) as run:
+            found = {item["cli_id"]: item for item in channel.discover(request)}
+            self.assertTrue(found[self.session]["running"])
+            self.assertFalse(found[self.session]["active"])
+            self.assertFalse(found[other]["running"])
+            self.assertEqual(run.call_count, 1, "registry must be read once per config, not per history")
+            self.assertEqual(run.call_args.kwargs["env"]["CLAUDE_CONFIG_DIR"], str(self.home / ".claude"))
+            completed.stdout = "[]"
+            self.assertFalse(any(item["running"] for item in channel.discover(request)))
 
     def test_purge_removes_only_target_transcripts_and_retries(self):
         target = self.history(self.session, self.project, [{"type":"user", "message":{"content":"delete this"}}])
@@ -215,7 +239,8 @@ class ChannelTests(unittest.TestCase):
             self.assertEqual(json.loads(policy.read_text()), blocked)
             self.assertEqual(run.call_count, 1)
 
-    def test_history_projects_and_channel_identity(self):
+    @patch.object(channel, "running_sessions", return_value=[])
+    def test_history_projects_and_channel_identity(self, _registry):
         request = str(uuid.uuid4())
         self.history(self.session, self.project + "/nested", [
             {"type": "user", "message": {"content": "desktop question"}},

@@ -13,6 +13,7 @@ const sessions = [
 const fixture = await createWorkbench({ url: process.env.CAGE_UI_URL || "http://127.0.0.1:5217",
   cliRequest: async (route, path) => {
     if (path === "/cli/sessions") return route.fulfill({json:{sessions}});
+    if (path.endsWith("/account")) return route.fulfill({json:{session:{},supported:false,candidates:[]}});
     const session = sessions.find(s => path.includes(s.id));
     if (path.endsWith("/open")) {
       opens++;

@@ -76,6 +76,13 @@ function App() {
   const [desktopOpen, setDesktopOpen] = useState(false);
   const [terminalChoice, setTerminalChoice] = useState(null);
   const [openingSession, setOpeningSession] = useState("");
+  const [sessionOpenError, setSessionOpenError] = useState(null);
+  const sessionOpenRequest = useRef(null);
+  useEffect(() => () => {
+    const request = sessionOpenRequest.current;
+    sessionOpenRequest.current = null;
+    request?.controller.abort();
+  }, []);
   const terminalTrigger = useRef(null);
   const appUpdates = useAppUpdates();
   const [recoveringEditor, setRecoveringEditor] = useState(false);
@@ -445,17 +452,35 @@ function App() {
     setActive(tab.id);
   };
   const openSessionTerminal = async session => {
-    if (openingSession) return;
+    if (session.running) return;
+    if (sessionOpenRequest.current?.id === session.id) return;
+    sessionOpenRequest.current?.controller.abort();
+    const controller = new AbortController();
+    const request = { id: session.id, controller };
+    sessionOpenRequest.current = request;
     setOpeningSession(session.id);
+    setSessionOpenError(null);
+    const timer = setTimeout(() => controller.abort(new Error("打开会话超时，历史已保留。请重新打开；若仍失败，请在设置中导出诊断包。")), 60000);
     try {
-      const view = await api("/cli/sessions/" + session.id + "/open", {});
-      const terminals = await api("/terminals");
+      const view = await api("/cli/sessions/" + session.id + "/open", {}, undefined, {}, { signal: controller.signal });
+      const terminals = await api("/terminals", undefined, undefined, {}, { signal: controller.signal });
+      if (sessionOpenRequest.current !== request) return;
       const terminal = terminals.find(item => item.id === view.desktop_terminal_id && item.cli_session_id === session.id);
       if (!terminal) throw new Error("终端状态已变化，请重新打开会话");
       showTerminal(terminal);
       sessionsChanged();
-    } catch (error) { notify(error.message); }
-    finally { setOpeningSession(""); }
+    } catch (error) {
+      if (sessionOpenRequest.current === request && error.code !== "connection_changed") {
+        const message = (controller.signal.aborted ? controller.signal.reason : error).message;
+        setSessionOpenError({ id: session.id, message });
+      }
+    } finally {
+      clearTimeout(timer);
+      if (sessionOpenRequest.current === request) {
+        sessionOpenRequest.current = null;
+        setOpeningSession("");
+      }
+    }
   };
   const archiveSession = async (session, anchor) => {
     if (!(await confirm({title:"归档这段会话？", body:"归档会关闭关联终端。历史将保留，可从设置中的已归档会话恢复。", confirm:"归档会话", anchor}))) return;
@@ -1326,6 +1351,7 @@ function App() {
             onSessionRefresh={cliSessions.refresh}
             onSessionOpen={openSessionTerminal}
             openingSession={openingSession}
+            sessionOpenError={sessionOpenError}
             onSessionArchive={archiveSession}
             onSessionPin={pinSession}
             onSessionRename={session => setRename({id:session.id, title:session.title, session:true})}

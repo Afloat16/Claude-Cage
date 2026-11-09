@@ -195,6 +195,7 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	known := map[string]*mobileRecord{}
+	running := map[string]bool{}
 	for id := range m.catalog {
 		record, err := m.record(s.profile, id)
 		if err != nil {
@@ -253,8 +254,10 @@ func (s *Server) discoverTerminalConversations(ctx context.Context, paths []stri
 			return err
 		}
 		m.catalog[record.ID] = record.summary()
+		running[record.ID] = running[record.ID] || item.Running
 		known[record.CLIID] = record
 	}
+	m.running = running
 	return nil
 }
 

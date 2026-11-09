@@ -186,6 +186,46 @@ func TestArchivedCLIHistoryIsNotRediscovered(t *testing.T) {
 	}
 }
 
+func TestDiscoveryRunningStateUpdatesCatalogAndClearsMissingHistory(t *testing.T) {
+	s, id, project := metadataFixture(t)
+	home, _ := filepath.EvalSymlinks(t.TempDir())
+	mobileTestSSH(t, s, home, []string{"HOME=" + home, "PATH=/usr/bin:/bin:/usr/local/bin"})
+	record, err := s.mobileCLI.record(s.profile, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.mobileCLI.summaries(s.profile, map[string]bool{project: true}, false); err != nil {
+		t.Fatal(err)
+	}
+	// Keep the host bootstrap and SSH path; substitute the guest's observation.
+	observation := filepath.Join(home, "observation.json")
+	helper := filepath.Join(home, ".local/share/cage/cli-channel-code", fmt.Sprintf("%x.py", sha256.Sum256([]byte(cliChannelHelper+cliResumePrompt+claudeAccountResumePrompt))))
+	if err := os.MkdirAll(filepath.Dir(helper), 0700); err != nil {
+		t.Fatal(err)
+	}
+	code := fmt.Sprintf("import json,sys\njson.load(sys.stdin)\nprint(open(%q).read())\n", observation)
+	if err := os.WriteFile(helper, []byte(code), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.ready = true
+	for _, phase := range []struct{ present, running bool }{{true, true}, {true, false}, {true, true}, {false, false}} {
+		found := []terminalConversation{}
+		if phase.present {
+			found = append(found, terminalConversation{CLIID: record.CLIID, Workspace: guestPath(project), Config: filepath.Join(home, ".claude"), Running: phase.running})
+		}
+		if err := writePrivate(observation, found); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.discoverTerminalConversations(context.Background(), []string{project}); err != nil {
+			t.Fatal(err)
+		}
+		list, err := s.mobileCLI.summaries(s.profile, map[string]bool{project: true}, false)
+		if err != nil || len(list) != 1 || list[0].Running != phase.running {
+			t.Fatalf("phase %+v: summaries = %+v, error = %v", phase, list, err)
+		}
+	}
+}
+
 func sharedCLIWorkbench(t *testing.T) (*Server, string, *atomic.Bool) {
 	t.Helper()
 	binary, flags := os.Getenv("CAGE_TEST_CLAUDE_CLI"), os.Getenv("CAGE_TEST_CHANNEL_FEATURES")
