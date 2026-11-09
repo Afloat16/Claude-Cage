@@ -20,6 +20,10 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境尚未就绪", 409)
 		return
 	}
+	if s.macosGuest != nil || s.windowsGuest != nil {
+		s.nativeBrowserVNC(w, r)
+		return
+	}
 	address := "127.0.0.1:15900"
 	if containerenv.Configured(s.profile) {
 		environment, err := containerenv.Load(s.profile)

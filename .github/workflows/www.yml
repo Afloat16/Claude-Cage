@@ -2,9 +2,9 @@ name: Website and public releases
 on:
   push:
     branches: [main]
-    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
+    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/agent-*.mjs', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   pull_request:
-    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
+    paths: ['www/**', 'assets/**', 'README*.md', 'docs/guide/**', 'scripts/agent-*.mjs', 'scripts/verify-macos-release.sh', '.github/workflows/www.yml']
   release:
     types: [published]
   workflow_dispatch:
@@ -61,6 +61,8 @@ jobs:
           cache-dependency-path: www/package-lock.json
       - run: npm ci --prefix www
       - run: node --test www/scripts/sync-release.test.mjs
+      - name: Agent package discovery and verification
+        run: node --test scripts/agent-bootstrap.test.mjs
       - name: Resolve the public download version
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}

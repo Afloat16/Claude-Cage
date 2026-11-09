@@ -3,6 +3,7 @@ package workbench
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/sylvinus/agent-vm/internal/cage"
@@ -15,6 +16,7 @@ type networkRecovery struct {
 	Epoch                uint64
 	Next                 time.Time
 	Attempts             int
+	pressureLogged       bool
 }
 
 func (s *Server) scheduleNetworkRecovery(state cage.GateStatus) {
@@ -46,6 +48,15 @@ func (s *Server) recoverNetwork() {
 	resources, err := cage.ReadResourceStatus(s.instanceDir())
 	guestPressure := resources.Pressure && time.Since(resources.ObservedAt) <= 10*time.Second
 	if err == nil && (guestPressure || resources.HostPressure) {
+		s.mu.Lock()
+		logWait := s.recovery == r && !r.pressureLogged
+		if logWait {
+			s.recovery.pressureLogged = true
+		}
+		s.mu.Unlock()
+		if logWait {
+			diagnostics.Log("info", "network", fmt.Sprintf("automatic recheck waiting for memory pressure to subside (guest=%t, host=%t)", guestPressure, resources.HostPressure))
+		}
 		return
 	}
 	_, _ = s.submitJob("network-recovery", func() error { return s.runNetworkRecovery(r, s.runSafetyCheck) })
@@ -120,6 +131,9 @@ func (s *Server) finishNetworkRecovery(expected networkRecovery, err error) erro
 		s.recovery.Epoch = current.Epoch
 	}
 	s.recovery.Attempts++
-	s.recovery.Next = time.Now().Add(time.Duration(min(300, 15<<min(s.recovery.Attempts, 5))) * time.Second)
+	delay := time.Duration(min(300, 15<<min(s.recovery.Attempts, 5))) * time.Second
+	s.recovery.Next = time.Now().Add(delay)
+	s.recovery.pressureLogged = false
+	diagnostics.Log("warn", "network", fmt.Sprintf("automatic recheck attempt %d failed; next attempt in %s", s.recovery.Attempts, delay))
 	return err
 }

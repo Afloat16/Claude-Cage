@@ -9,7 +9,7 @@ const source = readFileSync(
 )
   .replace(/^import[\s\S]*?;\n/gm, "")
   .replace("export function installRemoteInput", "function installRemoteInput");
-function fixture(native = false, browserComposition = false) {
+function fixture(native = false, browserComposition = false, options = {}) {
   const doc = new EventTarget(),
     win = new EventTarget(),
     canvas = {},
@@ -23,7 +23,9 @@ function fixture(native = false, browserComposition = false) {
     statuses = [];
   let reads = 0,
     mode = "mac",
-    currentTabId = "tab-1";
+    currentTabId = "tab-1",
+    guestPlatform = "linux",
+    systemClipboard = true;
   doc.activeElement = canvas;
   doc.hasFocus = () => true;
   doc.body = { append() {} };
@@ -41,14 +43,16 @@ function fixture(native = false, browserComposition = false) {
   win.innerWidth = 1280;
   win.innerHeight = 800;
   const rfb = new EventTarget();
-  rfb.cageSetKeyboardTarget = (element) => {
+  rfb.setKeyboardTarget = (element) => {
     rfb.target = element;
   };
+  rfb.events = rfb;
   rfb.sendKey = (...args) => keys.push(args);
+  rfb.runKeyAction = action => Promise.resolve().then(() => action(rfb.sendKey));
   rfb.focus = () => {
     doc.activeElement = rfb.target || canvas;
   };
-  rfb.cagePasteText = (text) => {
+  rfb.pasteText = (text) => {
     pastes.push(text);
     return Promise.resolve();
   };
@@ -62,8 +66,21 @@ function fixture(native = false, browserComposition = false) {
     Set,
     console,
     crypto: webcrypto,
+    TextEncoder,
+    Blob,
+    Uint8Array,
+    atob,
+    ClipboardItem: class { constructor(values) { this.values = values; } },
+    navigator: { clipboard: { write: async values => writes.push(values) } },
+    api: options.api || (async () => { throw new Error("unexpected API request"); }),
+    native: options.native || (async (operation, value) => {
+      if (operation === "clipboardRevision") return 1;
+      if (operation === "clipboardSyncWrite") { writes.push(value.text || value.png); return { revision: 2 }; }
+      return true;
+    }),
     readClipboardContent: async () => {
       reads++;
+      options.onRead?.();
       return { text: "中文🙂" };
     },
     transferFiles: (data) => Array.from(data?.files || []),
@@ -73,7 +90,7 @@ function fixture(native = false, browserComposition = false) {
     nativeAvailable: () => native,
     getKeycode: (e) => e.code,
     getKeysym: (e) =>
-      ({ Shift: 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb })[e.key] ??
+      ({ Shift: e.code === "ShiftRight" ? 0xffe2 : 0xffe1, Control: 0xffe3, Alt: 0xffe9, Meta: 0xffeb, Enter: 0xff0d })[e.key] ??
       (e.key.length === 1 ? e.key.codePointAt(0) : null),
     Keysyms: {
       lookup: (codepoint) =>
@@ -92,6 +109,10 @@ function fixture(native = false, browserComposition = false) {
     container,
     {
       mode: () => mode,
+      guestPlatform: () => guestPlatform,
+      systemClipboard: () => systemClipboard,
+      preparePaste: options.preparePaste,
+      copyText: options.copyText,
       onStatus: (t) => statuses.push(t),
       onFallback() {},
       isActive: () => true,
@@ -151,12 +172,50 @@ function fixture(native = false, browserComposition = false) {
     setMode: (value) => {
       mode = value;
     },
+    setGuestPlatform: value => { guestPlatform = value; },
+    setSystemClipboard: value => { systemClipboard = value; },
     setTabId: (value) => {
       currentTabId = value;
     },
     reads: () => reads,
   };
 }
+for (const guest of ["linux", "windows", "darwin"]) {
+  test(`${guest}: Shift+Enter restores a modifier missed during focus changes`, () => {
+    const f = fixture();
+    f.setGuestPlatform(guest);
+    try {
+      assert.equal(f.key("keydown", "Enter", "Enter", { shiftKey: true }).defaultPrevented, true);
+      f.key("keyup", "Enter", "Enter", { shiftKey: true });
+      assert.deepEqual(f.keys, [
+        [0xffe1, "ShiftLeft", true], [0xff0d, "Enter", true],
+        [0xff0d, "Enter", false], [0xffe1, "ShiftLeft", false],
+      ]);
+      f.keys.length = 0;
+      f.key("keydown", "Enter", "Enter", { shiftKey: true, isComposing: true });
+      assert.deepEqual(f.keys, [], "IME confirmation must not insert a newline");
+    } finally { f.controller.dispose(); }
+  });
+  for (const code of ["ShiftLeft", "ShiftRight"]) {
+    test(`${guest}: Shift+Enter keeps held ${code} until its release`, () => {
+      const f = fixture();
+      f.setGuestPlatform(guest);
+      try {
+        const sym = code === "ShiftRight" ? 0xffe2 : 0xffe1;
+        f.key("keydown", "Shift", code, { shiftKey: true });
+        f.key("keydown", "Enter", "Enter", { shiftKey: true });
+        f.key("keyup", "Enter", "Enter", { shiftKey: true });
+        assert.ok(!f.keys.some(([key, , down]) => key === sym && !down));
+        f.key("keyup", "Shift", code);
+        assert.deepEqual(f.keys.at(-1), [sym, code, false]);
+        f.keys.length = 0;
+        f.win.dispatchEvent(new Event("blur"));
+        assert.deepEqual(f.keys, [], "released Shift must not remain held remotely");
+      } finally { f.controller.dispose(); }
+    });
+  }
+}
+
 test("Mac find and redo preserve the Linux Ctrl/Shift chord", () => {
   const f = fixture();
   try {
@@ -189,6 +248,60 @@ test("Mac find and redo preserve the Linux Ctrl/Shift chord", () => {
   } finally {
     f.controller.dispose();
   }
+});
+
+test("Mac guests use Command for edit actions and preserve physical Control", () => {
+  const f = fixture();
+  f.setGuestPlatform("darwin");
+  try {
+    f.key("keydown", "f", "KeyF", { metaKey: true });
+    assert.deepEqual(f.keys.map(([symbol, , down]) => [symbol, down]), [[0xffeb, true], [102, true], [102, false], [0xffeb, false]]);
+    f.keys.length = 0;
+    f.controller.edit("selectAll");
+    assert.deepEqual(f.keys.map(([symbol, , down]) => [symbol, down]), [[0xffeb, true], [97, true], [97, false], [0xffeb, false]]);
+    f.keys.length = 0;
+    f.key("keydown", "Control", "ControlLeft", { ctrlKey: true });
+    f.key("keydown", "a", "KeyA", { ctrlKey: true });
+    f.key("keyup", "a", "KeyA", { ctrlKey: true });
+    f.key("keyup", "Control", "ControlLeft");
+    assert.deepEqual(f.keys.map(([symbol, , down]) => [symbol, down]), [[0xffe3, true], [97, true], [97, false], [0xffe3, false]]);
+    f.keys.length = 0;
+    f.key("keydown", "c", "KeyC", { ctrlKey: true });
+    assert.deepEqual(f.keys.map(([symbol, , down]) => [symbol, down]), [[99, true]]);
+  } finally { f.controller.dispose(); }
+});
+
+test("a private browser clipboard uses its surface path while OS sharing is active", async () => {
+  const order = [];
+  const f = fixture(true, false, {
+    preparePaste: () => { order.push("prepare"); return { dispose() { order.push("dispose"); } }; },
+    onRead: () => order.push("read"),
+  });
+  f.setGuestPlatform("darwin");
+  f.setSystemClipboard(false);
+  f.win.cageSharedClipboardActive = true;
+  try {
+    await f.controller.readAndPaste();
+    assert.equal(f.reads(), 1);
+    assert.deepEqual(order, ["prepare", "read", "dispose"]);
+    f.doc.visibilityState = "visible";
+    const context = f.armCopy();
+    await f.controller.receiveCopy({ id: "tab-1", text: "private browser copy", context });
+    assert.deepEqual(f.writes, ["private browser copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("a right Command shortcut never leaves an extra left Command pressed", () => {
+  const f = fixture();
+  f.setGuestPlatform("macos");
+  try {
+    f.key("keydown", "Meta", "MetaRight", { metaKey: true });
+    f.key("keydown", "f", "KeyF", { metaKey: true });
+    f.key("keyup", "f", "KeyF", { metaKey: true });
+    f.key("keyup", "Meta", "MetaRight");
+    assert.equal(f.keys.some(([, code]) => code === "MetaLeft"), false);
+    assert.deepEqual(f.keys.at(-1).slice(1), ["MetaRight", false]);
+  } finally { f.controller.dispose(); }
 });
 
 function inputEvent(f, type, properties = {}) {
@@ -355,7 +468,7 @@ test("background clipboard notifications never write to the host", async () => {
     assert.deepEqual(f.writes, []);
     f.key("keydown", "c", "KeyC", { metaKey: true });
     f.rfb.dispatchEvent(clipboard);
-    await Promise.resolve();
+    await new Promise(resolve => setImmediate(resolve));
     assert.deepEqual(f.writes, ["guest text"]);
   } finally {
     f.controller.dispose();
@@ -414,7 +527,7 @@ test("verified page copies only write to the host from the focused live tab", as
     f.doc.activeElement = f.local;
     await copy();
     f.doc.activeElement = f.target;
-    await copy("tab-1", "x".repeat(65537));
+    await copy("tab-1", "x".repeat(2 * 1024 * 1024 + 1));
     assert.equal(f.writes.length, 1);
     f.controller.dispose();
     await copy();
@@ -439,6 +552,95 @@ test("copy results from before a focus or tab round-trip cannot write after retu
     assert.equal(f.writes.length, 0);
     await f.controller.receiveCopy({ ...oldCopy, text: "new copy", context: latest });
     assert.deepEqual(f.writes, ["new copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("native copied PNG uses the host revision captured by its user gesture", async () => {
+  const calls = [];
+  let revision = 7;
+  const f = fixture(true, false, {
+    api: async (path, body) => { calls.push([path, body.id]); revision = 8; return { png: "aW1hZ2U=" }; },
+    native: async (operation, value) => {
+      if (operation === "clipboardRevision") return revision;
+      calls.push([operation, value.revision]);
+      return { superseded: value.revision !== revision };
+    },
+  });
+  try {
+    const context = f.armCopy();
+    await f.controller.receiveCopy({ id: "tab-1", context, document: "page-a", clipboard: { id: "opaque-id", mime: "image/png", size: 5 } });
+    assert.deepEqual(calls, [["/browser/clipboard", "opaque-id"], ["clipboardSyncWrite", 7]]);
+    assert.ok(f.statuses.at(-1).includes("剪贴板已更新"));
+  } finally { f.controller.dispose(); }
+});
+
+test("a PNG fetched after a focus change cannot write the host clipboard", async () => {
+  let finish;
+  const f = fixture(true, false, { api: () => new Promise(resolve => { finish = resolve; }) });
+  try {
+    const context = f.armCopy();
+    const pending = f.controller.receiveCopy({ id: "tab-1", context, document: "page-a", clipboard: { id: "opaque-id", mime: "image/png", size: 5 } });
+    await new Promise(resolve => setImmediate(resolve));
+    f.win.dispatchEvent(new Event("blur"));
+    finish({ png: "aW1hZ2U=" });
+    await pending;
+    assert.deepEqual(f.writes, []);
+  } finally { f.controller.dispose(); }
+});
+
+test("a private browser cut uses its callback without a duplicate key chord", async () => {
+  const actions = [];
+  const f = fixture(false, false, {
+    copyText: async (_sendCopy, valid, action) => { assert.equal(valid(), true); actions.push(action.key); return { text: "cut result" }; },
+  });
+  f.setGuestPlatform("darwin");
+  f.setSystemClipboard(false);
+  try {
+    await f.controller.copy("x");
+    assert.deepEqual(actions, ["x"]);
+    assert.deepEqual(f.keys, []);
+    assert.deepEqual(f.writes, ["cut result"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("explicit desktop copy preserves the queued native copy keys", async () => {
+  const f = fixture(false, false, { copyText: async sendCopy => { await sendCopy(); return { text: "fresh desktop text" }; } });
+  f.setGuestPlatform("darwin");
+  try {
+    await f.controller.copy();
+    assert.deepEqual(f.keys.map(([symbol, , down]) => [symbol, down]), [[0xffeb, true], [99, true], [99, false], [0xffeb, false]]);
+    assert.deepEqual(f.writes, ["fresh desktop text"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("a late browser capability can switch copying from native events to its private adapter", async () => {
+  let available = false;
+  const f = fixture(false, false, { copyText: () => available ? Promise.resolve({ text: "private copy" }) : undefined });
+  try {
+    await f.controller.copy();
+    assert.equal(f.keys.length, 4);
+    const event = new Event("clipboard");
+    event.detail = { text: "native event" };
+    f.rfb.dispatchEvent(event);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(f.writes, ["native event"]);
+    available = true;
+    f.keys.length = 0;
+    await f.controller.copy();
+    assert.deepEqual(f.keys, []);
+    assert.deepEqual(f.writes, ["native event", "private copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("copied text supports two MiB in UTF-8 and rejects larger content", async () => {
+  const f = fixture();
+  try {
+    const context = f.armCopy();
+    const text = "界".repeat(Math.floor(2 * 1024 * 1024 / 3));
+    await f.controller.receiveCopy({ id: "tab-1", context, text });
+    assert.deepEqual(f.writes, [text]);
+    await f.controller.receiveCopy({ id: "tab-1", context, text: text + "界" });
+    assert.equal(f.writes.length, 1);
   } finally { f.controller.dispose(); }
 });
 

@@ -11,6 +11,12 @@ import { parseArgs } from 'node:util';
 const repository = 'Lee-xeo/Claude-Cage';
 const repoURL = `https://github.com/${repository}`;
 const apiURL = `https://api.github.com/repos/${repository}/releases`;
+const sourceArchive = name => /^mihomo-v[\d.]+-source\.tar\.gz$/.test(name) ||
+  /^cage-macos-guest-\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?-source\.tar\.gz$/.test(name) ||
+  /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
+  /^qemu-keycodemapdb-[0-9a-f]{40}-source\.tar\.gz$/.test(name) ||
+  /^qemu-\d+\.\d+\.\d+-cage-changes-source\.tar\.gz$/.test(name) ||
+  /^qemu-\d+\.\d+\.\d+-windows-full-source\.(?:tar\.)?(?:gz|xz|bz2|zst|zip|7z|tar)$/.test(name);
 
 export async function request(url, timeout = 180_000, { fetchImpl = fetch } = {}) {
   const target = new URL(url);
@@ -49,13 +55,14 @@ export async function publicManifestRelease(tag, fetchImpl = fetch) {
   const allowed = name => [
     `Cage-${version}-macos-arm64.dmg`, `Cage-${version}-windows-amd64-setup.exe`,
     `Cage-${version}-windows-amd64-setup-unsigned.exe`, `Cage-${version}-linux-amd64.deb`,
-  ].includes(name) || /^mihomo-v[\d.]+-source\.tar\.gz$/.test(name) || /^qemu-[0-9a-f]{40}-source\.tar\.gz$/.test(name);
+  ].includes(name) || sourceArchive(name);
   if ([...names.keys()].some(name => !allowed(name))) throw new Error('Unexpected public release asset');
   const assets = [{ name: 'SHA256SUMS', state: 'uploaded', size: Buffer.byteLength(text), browser_download_url: `${base}SHA256SUMS` }];
   for (const [name, digest] of names) {
     const response = await fetchImpl(`${base}${name}`, { method: 'HEAD', headers: { 'User-Agent': 'Cage-Release-Verification' }, signal: AbortSignal.timeout(180_000) });
     const size = Number(response.headers.get('content-length'));
-    if (!response.ok || !Number.isSafeInteger(size) || size <= 0 || size > 512 * 1024 * 1024) throw new Error(`Missing or incomplete public asset: ${name}`);
+    const maximum = (sourceArchive(name) ? 2048 : 512) * 1024 * 1024;
+    if (!response.ok || !Number.isSafeInteger(size) || size <= 0 || size > maximum) throw new Error(`Missing or incomplete public asset: ${name}`);
     assets.push({ name, state: 'uploaded', size, digest: `sha256:${digest}`, browser_download_url: `${base}${name}` });
   }
   const release = { tag_name: tag, draft: false, prerelease: version.includes('-'), assets };
@@ -83,7 +90,8 @@ export function releaseAssets(release) {
   if (assets[1].size > 64 * 1024) throw new Error('Checksum file is too large');
   const windows = optionalAsset(release, `Cage-${version}-windows-amd64-setup.exe`);
   const linux = optionalAsset(release, `Cage-${version}-linux-amd64.deb`);
-  return { version, archive: assets[0], checksums: assets[1], source, windows, linux };
+  const guestSource = optionalAsset(release, `cage-macos-guest-${version}-source.tar.gz`);
+  return { version, archive: assets[0], checksums: assets[1], source, windows, linux, guestSource };
 }
 
 function optionalAsset(release, name) {
@@ -183,7 +191,7 @@ async function main() {
     });
     if (!release) throw new Error('No complete public Cage release is available');
   }
-  const { version, archive, source } = releaseAssets(release);
+  const { version, archive, source, guestSource } = releaseAssets(release);
   const text = await checksumText(release);
   const digest = checksumFor(text, archive);
   const sourceDigest = checksumFor(text, source);
@@ -191,6 +199,7 @@ async function main() {
   if (values['archive-directory']) {
     await download(archive, digest, values['archive-directory']);
     await download(source, sourceDigest, values['archive-directory']);
+    if (guestSource) await download(guestSource, checksumFor(text, guestSource), values['archive-directory']);
     await writeFile(join(values['archive-directory'], 'SHA256SUMS'), text);
     for (const url of [metadata.windowsDownloadURL || metadata.windowsPreview?.downloadURL, metadata.linuxDownloadURL].filter(Boolean)) {
       const asset = release.assets.find(asset => asset.browser_download_url === url);

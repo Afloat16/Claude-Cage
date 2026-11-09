@@ -1,4 +1,5 @@
 import React from "react";
+import { SafetyMessage } from "./safety-message";
 import { ArrowDownToLine, Box, Layers3, PackageOpen, SlidersHorizontal } from "lucide-react";
 import "./setup-progress.css";
 
@@ -17,7 +18,8 @@ function bytes(value) {
 }
 
 export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected }) {
-  const { phase, label, received, total } = job.setup_progress;
+  const { phase, label, received, total, bytes_per_second, operation } = job.setup_progress;
+  const native = job.kind === "guest-install";
   const stage = stages.find(([key]) => key === phase);
   const Icon = stage?.[2] || Box;
   const hasBytes = Number.isFinite(received) && received >= 0;
@@ -27,7 +29,7 @@ export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected })
   const meter = knownSize ? `${bytes(received)} / ${bytes(total)}` : hasBytes ? `已接收 ${bytes(received)}` : "";
   return <section className={`setup-progress${failed ? " setup-progress-failed" : ""}`} aria-label="环境安装进度">
     <ol className="setup-stages" aria-label="安装阶段">
-      {stages.map(([key, name]) => <li key={key} aria-current={key === phase ? "step" : undefined}>{name}</li>)}
+      {stages.map(([key, name]) => <li key={key} aria-current={key === phase ? "step" : undefined}>{native && key === "image" ? "安装材料" : native && key === "packages" ? "系统安装" : name}</li>)}
     </ol>
     <div className="setup-transfer">
       <div className="setup-transfer-heading">
@@ -35,6 +37,7 @@ export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected })
         <div className="setup-transfer-description">
           <h2>{label || stage?.[1] || "正在准备环境"}</h2>
           {meter && <span className="setup-transfer-bytes">{meter}</span>}
+          {hasBytes && operation !== "verify" && Number.isFinite(bytes_per_second) && bytes_per_second > 0 && <span className="setup-transfer-bytes"> · {bytes(bytes_per_second)}/s</span>}
         </div>
         {knownSize && <strong className="setup-transfer-number">{percent}<small>%</small></strong>}
       </div>
@@ -45,7 +48,7 @@ export function SetupProgress({ job, onDetails, onStop, onRetry, disconnected })
         <span style={knownSize ? { width: `${received / total * 100}%` } : undefined} />
       </div>}
       {failed && <>
-        <p className="setup-transfer-error" role="alert">{job.error}</p>
+        <p className="setup-transfer-error" role="alert"><SafetyMessage message={job.error} /></p>
         <p className="setup-transfer-hint">可手动继续安装，已保存的下载会尝试续传。</p>
       </>}
     </div>

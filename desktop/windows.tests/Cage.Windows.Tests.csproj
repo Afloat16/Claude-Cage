@@ -6,8 +6,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
   <ItemGroup>
+    <EmbeddedResource Include="../../packaging/windows/installation-files.ps1" LogicalName="Cage.InstallationFiles.ps1" />
+    <EmbeddedResource Include="../../packaging/windows/verified-file-deletion.cs" LogicalName="Cage.VerifiedFileDeletion.cs" />
     <Compile Include="../windows/UpdatePolicy.cs" Link="UpdatePolicy.cs" />
     <Compile Include="../windows/Backend.cs" Link="Backend.cs" />
     <Compile Include="../windows/UpdateRecovery.cs" Link="UpdateRecovery.cs" />
+    <Compile Include="../windows/AppUpdater.cs" Link="AppUpdater.cs" />
+    <Compile Include="../windows/UpdateInstaller.cs" Link="UpdateInstaller.cs" />
+    <Compile Include="../windows/Authenticode.cs" Link="Authenticode.cs" />
+    <Compile Include="../windows/WindowLayout.cs" Link="WindowLayout.cs" />
   </ItemGroup>
 </Project>
