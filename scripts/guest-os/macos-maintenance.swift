@@ -85,14 +85,18 @@ enum MacMaintenance {
             guard NSWorkspace.shared.open(url) else { throw Failure(8, "maintenance_open_failed") }
             return ["opened": true]
         }
-        guard operation == "probe", let front = NSWorkspace.shared.frontmostApplication, verified(front) else {
+        guard operation == "probe", let front = NSWorkspace.shared.frontmostApplication else {
             throw Failure(7, "maintenance_foreground_changed")
+        }
+        if !verified(front) {
+            return ["error": "maintenance_foreground_changed", "blocking_pid": front.processIdentifier,
+                    "blocking_bundle": front.bundleIdentifier ?? ""]
         }
         guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             throw Failure(7, "maintenance_window_unavailable")
         }
         let display = CGDisplayBounds(CGMainDisplayID())
-        var covering: [CGRect] = []
+        var covering: [(bounds: CGRect, pid: Int32?, window: UInt32?)] = []
         for window in windows {
             guard let raw = window[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary), bounds.width > 0, bounds.height > 0,
@@ -101,17 +105,27 @@ enum MacMaintenance {
             if owner == front.processIdentifier && bounds.width >= 100 && bounds.height >= 60 {
                 let region = bounds.intersection(display)
                 guard !region.isNull, region.width >= 80, region.height >= 40,
-                      !covering.contains(where: { $0.intersects(region) }),
-                      let id = window[kCGWindowNumber as String] as? UInt32,
-                      NSWorkspace.shared.frontmostApplication?.processIdentifier == front.processIdentifier,
-                      try consoleSession() == session else { throw Failure(7, "maintenance_window_obscured") }
+                      let id = window[kCGWindowNumber as String] as? UInt32 else {
+                    throw Failure(7, "maintenance_window_unavailable")
+                }
+                guard try consoleSession() == session else { throw Failure(4, "requires_gui_login") }
+                guard NSWorkspace.shared.frontmostApplication?.processIdentifier == front.processIdentifier else {
+                    throw Failure(7, "maintenance_foreground_changed")
+                }
+                if let blocker = covering.first(where: { $0.bounds.intersects(region) }) {
+                    let bundle = blocker.pid.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+                    return ["error": "maintenance_window_obscured", "blocking_pid": blocker.pid ?? 0,
+                            "blocking_window": blocker.window ?? 0, "blocking_bundle": bundle ?? ""]
+                }
                 return ["version": 1, "session": session, "user": NSUserName(), "pid": front.processIdentifier,
                     "window": id, "bundle": front.bundleIdentifier!,
                     "password_focused": passwordFocused(front, window: bounds),
                     "rect": [region.minX, region.minY, region.width, region.height],
                     "display": [display.minX, display.minY, display.width, display.height]]
             }
-            if owner != front.processIdentifier { covering.append(bounds) }
+            if owner != front.processIdentifier {
+                covering.append((bounds, owner, window[kCGWindowNumber as String] as? UInt32))
+            }
         }
         throw Failure(7, "maintenance_window_unavailable")
     }
