@@ -102,6 +102,10 @@ export function browserExecutable() {
 // guest's browser mode, fixed executable, and Cage-owned profile.
 export function createNativeBrowserService(options = {}) {
   const mac = options.platform === "darwin";
+  // The dedicated Windows controller streams the live viewport even when a
+  // site hasn't finished downloading fonts. Playwright otherwise waits on
+  // document.fonts.ready for every screenshot, blocking the input queue too.
+  if (!mac) process.env.PW_TEST_SCREENSHOT_NO_FONTS_READY = "1";
   const directory = options.directory ?? path.join(process.env.LOCALAPPDATA || path.join(homedir(), "AppData", "Local"), "Cage", "Browser");
   const selectionFile = path.join(directory, "tabs.json");
   const uploadDirectory = path.join(directory, "Uploads");
@@ -322,24 +326,30 @@ export function createNativeBrowserService(options = {}) {
       } catch (error) { await stopCapture(tab.page); throw error; }
     }
     clearTimeout(capture.expiry);
-    capture.expiry = setTimeout(() => { void stopCapture(tab.page); }, 1500);
-    capture.expiry.unref?.();
-    const frame = capture.latest;
-    // Windows screencast preserves a damage stream at CSS resolution, but a
-    // viewport scale changes its native input surface. Capture only new damage
-    // at the context's actual device density and reuse it for static frames.
-    if (!mac && !frame.jpeg) {
-      const started = performance.now();
-      frame.jpeg = (await tab.page.screenshot({ type: "jpeg", quality: 85 })).toString("base64");
-      captureMetrics.screenshots++;
-      captureMetrics.total_ms += performance.now() - started;
+    try {
+      const frame = capture.latest;
+      // Windows screencast preserves a damage stream at CSS resolution, but a
+      // viewport scale changes its native input surface. Capture only new damage
+      // at the context's actual device density and reuse it for static frames.
+      if (!mac && !frame.jpeg) {
+        const started = performance.now();
+        frame.jpeg = (await tab.page.screenshot({ type: "jpeg", quality: 85, caret: "initial" })).toString("base64");
+        captureMetrics.screenshots++;
+        captureMetrics.total_ms += performance.now() - started;
+      }
+      if (capture.ack !== null) {
+        const sessionId = capture.ack;
+        capture.ack = null;
+        await capture.connection.send("Page.screencastFrameAck", { sessionId });
+      }
+      return frame;
+    } finally {
+      // Only time spent between requests counts as viewer inactivity.
+      if (captures.get(tab.page) === capture) {
+        capture.expiry = setTimeout(() => { void stopCapture(tab.page); }, 1500);
+        capture.expiry.unref?.();
+      }
     }
-    if (capture.ack !== null) {
-      const sessionId = capture.ack;
-      capture.ack = null;
-      await capture.connection.send("Page.screencastFrameAck", { sessionId });
-    }
-    return frame;
   }
   async function cdp(method, params = {}, sessionID) {
     if (!sessionID) return browserCDP.send(method, params);

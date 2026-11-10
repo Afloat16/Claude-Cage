@@ -69,6 +69,11 @@ export function installRemoteInput(
   };
   const prepareCopy = () => {
     if (!isActive() || disposed) return;
+    // The shared clipboard delivers guest copies independently of RFB input.
+    if (sharedClipboard()) {
+      if (copyContext) cancelCopy();
+      return;
+    }
     copyContext = crypto.randomUUID().replaceAll("-", "");
     copyRevision = nativeAvailable() ? native("clipboardRevision").catch(() => undefined) : Promise.resolve(undefined);
     const context = copyContext;

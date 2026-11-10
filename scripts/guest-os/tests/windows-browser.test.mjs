@@ -347,6 +347,13 @@ integration("split panes resize actual pages and route physical input to the cli
 integration("screencast retains HiDPI pixels, skips static frames and resumes after its viewer leaves", async t => {
   const f = await fixture(t), one = await f.open("/still");
   await one.page.evaluate(() => { document.body.style.background = "rgb(245, 240, 230)"; });
+  const screenshot = one.page.screenshot.bind(one.page);
+  one.page.screenshot = async options => {
+    // A slow Windows capture can take longer than the idle viewer timeout.
+    one.page.screenshot = screenshot;
+    await new Promise(resolve => setTimeout(resolve, 1700));
+    return screenshot(options);
+  };
   let frame = await f.call("frame", {}, "GET");
   const dimensions = await one.page.evaluate(async jpeg => {
     const image = new Image(); image.src = "data:image/jpeg;base64," + jpeg; await image.decode();
@@ -384,6 +391,46 @@ integration("screencast retains HiDPI pixels, skips static frames and resumes af
   await new Promise(resolve => setTimeout(resolve, 1700));
   const resumed = await f.call("frame", { after: updated.sequence }, "GET");
   assert(resumed.jpeg && resumed.sequence !== updated.sequence);
+});
+
+integration("a scrolled browser viewport stays visible while a web font is loading", async t => {
+  const f = await fixture(t, { displayScale: 1.5 });
+  const { page } = await f.open();
+  const initial = await f.call("frame", {}, "GET");
+  let releaseFont;
+  const pending = new Promise(resolve => { releaseFont = resolve; });
+  await page.route("**/pending-font.woff2", async route => { await pending; await route.abort(); });
+  const requested = page.waitForRequest("**/pending-font.woff2");
+  await page.evaluate(() => {
+    document.body.innerHTML = '<main style="height:90vh;overflow:auto"><div style="height:200vh;background:red"></div><div style="height:120vh;background:lime">waiting</div></main>';
+    const font = new FontFace("pending", "url(/pending-font.woff2)");
+    document.fonts.add(font);
+    document.body.style.fontFamily = "pending, sans-serif";
+    const pane = document.querySelector("main");
+    pane.scrollTop = pane.scrollHeight;
+  });
+  await requested;
+  const timer = setTimeout(releaseFont, 4000);
+  try {
+    let after = initial.sequence;
+    for (;;) {
+      const frame = await f.call("frame", { after }, "GET");
+      assert.equal(await page.evaluate(() => document.fonts.status), "loading", "scrolled frame must arrive before font loading ends");
+      if (!frame.unchanged) {
+        const pixel = await page.evaluate(async ({ jpeg, width, height }) => {
+          const image = new Image(); image.src = "data:image/jpeg;base64," + jpeg; await image.decode();
+          const ctx = document.createElement("canvas").getContext("2d");
+          ctx.drawImage(image, width / 2, height / 2, 1, 1, 0, 0, 1, 1);
+          return { rgb: [...ctx.getImageData(0, 0, 1, 1).data], size: [image.width, image.height] };
+        }, frame);
+        assert.deepEqual(pixel.size, [frame.width, frame.height]);
+        assert.equal(frame.scale, 1.5);
+        if (pixel.rgb[1] > 245 && pixel.rgb[0] < 10 && pixel.rgb[2] < 10) break;
+        after = frame.sequence;
+      }
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+  } finally { clearTimeout(timer); releaseFont(); }
 });
 
 integration("audit reads configured browser state separately from expected values and preserves actual HTTP failures", async t => {

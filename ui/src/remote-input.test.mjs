@@ -156,6 +156,7 @@ function fixture(native = false, browserComposition = false, options = {}) {
     pastes,
     texts,
     compositions,
+    copyContexts,
     writes,
     statuses,
     armCopy: () => {
@@ -288,6 +289,30 @@ test("a private browser clipboard uses its surface path while OS sharing is acti
     const context = f.armCopy();
     await f.controller.receiveCopy({ id: "tab-1", text: "private browser copy", context });
     assert.deepEqual(f.writes, ["private browser copy"]);
+  } finally { f.controller.dispose(); }
+});
+
+test("shared clipboard input skips fallback copy setup and resumes it after disconnect", async () => {
+  const nativeCalls = [];
+  const f = fixture(true, false, {
+    native: async operation => { nativeCalls.push(operation); return 1; },
+  });
+  try {
+    const beforeSharing = f.armCopy();
+    assert.ok(beforeSharing);
+    f.win.cageSharedClipboardActive = true;
+    nativeCalls.length = 0;
+    f.armCopy();
+    for (const [key, code] of [[" ", "Space"], ["Enter", "Enter"], ["Tab", "Tab"]]) {
+      f.key("keydown", key, code, { cageNativeInput: true });
+    }
+    assert.deepEqual(nativeCalls, []);
+    assert.deepEqual(f.copyContexts, [beforeSharing]);
+    f.win.cageSharedClipboardActive = false;
+    await f.controller.receiveCopy({ id: "tab-1", text: "obsolete", context: beforeSharing });
+    assert.deepEqual(nativeCalls, []);
+    assert.notEqual(f.armCopy(), beforeSharing);
+    assert.deepEqual(nativeCalls, ["clipboardRevision"]);
   } finally { f.controller.dispose(); }
 });
 
