@@ -88,7 +88,7 @@ export const RemoteView = forwardRef(function RemoteView(
         client = new RFB(
           container,
           runtimeSocketURL(`${desktopPrefix}/vnc`),
-          { credentials: { password }, cageBrowserDisplay: !desktop },
+          { credentials: { password }, cageBrowserDisplay: !desktop, cageCursorFallback: desktop && guestPlatform === "windows" },
         );
         rfb.current = client;
         client.scaleViewport = true;
