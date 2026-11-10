@@ -110,3 +110,15 @@ func TestMacHostDownloadsReplacePreviousComponentProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestMacOSSetupProgressReportsHostRetry(t *testing.T) {
+	p := parseSetupProgress("CAGE_HOST_RETRY editor.tgz 2")
+	if p == nil || p.Label != "正在下载 macOS 网页编辑器（准备第 2/3 次尝试）" {
+		t.Fatal(p)
+	}
+	for _, line := range []string{"CAGE_HOST_RETRY unknown 2", "CAGE_HOST_RETRY editor.tgz 0"} {
+		if p := parseSetupProgress(line); p != nil {
+			t.Fatal(p)
+		}
+	}
+}

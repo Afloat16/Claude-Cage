@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"al.essio.dev/pkg/shellescape"
+	"github.com/sylvinus/agent-vm/internal/hostproxy"
 )
 
 // MaintainMacOSComponents operates only on an already bound VZ identity. Its
@@ -67,7 +68,7 @@ func MaintainMacOSComponents(ctx context.Context, profile, kit, manifestPath str
 			return err
 		}
 		command := exec.CommandContext(ctx, "/bin/bash", filepath.Join(kit, "prepare-macos-media.sh"), cache)
-		command.Env = append(os.Environ(), "CAGE_REFRESH_TOOLS=1", "CAGE_HOST_DOWNLOADER="+exe)
+		command.Env = append(append(os.Environ(), hostproxy.DownloadEnvironment()...), "CAGE_REFRESH_TOOLS=1", "CAGE_HOST_DOWNLOADER="+exe)
 		command.Stdout, command.Stderr = stdout, stderr
 		if err = command.Run(); err != nil {
 			return fmt.Errorf("准备原生工具包失败：%w", err)

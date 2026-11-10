@@ -20,6 +20,17 @@ type SetupProgress struct {
 // continues through the existing redacted operation log.
 func parseSetupProgress(line string) *SetupProgress {
 	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "CAGE_HOST_RETRY ") {
+		fields := strings.Fields(line)
+		if len(fields) != 3 || (fields[2] != "2" && fields[2] != "3") {
+			return nil
+		}
+		label := macOSDownloadLabel(fields[1])
+		if label == "" {
+			return nil
+		}
+		return &SetupProgress{Phase: "image", Label: label + "（准备第 " + fields[2] + "/3 次尝试）", System: "macos", Operation: "download"}
+	}
 	if strings.HasPrefix(line, "CAGE_HOST_BYTES ") {
 		fields := strings.Fields(line)
 		if len(fields) != 4 {

@@ -7,27 +7,37 @@ umask 077
 src=$(cd "$(dirname "$0")" && pwd)
 stage=$(mktemp -d "$(dirname "$1")/.cage-cli-kit.XXXXXXXX")
 trap 'rm -rf "$stage"' EXIT
+downloads=${CAGE_HOST_DOWNLOAD_CACHE:-$(dirname "$stage")/.downloads}
+[[ ! -L $downloads ]]
+mkdir -p "$downloads"
 fetch() {
     if [[ -n ${CAGE_HOST_DOWNLOADER:-} ]]; then
-        "$CAGE_HOST_DOWNLOADER" host-download "$1" "$2" "macos-cli-$3" "${4:-}"
+        "$CAGE_HOST_DOWNLOADER" host-download "$1" "$2" "macos-cli-$3" "${4:-}" "$downloads" "$5"
     else
         curl --disable --proto '=https' --proto-redir '=https' --location --fail --silent --show-error --connect-timeout 15 --speed-time 60 --speed-limit 1 --retry 2 -H "Accept: ${4:-*/*}" "$1" -o "$2"
     fi
 }
 download() {
     local name=$1 url=$2 digest=$3 api=$4
-    # An existing guest may already have the exact signed release archives.
-    # Verify the staged copy before using it, just like a completed download.
+    local saved="$downloads/cli-$name"
+    [[ ! -L $saved && ( ! -e $saved || -f $saved ) ]]
+    # Retain completed siblings when one of the parallel downloads fails.
+    # Hard links share storage with the published kit on the same cache volume.
+    if [[ -f $saved ]] && ln "$saved" "$stage/$name"; then
+        if [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]]; then return; fi
+        rm "$stage/$name"
+    fi
     if [[ -n $cache && -f $cache/$name && ! -L $cache/$name ]]; then
         cp "$cache/$name" "$stage/$name"
         if [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]]; then return; fi
     fi
     printf '下载 macos-cli-%s\n' "$name"
-    if ! fetch "$url" "$stage/$name" "$name"; then
+    if ! fetch "$url" "$stage/$name" "$name" "" "$digest"; then
         [[ -n $api ]] || return 1
-        fetch "$api" "$stage/$name" "$name" application/octet-stream
+        fetch "$api" "$stage/$name" "$name" application/octet-stream "$digest"
     fi
-    [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]]
+    [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]] || return 1
+    ln -f "$stage/$name" "$saved"
 }
 download claude https://downloads.claude.ai/claude-code-releases/2.1.311/darwin-arm64/claude 85d8c08707fcfd1e78ffa0204eefbc6ec9e4fe22f375fb2767ef85d957ed3161 '' &
 claude_pid=$!
