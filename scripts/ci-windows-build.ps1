@@ -61,6 +61,8 @@ try {
         $qemuSource = Join-Path $repository '_output/windows-qemu-sources/full-source.tar.gz'
     }
     & (Join-Path $PSScriptRoot 'build-windows.ps1') -Release:$Release
+    Invoke-BuildTool $windowsPowerShell @('-NoProfile', '-NonInteractive', '-File', 'scripts/guest-os/windows-host-enrollment.tests.ps1')
+    Invoke-BuildTool 'go' @('test', './internal/guestos', '-run', '^TestWindowsHostEnrollment', '-count=1')
     if (-not $Release) {
         $windowsPowerShell = Join-Path ([Environment]::SystemDirectory) 'WindowsPowerShell/v1.0/powershell.exe'
         foreach ($test in @('install-guest-powershell.tests.ps1', 'windows-evaluation.tests.ps1')) {

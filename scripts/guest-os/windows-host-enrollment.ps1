@@ -110,8 +110,14 @@ function Stop-CageHostEnrollment($Context) {
     $null=Invoke-CageHostEnrollment $Context @{action='stop'} $null
 }
 
-function Wait-CageHostEnrollment($Context) {
+function Wait-CageHostEnrollment($Context, $Worker) {
     $deadline=[DateTime]::UtcNow.AddSeconds(10)
-    do {try{$null=Invoke-CageHostEnrollment $Context @{action='ready'} $null;return}catch{Start-Sleep -Milliseconds 100}}while([DateTime]::UtcNow -lt $deadline)
+    do {
+        if ($Worker -and $Worker.HasExited) {
+            throw "enrollment_worker_exited (exit=$($Worker.ExitCode)). Check the enrollment error code in operation details, then continue installation."
+        }
+        try { $null=Invoke-CageHostEnrollment $Context @{action='ready'} $null; return }
+        catch { Start-Sleep -Milliseconds 100 }
+    } while ([DateTime]::UtcNow -lt $deadline)
     throw 'The original user enrollment worker did not become available.'
 }

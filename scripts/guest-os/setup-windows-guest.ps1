@@ -40,7 +40,7 @@ if(!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator))
     $command='$ErrorActionPreference=''Stop'';$p=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('''+$payload+'''))|ConvertFrom-Json;$a=@{};$p.PSObject.Properties|ForEach-Object{$a[$_.Name]=$_.Value};$s=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('''+$script+'''));try{& $s @a;exit 0}catch{Write-Error $_;exit 1}'
     $encoded=[Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($command))
     try{
-        if($context){Wait-CageHostEnrollment $context}
+        if($context){Wait-CageHostEnrollment $context $worker}
         $process=Start-Process -FilePath (Join-Path ([Environment]::GetFolderPath('System')) 'WindowsPowerShell/v1.0/powershell.exe') -ArgumentList @('-NoLogo','-NoProfile','-ExecutionPolicy','RemoteSigned','-EncodedCommand',$encoded) -Verb RunAs -PassThru
         if($context){Set-CageHostEnrollmentAdmin $context $process}
         $process.WaitForExit()
