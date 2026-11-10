@@ -61,6 +61,7 @@ func (s *Server) openProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.op.TryLock() {
+		w.Header().Set("X-Cage-Recovery", "project-operation-busy")
 		http.Error(w, "另一个操作仍在进行，请稍候", 409)
 		return
 	}

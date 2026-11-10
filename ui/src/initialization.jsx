@@ -9,6 +9,7 @@ import { ProxySettings } from "./proxy-settings";
 import { SetupProgress } from "./setup-progress";
 import { DiagnosticSettings } from "./diagnostics.jsx";
 import { MacOSFirstSetup } from "./macos-first-setup";
+import { InitializationProjectApproval } from "./macos-project-approval";
 import { Modal } from "./modal";
 import { SafetyMessage } from "./safety-message";
 import { needsProxySetup } from "./onboarding-state.mjs";
@@ -63,6 +64,7 @@ function Initialization({ initial, onComplete }) {
   const [details, setDetails] = useState(false);
   const [help, setHelp] = useState(false);
   const [dialog, setDialog] = useState(null);
+  const [approvalWorkspace, setApprovalWorkspace] = useState("");
   const [proxyDirty, setProxyDirty] = useState(false);
   const alive = useRef(true);
   const pollNow = useRef(null);
@@ -72,6 +74,7 @@ function Initialization({ initial, onComplete }) {
   const job = status?.job || {};
   const busy = submitting || Boolean(job.running);
   const network = networkState(status);
+  const needsProjectApproval = status?.guest_system === "macos" && status.project_errors?.some(item => item.path === status.environment_directory && item.recovery === "project-approval");
   const ready = Boolean(status?.ready && status.vm_running && !busy && !job.error && network.mode === "open");
   const confirm = options => new Promise(resolve => setDialog({ ...options, resolve }));
   const settleDialog = value => { dialog?.resolve(value); setDialog(null); };
@@ -208,6 +211,11 @@ function Initialization({ initial, onComplete }) {
       {connectionError && <div className="initialization-notice" role="alert"><SafetyMessage message={connectionError} /><button onClick={() => pollNow.current?.()}>重新连接</button></div>}
       {!status ? <p role="status"><LoaderCircle size={18} className="spin" />正在读取安装状态…</p> : <>
         <div className="initialization-stage" key={step}>
+          {step === "install" && needsProjectApproval && <section className="initialization-notice" aria-label="默认工作区访问">
+            <p>虚拟 Mac 正在请求访问默认工作区。请在授权窗口中核对目录，再点击 Use Project。</p>
+            <p className="macos-approval-path">{status.environment_directory}</p>
+            <button type="button" disabled={!status.ready || !status.vm_running} onClick={() => setApprovalWorkspace(status.environment_directory)}>查看并授权</button>
+          </section>}
           {step === "system" && <>
             <GuestSystemPicker system={choice} onChange={setChoice} preserveOnUnmount deferMatch />
             <InitializationStorage value={storage} onChange={setStorage} disabled={busy} />
@@ -233,6 +241,7 @@ function Initialization({ initial, onComplete }) {
       <div className="initialization-support"><button className="text-button" aria-expanded={help} onClick={() => setHelp(!help)}>日志与诊断</button>{navigation && !busy && <button className="text-button" onClick={() => navigation.open()}>只连接 SSH 主机</button>}</div>
       {help && <DiagnosticSettings />}
     </section>
+    {approvalWorkspace && <InitializationProjectApproval workspace={approvalWorkspace} jobRunning={Boolean(job.running)} onClose={() => { setApprovalWorkspace(""); pollNow.current?.(); }} />}
     {details && <Modal title="初始化操作详情" onClose={() => setDetails(false)}><div className="modal-body"><pre className="job-log">{job.log || job.message || "暂无操作记录"}</pre></div></Modal>}
     {dialog && <Modal title={dialog.title} onClose={() => settleDialog(false)} footer={<><button onClick={() => settleDialog(false)}>取消</button><button className="primary" onClick={() => settleDialog(true)}>{dialog.confirm}</button></>}><div className="modal-body"><p>{dialog.body}</p></div></Modal>}
   </InitializationFrame>;
