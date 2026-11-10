@@ -1495,6 +1495,7 @@ function App() {
                     <div className="pane-body">
                       <TerminalView
                         session={{ ...tab, id: tab.sessionId }}
+                        onLoginTab={({ id }) => showBrowserResult({ id, kind: "web", login: true, incognito: true, title: "账号授权" })}
                         onControls={(control) =>
                           control
                             ? terminalControls.current.set(tab.id, control)

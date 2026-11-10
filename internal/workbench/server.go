@@ -479,6 +479,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("DELETE /api/clipboard/files/{id}", s.clipboardArchive)
 	mux.HandleFunc("POST /api/terminals", s.newTerminal)
 	mux.HandleFunc("DELETE /api/terminals/{id}", s.closeTerminal)
+	mux.HandleFunc("POST /api/terminals/{id}/login-link", s.terminalLoginLink)
 	mux.HandleFunc("POST /api/terminals/{id}/metadata", s.terminalSessionMetadata)
 	mux.HandleFunc("GET /api/terminals/{id}/stream", s.terminalStream)
 	web, _ := fs.Sub(assets, "web")

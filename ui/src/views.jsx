@@ -9,6 +9,8 @@ import React, {
 import { useAppearance } from "./appearance";
 import { terminalTheme, systemCodeFont } from "./appearance-state.mjs";
 import { Terminal } from "@xterm/xterm";
+import { WebLinksAddon } from "@xterm/addon-web-links";
+import { claudeLoginLink, isClaudeLoginLink } from "./terminal-login-link.mjs";
 import { FitAddon } from "@xterm/addon-fit";
 import RFB from "../.generated/novnc/core/rfb.js";
 import { api, writeClipboard, nativeAvailable } from "./api";
@@ -267,7 +269,7 @@ export const RemoteView = forwardRef(function RemoteView(
   );
 });
 
-export function TerminalView({ session, visible, focused = true, onStatus, onControls, onAccountChanged }) {
+export function TerminalView({ session, visible, focused = true, onStatus, onControls, onAccountChanged, onLoginTab }) {
   const { appearance, theme, variant } = useAppearance();
   const box = useRef(),
     instance = useRef(),
@@ -290,7 +292,19 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       result.then(reset, reset);
       return result;
     };
+    const activateLogin = async (_event, uri) => {
+      if (disposed || !visibleRef.current || !focusedRef.current || !isClaudeLoginLink(uri)) return;
+      try {
+        const tab = await api(`/terminals/${session.id}/login-link`, { url: uri });
+        if (!disposed && visibleRef.current && focusedRef.current) onLoginTab?.(tab);
+      } catch (error) { if (!disposed) onStatus(error.message); }
+    };
     const terminal = new Terminal({
+      linkHandler: { activate(event, uri) {
+        if (isClaudeLoginLink(uri)) return void activateLogin(event, uri);
+        // Keep xterm's user confirmation for other explicit HTTP(S) links.
+        if (window.confirm(`打开此终端链接？\n${uri}`)) window.open(uri, "_blank", "noopener,noreferrer");
+      } },
       fontFamily: theme.fonts.code || systemCodeFont,
       fontSize: appearance.codeFontSize,
       lineHeight: 1.3,
@@ -302,6 +316,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
     });
     const fitter = new FitAddon();
     terminal.loadAddon(fitter);
+    terminal.loadAddon(new WebLinksAddon(activateLogin, { urlRegex: claudeLoginLink }));
     terminal.open(box.current);
     instance.current = terminal;
     fit.current = fitter;
