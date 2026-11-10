@@ -323,7 +323,6 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 	useZlib := false
 	useTight := false
 	useTightPNG := false
-	var nextFrame time.Time
 	var compressed bytes.Buffer
 	var compressor *zlib.Writer
 	defer func() {
@@ -331,53 +330,186 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 			_ = compressor.Close()
 		}
 	}()
-	for {
-		kind, err := read(1)
+	// Reading ahead of the guest keeps input moving while a frame request
+	// waits for its turn. Messages are still handled one at a time, in order.
+	messages := make(chan []byte)
+	stopped := make(chan struct{})
+	defer close(stopped)
+	var readErr error
+	go func() {
+		defer close(messages)
+		for {
+			message, err := readRFBClientMessage(stream)
+			if err != nil {
+				readErr = err
+				return
+			}
+			select {
+			case messages <- message:
+			case <-stopped:
+				return
+			}
+		}
+	}()
+	var pace nativeFramePace
+	// The pending update request, and whether it accepts an unchanged frame.
+	pending, incremental := false, true
+	timer := time.NewTimer(time.Hour)
+	defer timer.Stop()
+	schedule := func() {
+		timer.Stop()
+		select {
+		case <-timer.C:
+		default:
+		}
+		timer.Reset(time.Until(pace.next()))
+	}
+	sendFrame := func() error {
+		pending = false
+		pace.requested(time.Now())
+		input := map[string]any{"action": "frame"}
+		if incremental {
+			input["after"] = frame.Sequence
+		}
+		wasIncremental := incremental
+		incremental = true
+		var next windowsWindowFrame
+		if err := request(input, &next); err != nil {
+			return err
+		}
+		pace.answered(!next.Unchanged)
+		if next.Unchanged {
+			if !wasIncremental || frame.Sequence == "" || next.Sequence != frame.Sequence {
+				return errors.New("应用画面更新标识无效")
+			}
+			return write([]byte{0, 0, 0, 0})
+		}
+		if useTight || useTightPNG {
+			encoding := int32(7)
+			if useTightPNG {
+				encoding = -260
+			}
+			rectangles, count, supported, err := nativeTightRectangles(next, encoding)
+			if err != nil {
+				return err
+			}
+			if supported {
+				changed := next.Width != frame.Width || next.Height != frame.Height
+				if changed && !supportsResize {
+					return errors.New("画面尺寸已变化，请重新连接")
+				}
+				if changed {
+					count++
+				}
+				header := []byte{0, 0, byte(count >> 8), byte(count)}
+				if changed {
+					header = append(header, windowRFBRect(next.Width, next.Height, -223)...)
+				}
+				if err = write(append(header, rectangles...)); err != nil {
+					return err
+				}
+				frame = next
+				sized = true
+				return nil
+			}
+		}
+		pixels, err := nativeFramePixels(next)
 		if err != nil {
 			return err
 		}
-		switch kind[0] {
-		case 0:
-			format, err := read(19)
-			if err != nil {
+		if rgbOrder {
+			for i := 0; i < len(pixels); i += 4 {
+				pixels[i], pixels[i+2] = pixels[i+2], pixels[i]
+			}
+		}
+		encoding := int32(0)
+		payload := pixels
+		if useZlib {
+			if compressor == nil {
+				compressor, err = zlib.NewWriterLevel(&compressed, zlib.BestSpeed)
+				if err != nil {
+					return err
+				}
+			}
+			compressed.Reset()
+			if _, err = compressor.Write(pixels); err != nil {
 				return err
 			}
+			if err = compressor.Flush(); err != nil {
+				return err
+			}
+			payload = make([]byte, 4+compressed.Len())
+			binary.BigEndian.PutUint32(payload, uint32(compressed.Len()))
+			copy(payload[4:], compressed.Bytes())
+			encoding = 6
+		}
+		changed := next.Width != frame.Width || next.Height != frame.Height
+		if changed && !supportsResize {
+			return errors.New("画面尺寸已变化，请重新连接")
+		}
+		count := uint16(1)
+		if changed {
+			count++
+		}
+		header := make([]byte, 4)
+		binary.BigEndian.PutUint16(header[2:], count)
+		if changed {
+			header = append(header, windowRFBRect(next.Width, next.Height, -223)...)
+		}
+		header = append(header, windowRFBRect(next.Width, next.Height, encoding)...)
+		if err = write(header); err != nil {
+			return err
+		}
+		if err = write(payload); err != nil {
+			return err
+		}
+		frame = next
+		sized = true
+		return nil
+	}
+	for {
+		var due <-chan time.Time
+		if pending {
+			due = timer.C
+		}
+		var message []byte
+		select {
+		case <-due:
+			if err := sendFrame(); err != nil {
+				return err
+			}
+			continue
+		case received, open := <-messages:
+			if !open {
+				return readErr
+			}
+			message = received
+		}
+		body := message[1:]
+		switch message[0] {
+		case 0:
 			base := []byte{32, 24, 0, 1, 0, 255, 0, 255, 0, 255}
-			if !bytes.Equal(format[3:13], base) || (!bytes.Equal(format[13:16], []byte{16, 8, 0}) && !bytes.Equal(format[13:16], []byte{0, 8, 16})) {
+			if !bytes.Equal(body[3:13], base) || (!bytes.Equal(body[13:16], []byte{16, 8, 0}) && !bytes.Equal(body[13:16], []byte{0, 8, 16})) {
 				return errors.New("画面像素格式无效")
 			}
-			rgbOrder = format[13] == 0
+			rgbOrder = body[13] == 0
 		case 2:
-			header, err := read(3)
-			if err != nil {
-				return err
-			}
-			count := int(binary.BigEndian.Uint16(header[1:]))
-			if count > 256 {
-				return errors.New("画面编码列表无效")
-			}
-			encodings, err := read(count * 4)
-			if err != nil {
-				return err
-			}
+			encodings := body[3:]
 			useZlib = false
 			useTight = false
 			useTightPNG = false
 			fenceRequested := false
-			for i := 0; i < count; i++ {
-				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == -312 {
+			for i := 0; i < len(encodings); i += 4 {
+				switch int32(binary.BigEndian.Uint32(encodings[i:])) {
+				case -312:
 					fenceRequested = true
-				}
-				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == -223 {
+				case -223:
 					supportsResize = true
-				}
-				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == 6 {
+				case 6:
 					useZlib = true
-				}
-				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == 7 {
+				case 7:
 					useTight = true
-				}
-				if int32(binary.BigEndian.Uint32(encodings[i*4:])) == -260 {
+				case -260:
 					useTightPNG = true
 				}
 			}
@@ -389,178 +521,136 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 			}
 			supportsFence = fenceRequested
 		case 3:
-			update, err := read(9)
-			if err != nil {
-				return err
+			if body[0] == 0 {
+				incremental = false
 			}
-			if delay := time.Until(nextFrame); delay > 0 {
-				time.Sleep(delay)
+			if !pending {
+				pending = true
+				schedule()
 			}
-			nextFrame = time.Now().Add(time.Second / 30)
-			input := map[string]any{"action": "frame"}
-			if update[0] != 0 {
-				input["after"] = frame.Sequence
-			}
-			var next windowsWindowFrame
-			if err = request(input, &next); err != nil {
-				return err
-			}
-			if next.Unchanged {
-				if update[0] == 0 || frame.Sequence == "" || next.Sequence != frame.Sequence {
-					return errors.New("应用画面更新标识无效")
-				}
-				if err = write([]byte{0, 0, 0, 0}); err != nil {
-					return err
-				}
-				continue
-			}
-			if useTight || useTightPNG {
-				encoding := int32(7)
-				if useTightPNG {
-					encoding = -260
-				}
-				rectangles, count, supported, err := nativeTightRectangles(next, encoding)
-				if err != nil {
-					return err
-				}
-				if supported {
-					changed := next.Width != frame.Width || next.Height != frame.Height
-					if changed && !supportsResize {
-						return errors.New("画面尺寸已变化，请重新连接")
-					}
-					if changed {
-						count++
-					}
-					header := []byte{0, 0, byte(count >> 8), byte(count)}
-					if changed {
-						header = append(header, windowRFBRect(next.Width, next.Height, -223)...)
-					}
-					if err = write(append(header, rectangles...)); err != nil {
-						return err
-					}
-					frame = next
-					sized = true
-					continue
-				}
-			}
-			pixels, err := nativeFramePixels(next)
-			if err != nil {
-				return err
-			}
-			if rgbOrder {
-				for i := 0; i < len(pixels); i += 4 {
-					pixels[i], pixels[i+2] = pixels[i+2], pixels[i]
-				}
-			}
-			encoding := int32(0)
-			payload := pixels
-			if useZlib {
-				if compressor == nil {
-					compressor, err = zlib.NewWriterLevel(&compressed, zlib.BestSpeed)
-					if err != nil {
-						return err
-					}
-				}
-				compressed.Reset()
-				if _, err = compressor.Write(pixels); err != nil {
-					return err
-				}
-				if err = compressor.Flush(); err != nil {
-					return err
-				}
-				payload = make([]byte, 4+compressed.Len())
-				binary.BigEndian.PutUint32(payload, uint32(compressed.Len()))
-				copy(payload[4:], compressed.Bytes())
-				encoding = 6
-			}
-			changed := next.Width != frame.Width || next.Height != frame.Height
-			if changed && !supportsResize {
-				return errors.New("画面尺寸已变化，请重新连接")
-			}
-			count := uint16(1)
-			if changed {
-				count++
-			}
-			header := make([]byte, 4)
-			binary.BigEndian.PutUint16(header[2:], count)
-			if changed {
-				header = append(header, windowRFBRect(next.Width, next.Height, -223)...)
-			}
-			header = append(header, windowRFBRect(next.Width, next.Height, encoding)...)
-			if err = write(header); err != nil {
-				return err
-			}
-			if err = write(payload); err != nil {
-				return err
-			}
-			frame = next
-			sized = true
 		case 4:
-			key, err := read(7)
-			if err != nil {
-				return err
-			}
 			if !sized {
 				continue
 			}
-			if err = request(map[string]any{"action": "key", "target": frame.Target, "keysym": binary.BigEndian.Uint32(key[3:]), "down": key[0] != 0}, nil); err != nil {
+			if err := request(map[string]any{"action": "key", "target": frame.Target, "keysym": binary.BigEndian.Uint32(body[3:]), "down": body[0] != 0}, nil); err != nil {
 				return err
 			}
 		case 5:
-			pointer, err := read(5)
-			if err != nil {
-				return err
-			}
 			if !sized {
 				continue
 			}
-			if err = request(map[string]any{"action": "pointer", "target": frame.Target, "mask": pointer[0], "x": binary.BigEndian.Uint16(pointer[1:]), "y": binary.BigEndian.Uint16(pointer[3:])}, nil); err != nil {
+			if err := request(map[string]any{"action": "pointer", "target": frame.Target, "mask": body[0], "x": binary.BigEndian.Uint16(body[1:]), "y": binary.BigEndian.Uint16(body[3:])}, nil); err != nil {
 				return err
 			}
 		case 6:
-			cut, err := read(7)
-			if err != nil {
-				return err
-			}
-			size := binary.BigEndian.Uint32(cut[3:])
-			if size > 2<<20 {
-				return errors.New("粘贴文字超过限制")
-			}
-			text, err := read(int(size))
-			if err != nil {
-				return err
-			}
 			// Native shared clipboard owns clipboard data; committed text takes the
 			// fixed Unicode input path without changing the OS clipboard.
-			if err = request(map[string]any{"action": "text", "target": frame.Target, "text": string(text)}, nil); err != nil {
+			if err := request(map[string]any{"action": "text", "target": frame.Target, "text": string(body[7:])}, nil); err != nil {
 				return err
 			}
 		case 248:
-			header, err := read(8)
-			if err != nil {
-				return err
-			}
-			if !supportsFence || header[7] > 64 {
+			if !supportsFence {
 				return errors.New("画面输入同步消息无效")
 			}
-			data, err := read(int(header[7]))
-			if err != nil {
-				return err
-			}
-			flags := binary.BigEndian.Uint32(header[3:7])
+			flags := binary.BigEndian.Uint32(body[3:7])
 			if flags&(1<<31) != 0 {
 				// Guest input and stream writes finish in order on this goroutine,
 				// satisfying BlockBefore and BlockAfter. SyncNext is unsupported.
-				binary.BigEndian.PutUint32(header[3:7], flags&3)
-				reply := append([]byte{248}, header...)
-				if err := write(append(reply, data...)); err != nil {
+				reply := append([]byte{248}, body...)
+				binary.BigEndian.PutUint32(reply[4:8], flags&3)
+				if err := write(reply); err != nil {
 					return err
 				}
 			}
-		default:
-			return errors.New("画面输入协议无效")
+		}
+		if message[0] == 4 || message[0] == 5 || message[0] == 6 {
+			// The window answers input at once: the next frame is not delayed
+			// by the pauses of an unchanged screen.
+			pace.input()
+			if pending {
+				schedule()
+			}
 		}
 	}
+}
+
+// nativeFrameInterval is the shortest time between two frame requests.
+const nativeFrameInterval = time.Second / 30
+
+// nativeFramePace spaces frame requests to a native guest. Each one is a
+// round trip into the guest, also when its window has not changed, so the
+// pause doubles with every unchanged answer, up to about a quarter second.
+// A changed frame or the viewer's input restores the shortest pause.
+type nativeFramePace struct {
+	last      time.Time
+	unchanged int
+}
+
+func (p *nativeFramePace) next() time.Time {
+	return p.last.Add(nativeFrameInterval << min(p.unchanged, 3))
+}
+
+func (p *nativeFramePace) requested(now time.Time) { p.last = now }
+
+func (p *nativeFramePace) answered(changed bool) {
+	if changed {
+		p.unchanged = 0
+	} else {
+		p.unchanged++
+	}
+}
+
+func (p *nativeFramePace) input() { p.unchanged = 0 }
+
+// readRFBClientMessage reads one complete client message, type byte first.
+func readRFBClientMessage(stream io.Reader) ([]byte, error) {
+	message := make([]byte, 1, 32)
+	if _, err := io.ReadFull(stream, message); err != nil {
+		return nil, err
+	}
+	extend := func(n int) error {
+		size := len(message)
+		message = append(message, make([]byte, n)...)
+		_, err := io.ReadFull(stream, message[size:])
+		return err
+	}
+	var err error
+	switch message[0] {
+	case 0:
+		err = extend(19)
+	case 2:
+		if err = extend(3); err == nil {
+			count := int(binary.BigEndian.Uint16(message[2:]))
+			if count > 256 {
+				return nil, errors.New("画面编码列表无效")
+			}
+			err = extend(count * 4)
+		}
+	case 3:
+		err = extend(9)
+	case 4:
+		err = extend(7)
+	case 5:
+		err = extend(5)
+	case 6:
+		if err = extend(7); err == nil {
+			size := binary.BigEndian.Uint32(message[4:])
+			if size > 2<<20 {
+				return nil, errors.New("粘贴文字超过限制")
+			}
+			err = extend(int(size))
+		}
+	case 248:
+		if err = extend(8); err == nil {
+			if message[8] > 64 {
+				return nil, errors.New("画面输入同步消息无效")
+			}
+			err = extend(int(message[8]))
+		}
+	default:
+		return nil, errors.New("画面输入协议无效")
+	}
+	return message, err
 }
 
 func windowRFBRect(width, height int, encoding int32) []byte {
