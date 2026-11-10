@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,6 +67,10 @@ type guestObservation struct {
 	LCAll               string             `json:"lc_all"`
 	SystemTimezone      string             `json:"system_timezone"`
 	LocaleValid         bool               `json:"locale_valid"`
+	LocaltimeTarget     string             `json:"localtime_target,omitempty"`
+	UTCOffsetExpected   *int               `json:"utc_offset_expected,omitempty"`
+	UTCOffsetActual     *int               `json:"utc_offset_actual,omitempty"`
+	UTCOffsetSystem     *int               `json:"utc_offset_system,omitempty"`
 	PublicConnected     bool               `json:"public_connected"`
 	ManagementConnected bool               `json:"management_connected"`
 	IPv6Connected       bool               `json:"ipv6_connected"`
@@ -76,6 +81,21 @@ type guestObservation struct {
 	SharedFile          bool               `json:"shared_file"`
 	Egress              networkObservation `json:"egress"`
 	DNS                 networkObservation `json:"dns"`
+
+	// Reported by the Linux probe only: direct DNS transports, host-side
+	// endpoints and resolver configuration, which the host network layer
+	// cannot observe from denied connections alone.
+	LinkLocalConnected     *bool               `json:"link_local_connected,omitempty"`
+	ProxyEndpointConnected *bool               `json:"proxy_endpoint_connected,omitempty"`
+	DNSUDPAttempted        bool                `json:"dns_udp_attempted,omitempty"`
+	DNSTCPConnected        *bool               `json:"dns_tcp_connected,omitempty"`
+	DoTConnected           *bool               `json:"dot_connected,omitempty"`
+	Resolvers              resolverObservation `json:"resolvers,omitempty"`
+	IPv6GlobalAddresses    *int                `json:"ipv6_global_addresses,omitempty"`
+}
+type resolverObservation struct {
+	Count    *int  `json:"count"`
+	Confined *bool `json:"confined"`
 }
 type browserObservation struct {
 	Timezone         string             `json:"timezone"`
@@ -343,10 +363,130 @@ func (s *Server) browserExitObservation(ctx context.Context, cfg cage.Config) (b
 }
 
 func guestSettingsMatch(v guestObservation, cfg cage.Config) bool {
-	return v.LocaleValid && v.TZ == cfg.Timezone && v.SystemTimezone == cfg.Timezone && v.Lang == cfg.Locale && v.LCAll == cfg.Locale
+	return linuxGuestSettingsMismatch(v, cfg) == ""
+}
+
+// linuxGuestSettingsMismatch names every configured value the Linux guest did
+// not read back. Besides the variables and /etc/timezone it requires the UTC
+// offset programs actually observe, so a stale /etc/localtime or missing
+// tzdata cannot hide behind a correct TZ variable.
+func linuxGuestSettingsMismatch(v guestObservation, cfg cage.Config) string {
+	var mismatches []string
+	if !v.LocaleValid {
+		mismatches = append(mismatches, "系统语言环境无法加载")
+	}
+	if v.TZ != cfg.Timezone {
+		mismatches = append(mismatches, fmt.Sprintf("TZ 变量不一致（期望 %q，实际 %q）", cfg.Timezone, v.TZ))
+	}
+	if v.SystemTimezone != cfg.Timezone {
+		mismatches = append(mismatches, fmt.Sprintf("系统时区文件不一致（期望 %q，实际 %q）", cfg.Timezone, v.SystemTimezone))
+	}
+	if v.Lang != cfg.Locale {
+		mismatches = append(mismatches, fmt.Sprintf("LANG 不一致（期望 %q，实际 %q）", cfg.Locale, v.Lang))
+	}
+	if v.LCAll != cfg.Locale {
+		mismatches = append(mismatches, fmt.Sprintf("LC_ALL 不一致（期望 %q，实际 %q）", cfg.Locale, v.LCAll))
+	}
+	if issue := effectiveTimezoneIssue(v, cfg); issue != "" {
+		mismatches = append(mismatches, issue)
+	}
+	return strings.Join(mismatches, "；")
+}
+
+func effectiveTimezoneIssue(v guestObservation, cfg cage.Config) string {
+	if v.UTCOffsetExpected == nil || v.UTCOffsetActual == nil {
+		return "未读到客机的实际 UTC 偏移"
+	}
+	if *v.UTCOffsetExpected != *v.UTCOffsetActual {
+		return fmt.Sprintf("实际 UTC 偏移与时区不一致（期望 %+d 秒，实际 %+d 秒）", *v.UTCOffsetExpected, *v.UTCOffsetActual)
+	}
+	// Read the system file separately: time.localtime observes TZ, which can
+	// mask a stale or missing /etc/localtime even when it is a regular file.
+	if v.UTCOffsetSystem == nil {
+		return "未读到系统时区文件的实际 UTC 偏移"
+	}
+	if *v.UTCOffsetSystem != *v.UTCOffsetExpected {
+		return fmt.Sprintf("系统时区文件的 UTC 偏移不一致（期望 %+d 秒，实际 %+d 秒）", *v.UTCOffsetExpected, *v.UTCOffsetSystem)
+	}
+	if v.LocaltimeTarget != "" && v.LocaltimeTarget != "/usr/share/zoneinfo/"+cfg.Timezone {
+		return fmt.Sprintf("系统本地时间链接不一致（期望 %q，实际 %q）", "/usr/share/zoneinfo/"+cfg.Timezone, v.LocaltimeTarget)
+	}
+	return ""
 }
 func browserSettingsMatch(v browserObservation, cfg cage.Config) bool {
 	return browserSettingsMismatch(v, cfg) == ""
+}
+
+// guestProxyEndpoint is the user's proxy as the guest would have to address
+// it: a proxy bound on the host is reached through the VM gateway address.
+// The guest must never reach it directly, only through the host network layer.
+func guestProxyEndpoint(cfg cage.Config, managementHost string) (string, int) {
+	u, err := url.Parse(cfg.ProxyURL)
+	if err != nil {
+		return "", 0
+	}
+	port, err := strconv.Atoi(u.Port())
+	if err != nil || port <= 0 {
+		return "", 0
+	}
+	host := u.Hostname()
+	if ip := net.ParseIP(host); strings.EqualFold(host, "localhost") || (ip != nil && (ip.IsLoopback() || ip.IsUnspecified())) {
+		host = managementHost
+	}
+	return host, port
+}
+
+// Missing Linux observations stay unknown; confirmed means a connection succeeded.
+func hostReachIssue(v guestObservation, linux, proxyExpected bool) (issue string, confirmed bool) {
+	switch {
+	case v.LinkLocalConnected != nil && *v.LinkLocalConnected:
+		return "客机直接连通了链路本地元数据地址（169.254.169.254）", true
+	case v.ProxyEndpointConnected != nil && *v.ProxyEndpointConnected:
+		return "客机绕过环境外网络层直接连通了用户代理端口", true
+	case linux && v.LinkLocalConnected == nil:
+		return "未读到链路本地元数据地址的直连结果", false
+	case linux && proxyExpected && v.ProxyEndpointConnected == nil:
+		return "未读到用户代理端口的直连结果", false
+	}
+	return "", false
+}
+
+// dnsBypassIssue reports a way around the encrypted DNS path. confirmed is
+// true when the guest actually reached a resolver outside the environment.
+func dnsBypassIssue(v guestObservation, linux bool) (issue string, confirmed bool) {
+	switch {
+	case v.DNSTCPConnected != nil && *v.DNSTCPConnected:
+		return "客机直接连通了公共 DNS 的 TCP/53", true
+	case v.DoTConnected != nil && *v.DoTConnected:
+		return "客机直接连通了公共 DNS 的 DoT/853", true
+	case !linux:
+		return "", false
+	case !v.DNSUDPAttempted:
+		return "客机的 UDP/53 直连探针没有发出", false
+	case v.DNSTCPConnected == nil || v.DoTConnected == nil:
+		return "未读到公共 DNS 的 TCP/53 或 DoT/853 直连结果", false
+	case v.Resolvers.Count == nil || *v.Resolvers.Count < 0 || v.Resolvers.Confined == nil:
+		return "未能读取客机的解析器配置", false
+	case *v.Resolvers.Count == 0:
+		return "客机没有配置任何解析器", false
+	case !*v.Resolvers.Confined:
+		return "客机解析器指向环境外的地址，查询可能绕过加密 DNS", true
+	}
+	return "", false
+}
+
+func (s *Server) ipv6PolicyVerified(v guestObservation, before, after cage.GateStatus, networkLayout bool) bool {
+	if v.IPv6Connected || !after.PolicyVerified {
+		return false
+	}
+	if s.macosGuest != nil {
+		return networkLayout && (macOSIPv6LinkVerified(v, before, after) ||
+			(v.IPv6DefaultRoutes == 0 && v.IPv6UnscopedAbsent && v.IPv6Unbound.Result == "no-route"))
+	}
+	if s.windowsGuest == nil && (v.IPv6GlobalAddresses == nil || *v.IPv6GlobalAddresses != 0) {
+		return false
+	}
+	return v.IPv6DefaultRoutes == 0 || after.Counters.IPv6Denied > before.Counters.IPv6Denied
 }
 
 func browserSettingsMismatch(v browserObservation, cfg cage.Config) string {
@@ -635,6 +775,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 	port, _ := strconv.Atoi(control.Port())
 	s.setMessage("正在验证离线约束、共享文件与系统配置…")
 	boundaryInput := boundaryProbeInput(port, report.ID, private.Name(), shared.Name(), challenge)
+	boundaryInput["timezone"] = cfg.Timezone
 	if s.windowsGuest != nil {
 		if err := s.windowsBoundaryInput(shareRoot, private.Name(), shared.Name(), challenge, boundaryInput); err != nil {
 			return err
@@ -647,6 +788,12 @@ func (s *Server) runSafetyCheck() (returned error) {
 	if containerenv.Configured(s.profile) {
 		boundaryInput["management_host"] = containerenv.GatewayIP
 	}
+	linuxProbe := s.windowsGuest == nil && s.macosGuest == nil
+	if linuxProbe {
+		if host, port := guestProxyEndpoint(cfg, boundaryInput["management_host"].(string)); port != 0 {
+			boundaryInput["proxy_host"], boundaryInput["proxy_port"] = host, port
+		}
+	}
 	boundary, boundaryErr := s.guestObservation(ctx, boundaryInput)
 	after, err := client.Status(ctx)
 	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=boundary error=%v status_error=%v observation=%+v counters_before=%+v counters_after=%+v shares=%t network_layout=%t", boundaryErr, err, boundary, state.Counters, after.Counters, shares, networkLayout))
@@ -655,9 +802,19 @@ func (s *Server) runSafetyCheck() (returned error) {
 	}
 	if boundaryErr == nil {
 		if s.guestSettingsOK(boundary, cfg) {
-			set("guest_settings", cage.CheckPassed, "客机进程与系统的时区和语言读回结果符合已应用配置", "")
+			evidence := "客机进程与系统的时区和语言读回结果符合已应用配置"
+			if linuxProbe {
+				evidence += "；进程与系统时区文件的实际 UTC 偏移均符合已应用时区"
+			}
+			set("guest_settings", cage.CheckPassed, evidence, "")
 		} else {
-			set("guest_settings", cage.CheckFailed, "系统读回结果与已应用配置不一致", "重新应用时区与语言后重启环境")
+			evidence := "系统读回结果与已应用配置不一致"
+			if linuxProbe {
+				if detail := linuxGuestSettingsMismatch(boundary, cfg); detail != "" {
+					evidence += "：" + detail
+				}
+			}
+			set("guest_settings", cage.CheckFailed, evidence, "重新应用时区与语言后重启环境")
 		}
 		_, _ = shared.Seek(0, io.SeekStart)
 		sharedData, _ := io.ReadAll(io.LimitReader(shared, 256))
@@ -669,24 +826,45 @@ func (s *Server) runSafetyCheck() (returned error) {
 		if after.PolicyVerified && networkLayout && after.Configuration == cfg.Fingerprint() && !boundary.PublicConnected && after.Counters.TCPDenied > state.Counters.TCPDenied {
 			set("egress_policy", cage.CheckPassed, "运行中策略检查符合预期；未配置额外网卡；检查期间的公网 TCP 请求被 环境外网络层拒绝", "")
 		}
-		if !boundary.ManagementConnected && after.Counters.PrivateDenied > state.Counters.PrivateDenied && s.managementRequiresSession(ctx) {
-			set("management_boundary", cage.CheckPassed, "guest 到宿主管理端口的连接被拒绝；本机接口无会话访问被拒绝", "")
+		hostReach, hostReachConfirmed := hostReachIssue(boundary, linuxProbe, boundaryInput["proxy_port"] != nil)
+		if hostReach == "" && !boundary.ManagementConnected && after.Counters.PrivateDenied > state.Counters.PrivateDenied && s.managementRequiresSession(ctx) {
+			evidence := "guest 到宿主管理端口的连接被拒绝；本机接口无会话访问被拒绝"
+			if linuxProbe {
+				evidence += "；链路本地元数据地址的直连探针未连通"
+				if boundaryInput["proxy_port"] != nil {
+					evidence += "；用户代理端口的直连探针未连通"
+				}
+			}
+			set("management_boundary", cage.CheckPassed, evidence, "")
 		} else {
-			result := cage.CheckUnknown
+			result, evidence := cage.CheckUnknown, "管理接口拒绝访问的证据不完整"
 			if boundary.ManagementConnected {
 				result = cage.CheckFailed
 			}
-			set("management_boundary", result, "管理接口拒绝访问的证据不完整", "停止环境并重新启动；不要开放宿主控制端口")
+			if hostReach != "" {
+				evidence = hostReach
+				if hostReachConfirmed {
+					result = cage.CheckFailed
+				}
+			}
+			set("management_boundary", result, evidence, "停止环境并重新启动；不要开放宿主控制端口")
 		}
 		if boundary.UDPAttempted && after.Counters.UDPDenied > state.Counters.UDPDenied && after.PolicyVerified {
 			set("udp_policy", cage.CheckPassed, "客机 UDP 探针已发起，环境外网络层记录了拒绝；无响应本身不作为通过依据", "")
 		}
-		if s.macosGuest != nil && networkLayout && macOSIPv6LinkVerified(boundary, state, after) {
+		ipv6Verified := s.ipv6PolicyVerified(boundary, state, after, networkLayout)
+		if ipv6Verified && s.macosGuest != nil && macOSIPv6LinkVerified(boundary, state, after) {
 			set("ipv6_policy", cage.CheckPassed, fmt.Sprintf("常规 IPv6 查路由明确不可达；%d 条接口限定的默认路由逐个绑定检查，均未连通或发现外部源地址。唯一客机网卡 %s 对本轮随机 IPv6 UDP 探针在以太帧入口实施丢弃。", boundary.IPv6DefaultRoutes, boundary.IPv6LinkInterface), "")
-		} else if !boundary.IPv6Connected && after.PolicyVerified && ((s.macosGuest == nil && (boundary.IPv6DefaultRoutes == 0 || after.Counters.IPv6Denied > state.Counters.IPv6Denied)) || (s.macosGuest != nil && networkLayout && boundary.IPv6DefaultRoutes == 0 && boundary.IPv6UnscopedAbsent && boundary.IPv6Unbound.Result == "no-route")) {
-			set("ipv6_policy", cage.CheckPassed, "客机公网 IPv6 策略为拒绝；连接采样未建立，路由或拒绝记录与策略一致。当前版本验证 IPv4 出口", "")
+		} else if ipv6Verified {
+			evidence := "客机公网 IPv6 策略为拒绝；连接采样未建立，路由或拒绝记录与策略一致。当前版本验证 IPv4 出口"
+			if linuxProbe {
+				evidence += fmt.Sprintf("；客机全局 IPv6 地址 %d 个、默认路由 %d 条", *boundary.IPv6GlobalAddresses, boundary.IPv6DefaultRoutes)
+			}
+			set("ipv6_policy", cage.CheckPassed, evidence, "")
 		} else if s.macosGuest != nil {
 			set("ipv6_policy", cage.CheckUnknown, fmt.Sprintf("IPv6 默认路由记录为 %d。普通连接、逐接口观测与当前 VZ 网卡丢弃证据尚未全部匹配。", boundary.IPv6DefaultRoutes), "保持外网关闭。确认使用配套的客机诊断工具和虚拟机运行器，重启后重新检测")
+		} else if linuxProbe {
+			set("ipv6_policy", cage.CheckUnknown, "未能确认客机全局 IPv6 地址为零，或 IPv6 路由与拒绝证据不完整", "保持外网关闭。确认客机 IPv6 配置后重新检测")
 		}
 	} else {
 		message := usererror.Display("读取环境内的隔离检查结果", boundaryErr, "请确认环境仍在运行，再重新检测；持续失败时导出诊断包。").Error()
@@ -713,10 +891,22 @@ func (s *Server) runSafetyCheck() (returned error) {
 		}
 		set("proxy_transport", cage.CheckUnknown, evidence, "在网络与代理设置中确认节点已应用并能连接；再重新检测")
 	}
-	if networkErr == nil && boundaryErr == nil && !boundary.PublicDNSAnswered && after.Counters.DNSDenied > state.Counters.DNSDenied && network.DNS.Status == 200 && normalState.Counters.ProbeDNS > after.Counters.ProbeDNS {
-		set("dns_transport", cage.CheckPassed, "检查期间公共解析被拒绝；固定 DNS 查询经指定 DoH 与代理完成", "")
+	dnsBypass, dnsBypassConfirmed := dnsBypassIssue(boundary, linuxProbe)
+	if networkErr == nil && boundaryErr == nil && !boundary.PublicDNSAnswered && after.Counters.DNSDenied > state.Counters.DNSDenied && network.DNS.Status == 200 && normalState.Counters.ProbeDNS > after.Counters.ProbeDNS && dnsBypass == "" {
+		evidence := "检查期间公共解析被拒绝；固定 DNS 查询经指定 DoH 与代理完成"
+		if linuxProbe {
+			evidence += "；客机解析器仅指向环境内地址，到公共 DNS 的 UDP/53、TCP/53 与 DoT/853 直连均未绕过网关"
+		}
+		set("dns_transport", cage.CheckPassed, evidence, "")
 	} else {
-		set("dns_transport", cage.CheckUnknown, "公共解析拒绝记录或加密 DNS 查询证据不完整", "检查 DNS 配置、代理连通性与环境组件")
+		result, evidence := cage.CheckUnknown, "公共解析拒绝记录或加密 DNS 查询证据不完整"
+		if boundaryErr == nil && dnsBypass != "" {
+			evidence = dnsBypass
+			if dnsBypassConfirmed {
+				result = cage.CheckFailed
+			}
+		}
+		set("dns_transport", result, evidence, "检查 DNS 配置、代理连通性与环境组件")
 	}
 	s.setMessage("正在读取隔离浏览器的实际配置…")
 	browser, browserErr := s.browserExitObservation(ctx, cfg)
@@ -924,7 +1114,7 @@ func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config)
 		}
 	}
 	if issue == "" {
-		guest, e := s.guestObservation(ctx, map[string]any{"stage": "environment"})
+		guest, e := s.guestObservation(ctx, map[string]any{"stage": "environment", "timezone": cfg.Timezone})
 		timing.stage("guest_settings")
 		if e != nil || !s.guestSettingsOK(guest, cfg) {
 			issue = "系统时区或语言的运行状态无法确认，请重新检测"
