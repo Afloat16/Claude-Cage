@@ -32,10 +32,24 @@ func ProbeExitIP(ctx context.Context, cfg Config) (string, error) {
 func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 	transport := &http.Transport{Proxy: nil, DialContext: e.DialContext, DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 12 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
+	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
 	// The proxy resolves this name remotely. An IPv4-only service measures the
 	// same address family as the guest policy even when the proxy is dual-stack.
-	req, _ := http.NewRequestWithContext(ctx, "GET", "https://ipv4.icanhazip.com/", nil)
+	for _, endpoint := range []string{"https://ipv4.icanhazip.com/", "https://api.ipify.org/"} {
+		ip, err := queryExitIP(ctx, client, endpoint)
+		if err == nil {
+			return ip, nil
+		}
+		diagnostics.Log("warn", "exit-probe", fmt.Sprintf("exit query %s failed: %v", endpoint, err))
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return "", errors.New("通过所选代理查询出口 IP 失败。请检查节点与网络，稍后重新检测；未能确认出口时，外网保持关闭。")
+}
+
+func queryExitIP(ctx context.Context, client *http.Client, endpoint string) (string, error) {
+	req, _ := http.NewRequestWithContext(ctx, "GET", endpoint, nil)
 	req.Header.Set("User-Agent", "Cage-network-check/1")
 	resp, err := client.Do(req)
 	if err != nil {
