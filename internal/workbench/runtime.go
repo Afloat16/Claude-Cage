@@ -30,6 +30,7 @@ type guestCredentials struct {
 	Token        string  `json:"token"`
 	VNCPassword  string  `json:"-"`
 	DisplayScale float64 `json:"display_scale"`
+	DynamicScale bool    `json:"dynamic_scale"`
 }
 
 func (s *Server) workspaceLocked() string {
