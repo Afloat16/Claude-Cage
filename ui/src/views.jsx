@@ -13,7 +13,8 @@ import { FitAddon } from "@xterm/addon-fit";
 import RFB from "../.generated/novnc/core/rfb.js";
 import { api, writeClipboard, nativeAvailable } from "./api";
 import { runtimeSocketURL } from "./client-context.mjs";
-import { readClipboardContent, transferFiles, hasFiles, prepareClipboardPaste, sendImage } from "./image-transfer";
+import { readClipboardContent, transferFiles, hasFiles, imagePayload, prepareClipboardPaste, sendImage } from "./image-transfer";
+import { terminalClipboardText } from "./terminal-clipboard.mjs";
 import { sendFiles, shellFilePaths } from "./file-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
@@ -353,6 +354,17 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       resize();
       if (startupVisible && visibleRef.current && focusedRef.current) terminal.focus();
     };
+    let historyFrame = false, replayingHistory = false;
+    const clipboardHandler = terminal.parser.registerOscHandler(52, async (data) => {
+      if (disposed || replayingHistory || !visibleRef.current || !focusedRef.current || !box.current?.contains(document.activeElement)) return true;
+      const text = terminalClipboardText(data);
+      if (text === undefined) return true;
+      try {
+        await writeClipboard(text);
+        if (!disposed) onStatus("已复制终端选中文本");
+      } catch { if (!disposed) onStatus("无法写入本机剪贴板"); }
+      return true;
+    });
     ws.onmessage = (event) => {
       if (typeof event.data === "string") {
         let state;
@@ -361,9 +373,14 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
           startupPending = state.pending;
           terminal.refresh(0, terminal.rows - 1);
         }
+        if (state.type === "history") historyFrame = true;
         return;
       }
-      terminal.write(new Uint8Array(event.data));
+      if (historyFrame) {
+        historyFrame = false;
+        replayingHistory = true;
+        terminal.write(new Uint8Array(event.data), () => { replayingHistory = false; });
+      } else terminal.write(new Uint8Array(event.data));
     };
     ws.onclose = () => { setConnected(false); reveal(); };
     const send = (data) => {
@@ -388,7 +405,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
           text = shellFilePaths(result.paths);
         }
         if (value.png) {
-          const result = await sendImage(value, "terminal", session.id);
+          const result = await sendImage(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && focusedRef.current && ws.readyState === WebSocket.OPEN });
           text = shellFilePaths([result.path]);
         }
         if (disposed || !visibleRef.current || !focusedRef.current) throw new Error("终端已切换，请回到原终端重新粘贴");
@@ -400,10 +417,11 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
     };
     const host = box.current;
     const onPaste = (event) => {
-      if (!visibleRef.current) return;
+      if (!visibleRef.current || !focusedRef.current) return;
       event.preventDefault(); event.stopImmediatePropagation();
       const files = transferFiles(event.clipboardData);
-      if (files.length) receive({ files });
+      if (files.length === 1 && files[0].type.startsWith("image/")) receive(imagePayload(files[0]));
+      else if (files.length) receive({ files });
       else if (event.clipboardData?.types.includes("text/plain")) receive({ text: event.clipboardData.getData("text/plain") });
     };
     const onDragOver = (event) => {
@@ -422,6 +440,10 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
     const copySelection = () => {
       const text = terminal.getSelection();
       if (!text) {
+        // Claude owns its TUI selection while mouse reporting is enabled. CSI-u
+        // preserves Ctrl+Shift+C, which cannot be represented as plain Ctrl+C.
+        if (terminal.modes.mouseTrackingMode !== "none")
+          void enqueue(() => send("\x1b[99;6u")).catch(() => {});
         onStatus(terminal.modes.mouseTrackingMode === "none"
           ? "请先拖选要复制的终端文字"
           : `当前程序接管了鼠标。请按住 ${isMac ? "Option" : "Shift"} 拖选文字，再复制。`);
@@ -431,6 +453,14 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
         .then(() => onStatus("已复制终端选中文本"))
         .catch(() => onStatus("无法写入本机剪贴板"));
     };
+    const onCopy = (event) => {
+      if (!visibleRef.current || !focusedRef.current) return;
+      event.preventDefault(); event.stopImmediatePropagation();
+      const text = terminal.getSelection();
+      if (text) event.clipboardData?.setData("text/plain", text);
+      copySelection();
+    };
+    host.addEventListener("copy", onCopy, true);
     onControls?.({
       edit(action) {
         if (!box.current?.contains(document.activeElement)) return false;
@@ -461,7 +491,15 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
         }
         return false;
       }
-      if (!terminalModifier(event) || event.type !== "keydown") return true;
+      if (event.type !== "keydown") return true;
+      const claudeImagePaste = ((session.terminalKind || session.kind) === "claude" || session.cli_session_id) &&
+        event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "v";
+      if (claudeImagePaste && nativeAvailable()) {
+        event.preventDefault();
+        receive(readClipboardContent());
+        return false;
+      }
+      if (!terminalModifier(event)) return true;
       const key = event.key.toLowerCase();
       if (key === "c") {
         event.preventDefault();
@@ -498,7 +536,9 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       clearTimeout(startupTimer);
       revealStartup.current = null;
       startupRender.dispose();
+      clipboardHandler.dispose();
       host.removeEventListener("paste", onPaste, true);
+      host.removeEventListener("copy", onCopy, true);
       host.removeEventListener("dragover", onDragOver);
       host.removeEventListener("drop", onDrop);
       onControls?.(null);
