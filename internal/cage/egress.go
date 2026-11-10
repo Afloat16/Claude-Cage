@@ -64,6 +64,12 @@ func proxyConnectionError(ctx context.Context, action string, err error) error {
 	// Preserve the operation deadline so exit monitoring can classify a timeout.
 	if ctx.Err() != nil {
 		err = ctx.Err()
+	} else if deadline, ok := ctx.Deadline(); ok && !time.Now().Before(deadline) {
+		// The socket deadline can fire before the context timer publishes Err.
+		var timeout net.Error
+		if errors.As(err, &timeout) && timeout.Timeout() {
+			err = errors.Join(context.DeadlineExceeded, err)
+		}
 	}
 	return usererror.Wrap(action, err, "请检查代理；请求不会改为直连。")
 }

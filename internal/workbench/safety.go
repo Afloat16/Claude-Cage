@@ -321,6 +321,26 @@ func (s *Server) browserObservation(ctx context.Context, cfg cage.Config, networ
 	return observation, nil
 }
 
+// Retry only a transient network sample, before the failure drill. Settings and
+// policy failures retain their evidence; no request grants external access.
+func (s *Server) browserExitObservation(ctx context.Context, cfg cage.Config) (browserObservation, error) {
+	observation, err := s.browserObservation(ctx, cfg, true)
+	if err != nil || s.browserSettingsIssue(observation, cfg) != "" ||
+		(observation.Network.Status != 0 && observation.Network.Status != http.StatusServiceUnavailable) {
+		return observation, err
+	}
+	_ = diagnostics.New(s.profile).Record("warn", "safety-probe", fmt.Sprintf("stage=browser retry=1 status=%d", observation.Network.Status))
+	s.setMessage("浏览器出口检测暂时未成功，正在重试一次；外网保持关闭…")
+	timer := time.NewTimer(time.Second)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return observation, ctx.Err()
+	case <-timer.C:
+		return s.browserObservation(ctx, cfg, true)
+	}
+}
+
 func guestSettingsMatch(v guestObservation, cfg cage.Config) bool {
 	return v.LocaleValid && v.TZ == cfg.Timezone && v.SystemTimezone == cfg.Timezone && v.Lang == cfg.Locale && v.LCAll == cfg.Locale
 }
@@ -690,7 +710,7 @@ func (s *Server) runSafetyCheck() (returned error) {
 		set("dns_transport", cage.CheckUnknown, "公共解析拒绝记录或加密 DNS 查询证据不完整", "检查 DNS 配置、代理连通性与环境组件")
 	}
 	s.setMessage("正在读取隔离浏览器的实际配置…")
-	browser, browserErr := s.browserObservation(ctx, cfg, true)
+	browser, browserErr := s.browserExitObservation(ctx, cfg)
 	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=browser error=%v observation=%+v", browserErr, browser))
 	if browserErr == nil {
 		if s.browserSettingsIssue(browser, cfg) == "" {

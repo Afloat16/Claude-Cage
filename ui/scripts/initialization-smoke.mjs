@@ -90,6 +90,20 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     await page.setViewportSize({ width: 600, height: 650 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     if (evidence) await page.screenshot({ path: `${evidence}/${platform}-progress-compact.png`, fullPage: true });
+    state.status.job = { id: "install-2", kind: "start", running: false, message: "环境已启动，联网检查未通过", error: "联网检查未通过：浏览器检测通道返回 HTTP 503，外网保持关闭" };
+    Object.assign(state.status, { ready: true, vm_running: true, safety: { gate: { mode: "closed" } } });
+    await page.getByRole("heading", { name: "环境已启动，等待联网检查", exact: true }).waitFor();
+    assert.equal(await page.getByRole("button", { name: "继续安装", exact: true }).count(), 0);
+    let networkChecks = 0;
+    await page.route("**/api/safety/check", route => {
+      networkChecks++;
+      state.status.job = { id: "retry-network", kind: "safety", running: true, message: "正在检查联网条件" };
+      return route.fulfill({ json: state.status.job });
+    });
+    await page.getByRole("button", { name: "运行网络与隔离检查", exact: true }).click();
+    await page.getByText("正在检查联网条件", { exact: true }).waitFor();
+    assert.equal(networkChecks, 1);
+    assert.equal(starts, 2, "network recovery must not restart installation");
     state.status.job = { id: "install-2", kind: "start", running: false };
     Object.assign(state.status, { ready: true, vm_running: true, safety: { gate: { mode: "open", until: new Date(Date.now() + 3600000).toISOString() } } });
     await page.getByRole("button", { name: "进入工作台", exact: true }).click();

@@ -161,6 +161,10 @@ func (m *jobManager) finishLocked(execution *jobExecution, err error) {
 	case err != nil:
 		m.state.Error = usererror.Display(jobName(m.state.Kind), err, "打开“操作详情”查看失败记录；仍无法处理时，"+failureHelp).Error()
 		m.state.Message = jobName(m.state.Kind) + "失败"
+		var networkFailure networkCheckError
+		if m.state.Kind == "start" && errors.As(err, &networkFailure) {
+			m.state.Message = "环境已启动，联网检查未通过"
+		}
 		diagnostics.Log("error", "task", fmt.Sprintf("%s: %v; cause=%v", m.state.Kind, err, errors.Unwrap(err)))
 	default:
 		m.state.Message = "已完成"
