@@ -8,7 +8,7 @@ const steps = [["screen", "窗口录制"], ["input", "辅助功能"], ["projects
 
 export function MacOSFirstSetup() {
   const { account, refresh } = useAccount();
-  const loginName = account?.macos_guest_user || "cage";
+  const [permissionPage, setPermissionPage] = useState("screen");
   const [state, setState] = useState(null);
   const [permissions, setPermissions] = useState({});
   const [error, setError] = useState("");
@@ -38,6 +38,7 @@ export function MacOSFirstSetup() {
         const pending = steps.find(([id]) => !measured[id]);
         if (active && measured.managed_credential && pending && requested.current !== pending[0]) {
           requested.current = pending[0];
+          setPermissionPage(pending[0]);
           try { await api("/macos/first-setup",{action:pending[0]}); }
           catch (e) { if (active) setError(e.message); }
         }
@@ -65,6 +66,7 @@ export function MacOSFirstSetup() {
   }, []);
   async function act(action) {
     if (busy) return;
+    if (steps.some(([id]) => id === action)) setPermissionPage(action);
     setBusy(true); setError("");
     try {
       if (action === "start") await api("/start", {guest_system:"macos"});
@@ -82,6 +84,11 @@ export function MacOSFirstSetup() {
   const controls = <>{steps.map(([id, label]) => <button key={id} disabled={busy || !state?.ready}
     onClick={() => act(id)}>{label}{permissions[id] && " ✓"}</button>)}
     </>;
+  const permissionHint = {
+    screen: "打开 Cage Guest Window 的窗口录制开关。如果提示「退出并重新打开」，按提示操作。",
+    input: "打开 Cage Guest Window 的辅助功能开关，允许 Cage 操作客机窗口。",
+    projects: "打开 macFUSE 和 macFUSE (local) 两个开关，用于在客机中访问你选择的项目。",
+  }[permissionPage];
   const progress = !state?.ready ? "正在等待虚拟 Mac 就绪；启动后再打开客机系统设置。" :
     steps.every(([id]) => permissions[id]) ? completionFailed ? "授权已通过，请点击重试完成设置。" : "授权已通过，正在进入工作台…" :
       `请确认：${steps.filter(([id]) => !permissions[id]).map(([, label]) => label).join("、")}。Cage 会自动检查并继续。`;
@@ -90,12 +97,12 @@ export function MacOSFirstSetup() {
     <p>Cage 会自动登录、配置并检查环境。首次使用只需确认下面的系统权限；这些操作都在虚拟 Mac 内完成。</p>
     <ol>
       <li>在 Cage 打开的「窗口录制」「辅助功能」设置里允许 <strong>Cage Guest Window</strong>。如果提示「退出并重新打开」，按提示操作。需要重新定位时，点击同名按钮。</li>
-      <li>点击「文件系统扩展」，在客机设置中选择 <strong>By Category（按类别）→ File System Extensions（文件系统扩展）</strong>，同时打开 <strong>macFUSE</strong> 和 <strong>macFUSE (local)</strong>。Cage 会自动验证并进入工作台。</li>
+      <li>Cage 会直接打开「文件系统扩展」面板，你只需打开 <strong>macFUSE</strong> 和 <strong>macFUSE (local)</strong> 两个开关。需要重新打开页面时，点击「文件系统扩展」。完成后 Cage 会自动检查并进入工作台。</li>
     </ol>
     <p>授权时若要求管理员，用户名填 <strong>cagesetup</strong>，{account.macos_password_pending ? "密码正在等待同步，完成前可能仍需原客机密码。" : account.macos_credentials_ready ? "密码与 Cage 账户相同。" : "可点选系统密码框后点击「填写授权密码」。"}确认后继续授权。此管理员在完成后自动停用。</p>
     {(!state?.vm_running || account.macos_password_pending) && <button className="primary" disabled={busy || !state || state.job?.running} onClick={() => act("start")}>{account.macos_password_pending ? "重试同步客机密码" : "启动虚拟 Mac"}</button>}
     {state?.vm_running && <MacOSLogin initialSetup autoOpen={Boolean(permissions.managed_credential)} managedCredential={permissions.managed_credential} disabled={!state.ready} setupActions={controls}
-      setupHint={`Cage 自动登录 ${loginName}。管理员授权用 cagesetup。文件系统扩展请从 By Category（按类别）→ File System Extensions 进入，打开两个 macFUSE 开关。`}
+      setupHint={`${permissionHint} 需要管理员授权时，用户名用 cagesetup；选中密码框后可点击「填写授权密码」。`}
       setupStatus={error || progress} setupError={Boolean(error)} />}
     <div className="welcome-shortcuts">{controls}</div>
     <p role="status">{progress}</p>

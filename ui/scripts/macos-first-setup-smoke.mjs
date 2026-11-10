@@ -49,6 +49,7 @@ for (const failure of ["http", "native"]) {
   try {
     await page.getByRole("dialog",{name:"首次设置虚拟 Mac"}).waitFor();
     await waitCall("screen");
+    await page.getByText(/打开 Cage Guest Window 的窗口录制开关/).waitFor();
     const image = page.getByRole("dialog",{name:"首次设置虚拟 Mac"}).getByRole("img");
     await image.waitFor();
     const box = await image.boundingBox();
@@ -60,8 +61,10 @@ for (const failure of ["http", "native"]) {
     await waitCall("fill-password");
     permissions.screen=true;
     await waitCall("input");
+    await page.getByText(/打开 Cage Guest Window 的辅助功能开关/).waitFor();
     permissions.input=true;
     await waitCall("projects");
+    await page.getByText(/打开 macFUSE 和 macFUSE \(local\) 两个开关，用于/).waitFor();
     assert.ok(!calls.includes("finish"),"finished before filesystem permission");
     permissions.projects=true;
     await page.getByRole("button",{name:"返回设置指引"}).click();

@@ -258,22 +258,22 @@ private func handle(_ input: Request, inputSession: MacWindowInputSession) async
     case "setup-password-focus":
         return try MacSetupPassword.probe()
     case "setup-screen", "setup-input", "setup-projects":
-        let pane: String
+        let purpose: String
         if input.action == "setup-screen" {
             if !CGPreflightScreenCaptureAccess() { _ = CGRequestScreenCaptureAccess() }
-            pane = "com.apple.preference.security?Privacy_ScreenCapture"
+            purpose = "screen"
         } else if input.action == "setup-input" {
             let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
             _ = AXIsProcessTrustedWithOptions(options)
-            pane = "com.apple.preference.security?Privacy_Accessibility"
+            purpose = "input"
         } else {
             let vendor = URL(fileURLWithPath: "/Applications/macFUSE.app")
             let configuration = NSWorkspace.OpenConfiguration()
             configuration.activates = false
             _ = try await NSWorkspace.shared.openApplication(at: vendor, configuration: configuration)
-            pane = "com.apple.LoginItems-Settings.extension"
+            purpose = "projects"
         }
-        guard let url = URL(string: "x-apple.systempreferences:" + pane), NSWorkspace.shared.open(url) else { throw Failure(7, "settings_unavailable") }
+        guard let url = MacMaintenance.settingsURL(for: purpose), NSWorkspace.shared.open(url) else { throw Failure(7, "settings_unavailable") }
         return ["ok":true]
     case "status":
         let installed = FileManager.default.fileExists(atPath: appURL.path)

@@ -8,10 +8,14 @@ import Security
 enum MacMaintenance {
     private static let applications: Set<String> = ["com.apple.systempreferences", "com.apple.authorizationhost"]
     private static let panes = [
-        "projects": "x-apple.systempreferences:com.apple.LoginItems-Settings.extension",
+        "projects": "x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fskit.fsmodule",
         "screen": "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
         "input": "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
     ]
+
+    static func settingsURL(for purpose: String) -> URL? {
+        panes[purpose].flatMap { URL(string: $0) }
+    }
 
     static func runPasswordProbe(purpose: String) -> Never {
         guard panes[purpose] != nil else { exit(2) }
@@ -71,14 +75,14 @@ enum MacMaintenance {
     static func run(_ operation: String, purpose: String) throws -> [String: Any] {
         try requireGuest()
         let session = try consoleSession()
-        guard let pane = panes[purpose] else { throw Failure(8, "maintenance_purpose_invalid") }
+        guard let url = settingsURL(for: purpose) else { throw Failure(8, "maintenance_purpose_invalid") }
         if operation == "open" {
             if purpose == "projects" {
                 let configuration = NSWorkspace.OpenConfiguration()
                 configuration.activates = false
                 NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: "/Applications/macFUSE.app"), configuration: configuration)
             }
-            guard let url = URL(string: pane), NSWorkspace.shared.open(url) else { throw Failure(8, "maintenance_open_failed") }
+            guard NSWorkspace.shared.open(url) else { throw Failure(8, "maintenance_open_failed") }
             return ["opened": true]
         }
         guard operation == "probe", let front = NSWorkspace.shared.frontmostApplication, verified(front) else {
