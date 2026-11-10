@@ -651,7 +651,11 @@ async function resizeDisplay(width, height) {
   )
     throw new Error("Invalid display size");
   const name = `cage-${width}x${height}`;
-  if (displaySize === name) return { ok: true };
+  if (displaySize === name) {
+    // A viewer attaching at an unchanged size still restores the full rate.
+    await runFile("/usr/bin/xrandr", ["--output", "VNC-0", "--mode", name]).catch(() => {});
+    return { ok: true };
+  }
   const { stdout } = await runFile("/usr/bin/xrandr", ["--query"]);
   if (!stdout.includes(name)) {
     const rate = (((width + 32) * (height + 8) * 60) / 1000000).toFixed(3);

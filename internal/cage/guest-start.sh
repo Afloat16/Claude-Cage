@@ -52,6 +52,7 @@ d.setdefault("profile", {})["password_manager_enabled"] = False
 p.write_text(json.dumps(d))
 PYCODE
 sudo systemctl reset-failed cage-display cage-window-manager cage-browser cage-vnc cage-webvnc 2>/dev/null || true
+sudo systemctl reset-failed cage-display-governor 2>/dev/null || true
 sudo systemctl restart cage-display cage-window-manager cage-browser cage-vnc cage-webvnc
 # Seed only appearance settings for a new editor profile. Existing preferences stay intact.
 python3 - <<'PYEDITOR'
