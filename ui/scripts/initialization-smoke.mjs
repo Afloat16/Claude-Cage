@@ -52,6 +52,11 @@ for (const [platform, system] of [["darwin", "macos"], ["windows", "windows-11"]
     await storage.getByText("这是 Cage 的环境数据目录。更新、重装或卸载应用会保留这里的数据；请勿手动删除。").waitFor();
     assert.equal(await storage.getByText("当前环境目录", { exact: true }).count(), 0);
     assert.equal(await storage.getByText("新存储位置", { exact: true }).count(), 0);
+    await page.locator(".initialization-content").evaluate(async element => {
+      await Promise.all(element.getAnimations({ subtree: true })
+        .filter(animation => animation.animationName === "initialization-enter")
+        .map(animation => animation.finished));
+    });
     const before = await storage.boundingBox();
     await picker.click();
     const option = page.getByRole("option", { name: "自动匹配本机系统版本", exact: true });
