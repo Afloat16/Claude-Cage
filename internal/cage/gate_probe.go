@@ -35,15 +35,23 @@ func probeExitIP(ctx context.Context, e *Egress) (string, error) {
 	client := &http.Client{Transport: transport, Timeout: 5 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return errors.New("probe redirect refused") }}
 	// The proxy resolves this name remotely. An IPv4-only service measures the
 	// same address family as the guest policy even when the proxy is dual-stack.
+	allTimedOut := true
 	for _, endpoint := range []string{"https://ipv4.icanhazip.com/", "https://api.ipify.org/"} {
 		ip, err := queryExitIP(ctx, client, endpoint)
 		if err == nil {
 			return ip, nil
 		}
 		diagnostics.Log("warn", "exit-probe", fmt.Sprintf("exit query %s failed: %v", endpoint, err))
+		var networkError net.Error
+		if !errors.Is(err, context.DeadlineExceeded) && !(errors.As(err, &networkError) && networkError.Timeout()) {
+			allTimedOut = false
+		}
 		if ctx.Err() != nil {
 			break
 		}
+	}
+	if allTimedOut && !errors.Is(ctx.Err(), context.Canceled) {
+		return "", fmt.Errorf("通过所选代理查询出口 IP 超时，请稍后重试：%w", context.DeadlineExceeded)
 	}
 	return "", errors.New("通过所选代理查询出口 IP 失败。请检查节点与网络，稍后重新检测；未能确认出口时，外网保持关闭。")
 }

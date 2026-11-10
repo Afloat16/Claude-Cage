@@ -868,6 +868,10 @@ func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config)
 		ip, err = probe(ctx, cfg)
 		timing.stage("exit_ip")
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil && s.deferTimedOutExitProbe(ctx, client, state) {
+				timing.result = "exit_timeout_retry"
+				return
+			}
 			issue = "当前无法经指定代理确认出口，外网已暂停"
 			recoverable = true
 		} else {
@@ -902,6 +906,34 @@ func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config)
 	}
 	s.finishSafetyObservation(ctx, client, state, ip, issue, recoverable)
 	timing.stage("finish_observation")
+}
+
+// Keep the already granted lease unchanged while retrying a timed-out exit
+// query. The gate's own timer still closes all connections at its deadline.
+func (s *Server) deferTimedOutExitProbe(ctx context.Context, client *cage.GateClient, observed cage.GateStatus) bool {
+	s.safetyOp.Lock()
+	defer s.safetyOp.Unlock()
+	s.mu.Lock()
+	blocked := s.networkMonitorBlockedLocked()
+	s.mu.Unlock()
+	if blocked || ctx.Err() != nil {
+		return true
+	}
+	cfg, err := loadConfig(s.configPath)
+	if err != nil || cfg.Fingerprint() != observed.Configuration {
+		return false
+	}
+	current, err := client.Status(ctx)
+	if err != nil {
+		return true // The existing gate expires independently if it is unreachable.
+	}
+	if current.RunID != observed.RunID || current.Epoch != observed.Epoch || current.Mode != cage.GateOpen {
+		return true // A newer transition owns this gate.
+	}
+	s.mu.Lock()
+	s.safety.monitorError = "出口检测暂时超时，正在重试；现有联网许可未延长"
+	s.mu.Unlock()
+	return true
 }
 
 // Recheck the user operation and configuration at the actual lease write.

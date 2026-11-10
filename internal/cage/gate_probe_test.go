@@ -11,6 +11,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -26,6 +27,33 @@ import (
 	"testing"
 	"time"
 )
+
+func TestExitProbeClassifiesProxyTimeout(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	var connections atomic.Int32
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			connections.Add(1)
+			go func() { defer conn.Close(); _, _ = io.Copy(io.Discard, conn) }()
+		}
+	}()
+	cfg := DefaultConfig()
+	cfg.ProxyURL = "http://" + listener.Addr().String()
+	ctx, cancel := context.WithTimeout(context.Background(), 14*time.Second)
+	defer cancel()
+	ip, err := ProbeExitIP(ctx, cfg)
+	if ip != "" || !errors.Is(err, context.DeadlineExceeded) || connections.Load() != 2 {
+		t.Fatalf("two timed-out proxy probes = %q, %v, connections=%d", ip, err, connections.Load())
+	}
+}
 
 // The child uses a private test CA, so the real ProbeExitIP entry point verifies
 // TLS without changing production trust or replacing the HTTP transport.
