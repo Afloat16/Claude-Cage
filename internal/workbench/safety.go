@@ -60,6 +60,7 @@ type guestObservation struct {
 
 	ProcessLocale       string             `json:"process_locale,omitempty"`
 	SystemLocale        string             `json:"system_locale,omitempty"`
+	SystemLanguage      string             `json:"system_language,omitempty"`
 	TZ                  string             `json:"tz"`
 	Lang                string             `json:"lang"`
 	LCAll               string             `json:"lc_all"`
@@ -590,6 +591,14 @@ func (s *Server) runSafetyCheck() (returned error) {
 		s.publishReport(report)
 	}
 	s.publishReport(report)
+	if s.macosGuest != nil {
+		// BeginCheck has already revoked external access. This path is shared
+		// by initial setup, startup, controller reconnects and later rechecks.
+		if err := s.syncMacOSRegion(ctx, cfg); err != nil {
+			set("guest_settings", cage.CheckUnknown, err.Error(), "核对已保存的时区和语言后重新检测")
+			return err
+		}
+	}
 	shares, networkLayout := s.inspectVMLayout()
 	private, err := os.CreateTemp(s.profile, ".cage-private-probe-*")
 	if err != nil {
