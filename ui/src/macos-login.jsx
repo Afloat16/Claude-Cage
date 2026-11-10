@@ -341,7 +341,7 @@ export function MacOSLogin({ disabled, initialSetup = false, maintenance = "", l
           {authorizationPassword && <span className="mac-login-password">{authorizationPassword}<button onClick={() => setAuthorizationPassword("")}>隐藏</button></span>}
         </div>
         {maintenance && <div className="mac-setup-hint">
-          {maintenance === "projects" && <p>进入「文件系统扩展」，同时启用 macFUSE 和 macFUSE (local)。授权后 Cage 会自动检查并重新连接项目。</p>}
+          {maintenance === "projects" && <p>在客机设置中选择 By Category（按类别）→ File System Extensions（文件系统扩展），同时启用 macFUSE 和 macFUSE (local)。授权后 Cage 会自动检查并重新连接项目。</p>}
           {administrator && <p>系统要求管理员时，用户名填写 {administrator}。选中系统授权窗口的密码框后，点击「填写管理员密码」，再由你确认授权。</p>}
           {administrator && <button type="button" onClick={() => enqueue("fill-password", {})}>填写管理员密码</button>}
         </div>}

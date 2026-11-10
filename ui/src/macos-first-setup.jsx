@@ -90,12 +90,12 @@ export function MacOSFirstSetup() {
     <p>Cage 会自动登录、配置并检查环境。首次使用只需确认下面的系统权限；这些操作都在虚拟 Mac 内完成。</p>
     <ol>
       <li>在 Cage 打开的「窗口录制」「辅助功能」设置里允许 <strong>Cage Guest Window</strong>。如果提示「退出并重新打开」，按提示操作。需要重新定位时，点击同名按钮。</li>
-      <li>点击「文件系统扩展」，在客机设置中同时打开 <strong>macFUSE</strong> 和 <strong>macFUSE (local)</strong>。Cage 会自动验证并进入工作台。</li>
+      <li>点击「文件系统扩展」，在客机设置中选择 <strong>By Category（按类别）→ File System Extensions（文件系统扩展）</strong>，同时打开 <strong>macFUSE</strong> 和 <strong>macFUSE (local)</strong>。Cage 会自动验证并进入工作台。</li>
     </ol>
     <p>授权时若要求管理员，用户名填 <strong>cagesetup</strong>，{account.macos_password_pending ? "密码正在等待同步，完成前可能仍需原客机密码。" : account.macos_credentials_ready ? "密码与 Cage 账户相同。" : "可点选系统密码框后点击「填写授权密码」。"}确认后继续授权。此管理员在完成后自动停用。</p>
     {(!state?.vm_running || account.macos_password_pending) && <button className="primary" disabled={busy || !state || state.job?.running} onClick={() => act("start")}>{account.macos_password_pending ? "重试同步客机密码" : "启动虚拟 Mac"}</button>}
     {state?.vm_running && <MacOSLogin initialSetup autoOpen={Boolean(permissions.managed_credential)} managedCredential={permissions.managed_credential} disabled={!state.ready} setupActions={controls}
-      setupHint={`Cage 自动登录 ${loginName}。管理员授权用 cagesetup；打开两个 macFUSE 开关后会自动继续。`}
+      setupHint={`Cage 自动登录 ${loginName}。管理员授权用 cagesetup。文件系统扩展请从 By Category（按类别）→ File System Extensions 进入，打开两个 macFUSE 开关。`}
       setupStatus={error || progress} setupError={Boolean(error)} />}
     <div className="welcome-shortcuts">{controls}</div>
     <p role="status">{progress}</p>

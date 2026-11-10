@@ -25,7 +25,7 @@ func (s *Server) checkMacOSSetupProjects(parent context.Context) error {
 	}
 	s.mu.Unlock()
 	if err != nil {
-		return errors.New("尚未能挂载并卸载只读测试卷。请在客机设置中启用 macFUSE 和 macFUSE (local)，再点验证")
+		return errors.New("尚未能挂载并卸载只读测试卷。请在客机设置的 By Category（按类别）→ File System Extensions（文件系统扩展）中启用 macFUSE 和 macFUSE (local)，再点验证")
 	}
 	return nil
 }

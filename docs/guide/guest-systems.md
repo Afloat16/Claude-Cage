@@ -87,7 +87,9 @@ Windows 在确认系统提权后自动创建磁盘、安装系统和建立客机
 安装完成后，Cage 自动启动和登录虚拟 Mac，跳过可选的首次设置页面，并显示需要确认的系统权限：
 
 1. 在客机的「窗口录制」「辅助功能」设置里允许 Cage Guest Window；若系统要求「退出并重新打开」，按提示完成。Cage 自动定位下一项未完成的权限，也可点击同名按钮重新打开。
-2. 在「文件系统扩展」中同时启用 `macFUSE` 和 `macFUSE (local)`。Cage 自动检查只读测试卷能否挂载和卸载；只打开其中一项不能完成验证。
+2. 在客机系统设置的「General（通用）→ Login Items & Extensions（登录项与扩展）」中，选择「By Category（按类别）→ File System Extensions（文件系统扩展）」，同时启用 `macFUSE` 和 `macFUSE (local)`。Cage 自动检查只读测试卷能否挂载和卸载；只打开其中一项不能完成验证。
+
+如果进入「macFUSE Extensions」后开关点击无反应，点击 Done 返回，切换到 By Category，再进入 File System Extensions。macOS 的 By Application（按应用）入口存在开关无法启用的问题，见 [macFUSE 维护者说明](https://github.com/macfuse/macfuse/issues/1194)。
 
 这些权限都在虚拟 Mac 内确认，首次设置期间客机断网。Apple 询问管理员身份时，用户名填 `cagesetup`，密码与 Cage 账户相同；也可点选密码框后使用「填写授权密码」。Cage 检查三项授权后自动完成设置并进入工作台；收尾失败时提供重试入口。
 
