@@ -140,8 +140,8 @@ export function SafetyPanel({
               {busy
                 ? status.job.message
                 : online
-                  ? "关键检查已通过，后台继续核对出口规则与环境配置。"
-                  : safety.error ||
+                  ? status.network_error || "关键检查已通过，后台继续核对出口规则与环境配置。"
+                  : status.network_error || safety.error ||
                     safety.gate?.reason ||
                     "完成关键检查后，才允许连接外部网站。"}
             </p>

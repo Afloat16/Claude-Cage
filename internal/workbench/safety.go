@@ -110,6 +110,17 @@ func (s *Server) publishGate(state cage.GateStatus) {
 // A gate grant resolves a monitoring failure. Independent diagnostics, such
 // as a location lookup failure, are cleared by the operation that owns them.
 func (s *Server) currentNetworkErrorLocked() string {
+	reason := s.networkErrorLocked()
+	if recovery := s.networkRecoveryMessageLocked(time.Now()); recovery != "" {
+		if reason == "" {
+			return recovery
+		}
+		return reason + "；" + recovery
+	}
+	return reason
+}
+
+func (s *Server) networkErrorLocked() string {
 	if s.networkIntentError != "" {
 		return s.networkIntentError
 	}
@@ -714,8 +725,8 @@ func (s *Server) runSafetyCheck() (returned error) {
 	hostIP, hostErr := cage.ProbeExitIP(ctx, cfg)
 	_ = diagnostics.New(s.profile).Record("info", "safety-probe", fmt.Sprintf("stage=host-exit error=%v ip=%s", hostErr, hostIP))
 	result, message := cage.CheckPassed, "终端、浏览器与宿主检测出口均未命中大陆网段，定位为非中国大陆且符合已保存的 IP 变化规则；此结论限于检测采样"
-	if hostErr != nil || networkErr != nil || browserErr != nil || network.Egress.Status != 200 || browser.Network.Status != 200 {
-		result, message = cage.CheckUnknown, "出口采样不完整，无法确认配置范围"
+	if missing := incompleteExitSamples(hostIP, hostErr, network.Egress, networkErr, browser.Network, browserErr); missing != "" {
+		result, message = cage.CheckUnknown, missing
 	} else {
 		for _, ip := range []string{hostIP, network.Egress.IP, browser.Network.IP} {
 			observed, why := s.checkExitPolicy(ctx, cfg, ip)
@@ -872,7 +883,7 @@ func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config)
 				timing.result = "exit_timeout_retry"
 				return
 			}
-			issue = "当前无法经指定代理确认出口，外网已暂停"
+			issue = "宿主出口采样失败，外网已暂停：" + diagnostics.Redact(usererror.Display("读取宿主出口", err, "请重新检测。").Error())
 			recoverable = true
 		} else {
 			result, message := s.checkExitPolicy(ctx, cfg, ip)
