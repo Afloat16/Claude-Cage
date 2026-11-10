@@ -263,23 +263,31 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { release() }()
 	var current windowsWindowFrame
+	inputSuspended := false
 	request := func(input map[string]any, output any) error {
 		var data []byte
 		var err error
 		switch input["action"] {
 		case "frame":
-			data, err = client.request(ctx, "GET", "/frame", input)
+			if inputSuspended {
+				delete(input, "after") // Require a fresh proof before accepting input.
+			}
+			data, err = requestBrowserFrame(ctx, client.request, input)
 			if err == nil {
 				var next windowsWindowFrame
 				if err = json.Unmarshal(data, &next); err == nil {
 					if !next.Unchanged {
 						current = next
+						inputSuspended = false
 					}
 					*output.(*windowsWindowFrame) = next
 				}
 			}
 			return err
 		case "pointer", "key":
+			if inputSuspended {
+				return nil // Drop queued events bound to the rejected old frame.
+			}
 			input["kind"] = input["action"]
 			delete(input, "action")
 			s.mu.Lock()
@@ -290,8 +298,14 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 					input["keysym"] = windowsGuestKeysym(key, keyboard)
 				}
 			}
-			data, err = client.request(ctx, "POST", "/input", input)
+			data, err = recoverBrowserInputFocus(ctx, client.request, input, func() {
+				inputSuspended = true
+				client.releaseViewerInput()
+			})
 		case "text":
+			if inputSuspended {
+				return nil
+			}
 			data, err = client.request(ctx, "POST", "/insert-text", map[string]any{"id": current.ID, "document": current.Document, "text": input["text"]})
 		default:
 			return errors.New("浏览器画面操作无效")
@@ -331,4 +345,41 @@ func (s *Server) nativeBrowserVNC(w http.ResponseWriter, r *http.Request) {
 	}()
 	s.streamVNC(w, r, local, local, func() { cancel(); local.Close(); remote.Close(); release() })
 	<-done
+}
+
+// Focus rejection is not a broken display. Drop the rejected event rather than
+// replaying it: a key or click may already have been partially delivered. A
+// host blur also releases keys, so recovery must never steal focus in response.
+// The guest's foreground-window and input-target validation stay unchanged.
+func recoverBrowserInputFocus(ctx context.Context, request func(context.Context, string, string, any) ([]byte, error), input map[string]any, release func()) ([]byte, error) {
+	data, err := request(ctx, "POST", "/input", input)
+	var failure windowsBrowserFailure
+	if !errors.As(err, &failure) || (failure.code != "browser_focus_required" && failure.code != "browser_target_changed" && failure.code != "target_changed") {
+		return data, err
+	}
+	// End this viewer's input lease so a rejected key-up cannot leave a held
+	// key behind. The persistent guest browser survives; the next frame opens
+	// a fresh authenticated relay without interrupting the host display socket.
+	release()
+	return nil, nil
+}
+
+// A window can move between the guest's before/after capture checks. Retry
+// only that read, never an input event. Every attempt still runs the guest's
+// full identity/session validation; persistent transitions remain an error.
+func requestBrowserFrame(ctx context.Context, request func(context.Context, string, string, any) ([]byte, error), input map[string]any) ([]byte, error) {
+	for attempt := 0; ; attempt++ {
+		data, err := request(ctx, "GET", "/frame", input)
+		var failure windowsBrowserFailure
+		if attempt >= 5 || !errors.As(err, &failure) || !transientWindowFrame(failure.code) {
+			return data, err
+		}
+		timer := time.NewTimer(80 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
