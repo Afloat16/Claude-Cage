@@ -111,6 +111,39 @@ integration("interactive browser identity is native in normal and private docume
   assert.equal(f.launchOptions().chromiumSandbox, true);
 });
 
+integration("closed browser tabs release their controller sessions", async t => {
+  const f = await fixture(t);
+  const original = (await f.call("health", {}, "GET")).resources;
+  for (let index = 0; index < 12; index++) {
+    const { id, page } = await f.open("/lifecycle-" + index);
+    await f.call("close", { id });
+    assert.equal(page.isClosed(), true);
+    assert.deepEqual((await f.call("health", {}, "GET")).resources, original, "closed tabs must release their sessions");
+  }
+});
+
+integration("removed browser frames release clipboard and controller sessions", async t => {
+  const f = await fixture(t);
+  const { id, page } = await f.open("/frame-lifecycle");
+  const original = (await f.call("health", {}, "GET")).resources;
+  for (let index = 0; index < 5; index++) {
+    await page.evaluate(async url => {
+      const frame = document.createElement("iframe");
+      frame.src = url;
+      const loaded = new Promise(resolve => { frame.onload = resolve; });
+      document.body.append(frame);
+      await loaded;
+    }, f.url.replace("127.0.0.1", "localhost") + "/child-" + index);
+    await page.waitForTimeout(100);
+    const attached = (await f.call("health", {}, "GET")).resources;
+    assert.ok(attached.sessions > original.sessions);
+    await page.evaluate(() => document.querySelector("iframe").remove());
+    await page.waitForTimeout(100);
+    assert.deepEqual((await f.call("health", {}, "GET")).resources, original, "detached frames must release clipboard state");
+    await f.call("copy-context", { id, context: "a".repeat(32) });
+  }
+});
+
 integration("actual Chromium tabs restore and project switching retains unsaved editor buffers", async t => {
   const f = await fixture(t);
   const one = await f.open("/one"), two = await f.open("/two");
