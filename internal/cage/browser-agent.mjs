@@ -13,6 +13,7 @@ import { PrivateBrowser } from "./browser-private.mjs";
 import { browserCookies } from "./browser-cookies.mjs";
 import { BrowserExtensions, extensionUploadLimit } from "./browser-extensions.mjs";
 import { BrowserClipboard } from "./browser-clipboard.mjs";
+import { BrowserVisibility } from "./browser-visibility.mjs";
 import { nativeInput } from "./native-input.mjs";
 import { DownloadManager } from "./browser-downloads.mjs";
 import { UploadManager, uploadLimit } from "./browser-uploads.mjs";
@@ -103,6 +104,30 @@ const pending = new Map(),
   targets = new Map(),
   sessions = new Map();
 const closingTargets = new Map();
+let browserVNCViewers = false;
+function canHideBrowser() {
+  // Legacy viewers connect directly to the loopback VNC server. Keep their
+  // window visible after the last managed workbench viewer disconnects.
+  for (const file of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    const entries = readFileSync(file, "utf8").trim().split("\n").slice(1);
+    if (entries.some(line => {
+      const fields = line.trim().split(/\s+/);
+      return fields[3] === "01" && fields[1].endsWith(":3E1C");
+    })) { browserVNCViewers = true; return false; }
+  }
+  browserVNCViewers = false;
+  return true;
+}
+const visibility = new BrowserVisibility(cdp, () => [...targets.keys()], canHideBrowser);
+let checkingBrowserViewers = false;
+setInterval(() => {
+  if (!ready || visibility.visible || checkingBrowserViewers) return;
+  const previous = browserVNCViewers;
+  try { canHideBrowser(); } catch { return; }
+  if (previous === browserVNCViewers) return;
+  checkingBrowserViewers = true;
+  void visibility.set(false).catch(() => {}).finally(() => { checkingBrowserViewers = false; });
+}, 1000).unref();
 const browserClipboard = new BrowserClipboard(cdp, ({ id, text, context }) => {
   if (id !== activeId || !targets.has(id)) return;
   const payload = "event: clipboard\ndata: " + JSON.stringify({ id, text, context }) + "\n\n";
@@ -156,6 +181,8 @@ function updateTargetInfo(t) {
   if (!activeId) activeId = t.targetId;
   if (ready && fresh && t.openerId)
     void activate(t.targetId, true).catch(() => {});
+  else if (ready && fresh && !visibility.visible)
+    void visibility.set(false).catch(() => {});
 }
 
 async function auditCDP(method, params, ...args) {
@@ -434,19 +461,12 @@ async function activate(id, focus = false) {
   if (!targets.has(id)) throw new Error("Tab no longer exists");
   // Restored background tabs may have no live renderer until activated.
   // Page.enable must not block the command that wakes that renderer.
-  await cdp("Target.activateTarget", { targetId: id });
+  await visibility.activate(id);
   await session(id);
   activeId = id;
   void refreshNavigation();
   rememberSelection();
   broadcastState(focus);
-  const { windowId } = await cdp("Browser.getWindowForTarget", {
-    targetId: id,
-  });
-  await cdp("Browser.setWindowBounds", {
-    windowId,
-    bounds: { windowState: "fullscreen" },
-  }).catch(() => {});
 }
 function checkedURL(value) {
   if (value === "about:blank") return value;
@@ -857,6 +877,10 @@ const server = http.createServer(async (req, res) => {
         }
         if (!url) throw new Error("内部页面无效");
         return { ...await newTab(url), url, kind: "web", title: "浏览器设置" };
+      }
+      if (req.url === "/visibility") {
+        await visibility.set(input.visible);
+        return { ok: true };
       }
       if (req.url === "/resize")
         return resizeDisplay(input.width, input.height);

@@ -24,6 +24,12 @@ func (s *Server) vnc(w http.ResponseWriter, r *http.Request) {
 		s.nativeBrowserVNC(w, r)
 		return
 	}
+	release, err := s.browserViews.acquire(s.changeBrowserVisibility)
+	if err != nil {
+		requestError(w, err)
+		return
+	}
+	defer release()
 	address := "127.0.0.1:15900"
 	if containerenv.Configured(s.profile) {
 		environment, err := containerenv.Load(s.profile)
