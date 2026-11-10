@@ -781,6 +781,10 @@ func (s *Server) monitorSafety() {
 }
 
 func (s *Server) monitorSafetyWithProbe(probe func(context.Context, cage.Config) (string, error)) {
+	if !s.monitorSafetyOp.TryLock() {
+		return
+	}
+	defer s.monitorSafetyOp.Unlock()
 	timing := s.startMonitorTiming()
 	defer s.recordMonitorTiming("safety", timing)
 	s.mu.Lock()

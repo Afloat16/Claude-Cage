@@ -110,6 +110,7 @@ type Server struct {
 	recovery                                         networkRecovery
 	locations                                        map[string]Location
 	monitorCancel                                    context.CancelFunc
+	monitorSafetyOp                                  sync.Mutex
 	safetyOp                                         sync.Mutex
 	networkPaused                                    bool
 	proxyNetworkLost                                 bool

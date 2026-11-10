@@ -34,7 +34,7 @@ func (s *Server) startMonitors() {
 		return
 	}
 	ctx := s.lifetimeContextLocked()
-	s.monitors.Add(3)
+	s.monitors.Add(4)
 	s.mu.Unlock()
 	go func() {
 		defer s.monitors.Done()
@@ -54,6 +54,23 @@ func (s *Server) startMonitors() {
 	go func() {
 		defer s.monitors.Done()
 		s.monitor(ctx)
+	}()
+	go func() {
+		defer s.monitors.Done()
+		ticker := time.NewTicker(5 * time.Second)
+		defer ticker.Stop()
+		for ctx.Err() == nil {
+			// Long-running maintenance jobs own their own monitor and stop it
+			// before changing guest components. Other jobs cancel observation.
+			if !s.busy() {
+				s.monitorSafety()
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
 	}()
 	go func() {
 		defer s.monitors.Done()
