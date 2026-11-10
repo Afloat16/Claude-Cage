@@ -34,9 +34,24 @@ func TestWindowsHostEnrollmentOrdinaryUser(t *testing.T) {
 			t.Fatalf("build enrollment helper: %v\n%s", err, output)
 		}
 	}
+	runWindowsOrdinaryUserPowerShell(t, filepath.Join(root, "scripts", "guest-os", "windows-host-enrollment-smoke.ps1"), "-ManagerExecutable", manager)
+}
+
+func TestWindowsUserToolACLOrdinaryUser(t *testing.T) {
+	script, err := filepath.Abs(filepath.Join("..", "..", "scripts", "guest-os", "windows-user-tools-acl.tests.ps1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	runWindowsOrdinaryUserPowerShell(t, script)
+}
+
+func runWindowsOrdinaryUserPowerShell(t *testing.T, script string, arguments ...string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
 	shell := filepath.Join(os.Getenv("SystemRoot"), "System32", "WindowsPowerShell", "v1.0", "powershell.exe")
-	cmd := exec.CommandContext(ctx, shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
-		"-File", filepath.Join(root, "scripts", "guest-os", "windows-host-enrollment-smoke.ps1"), "-ManagerExecutable", manager)
+	flags := append([]string{"-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", script}, arguments...)
+	cmd := exec.CommandContext(ctx, shell, flags...)
 	if windows.GetCurrentProcessToken().IsElevated() {
 		var token windows.Token
 		if err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_DUPLICATE|windows.TOKEN_QUERY|windows.TOKEN_ASSIGN_PRIMARY|windows.TOKEN_ADJUST_DEFAULT, &token); err != nil {
@@ -85,11 +100,11 @@ func TestWindowsHostEnrollmentOrdinaryUser(t *testing.T) {
 			defer ordinary.Close()
 		}
 		if ordinary.IsElevated() {
-			t.Fatal("the enrollment regression requires an unelevated token")
+			t.Fatal("the native regression requires an unelevated token")
 		}
 		cmd.SysProcAttr = &syscall.SysProcAttr{Token: syscall.Token(ordinary)}
 	}
 	if output, err := cmd.CombinedOutput(); err != nil {
-		t.Fatalf("ordinary-user enrollment: %v\n%s", err, output)
+		t.Fatalf("ordinary-user PowerShell %s: %v\n%s", filepath.Base(script), err, output)
 	}
 }
