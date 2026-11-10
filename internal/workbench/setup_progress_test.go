@@ -6,6 +6,20 @@ import (
 	"time"
 )
 
+func TestWindowsInstallationInteractionStages(t *testing.T) {
+	for _, stage := range []string{"account", "oobe", "credentials", "media", "tools", "services"} {
+		progress := parseSetupProgress("CAGE_GUEST_STAGE windows-11 " + stage)
+		if progress == nil || progress.System != "windows-11" || progress.Operation != stage || progress.Label == "" {
+			t.Fatalf("Windows installation stage was lost: %s %+v", stage, progress)
+		}
+	}
+	for _, system := range []string{"macos", "debian-13", "ubuntu-22.04"} {
+		if parseSetupProgress("CAGE_GUEST_STAGE "+system+" oobe") != nil {
+			t.Fatalf("Windows interaction stage accepted for %s", system)
+		}
+	}
+}
+
 // Child pipes may split a progress line across writes. A fallback mirror may
 // restart from zero, and an absent Content-Length must stay indeterminate.
 func TestSetupProgressFromChildOutput(t *testing.T) {

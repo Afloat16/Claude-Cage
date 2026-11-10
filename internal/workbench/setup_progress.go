@@ -76,9 +76,22 @@ func parseSetupProgress(line string) *SetupProgress {
 			return nil
 		}
 		p := &SetupProgress{System: fields[1]}
+		if fields[1] == "windows-11" {
+			p.Operation = fields[2]
+		}
 		switch fields[2] {
 		case "restore":
 			p.Phase, p.Label = "packages", "正在安装 "+guestProgressName(fields[1])+" 系统"
+		case "account", "oobe", "credentials":
+			if fields[1] != "windows-11" {
+				return nil
+			}
+			p.Phase = "packages"
+			p.Label = map[string]string{
+				"account":     "请在安装窗口设置客机本地管理员",
+				"oobe":        "请在虚拟机连接窗口完成 Windows 首次设置",
+				"credentials": "请在安装窗口输入客机管理员账户",
+			}[fields[2]]
 		case "media":
 			p.Phase, p.Label = "image", "正在下载并校验客机开发组件"
 		case "tools":
