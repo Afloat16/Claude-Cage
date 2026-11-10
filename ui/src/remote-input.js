@@ -1,5 +1,6 @@
 import { getKeycode, getKeysym } from "../.generated/novnc/core/input/util.js";
 import { api, writeClipboard, nativeAvailable, native } from "./api";
+import { caretPollDelay, caretPollFast, caretFreshFor } from "./caret-poll.mjs";
 import {
   readClipboardContent,
   transferFiles,
@@ -31,6 +32,8 @@ export function installRemoteInput(
     compositionSequence = 0,
     caretState,
     caretTimer,
+    caretWait = caretPollFast,
+    lastAction = Date.now(),
     caretPending = false,
     nativeOwner = "",
     nativeTarget = "",
@@ -132,15 +135,27 @@ export function installRemoteInput(
   };
   const pollCaret = async () => {
     if (focused()) await syncCaret();
-    if (!disposed) caretTimer = setTimeout(pollCaret, 250);
+    if (disposed) return;
+    caretWait = caretPollDelay(Date.now() - lastAction);
+    caretTimer = setTimeout(pollCaret, caretWait);
   };
   if (caretRect) caretTimer = setTimeout(pollCaret, 0);
+  const acted = () => {
+    lastAction = Date.now();
+    // A slow wait scheduled while the viewer was quiet must not delay the
+    // readings that follow their input.
+    if (!caretRect || disposed || caretWait <= caretPollFast) return;
+    clearTimeout(caretTimer);
+    caretWait = caretPollFast;
+    caretTimer = setTimeout(pollCaret, caretWait);
+  };
   const bounds = container.getBoundingClientRect();
   position(bounds.left + 12, bounds.top + 12);
   on(
     container,
     "pointerdown",
     (event) => {
+      acted();
       // Cancel before noVNC queues a click into another remote field.
       if (composing) {
         if (compositionSession) queueComposition({ mode: "cancel" });
@@ -180,10 +195,11 @@ export function installRemoteInput(
     target.value = "";
   };
   const startComposition = () => {
+    acted();
     composing = true;
     compositionTarget = getTargetId();
     if (insertComposition && caretState?.context && caretState.target === compositionTarget &&
-        Date.now() - caretState.time < 1000) {
+        Date.now() - caretState.time < caretFreshFor) {
       compositionSession = crypto.randomUUID().replaceAll("-", "");
       compositionSequence = 0;
       queueComposition({ mode: "begin", context: caretState.context });
@@ -268,8 +284,11 @@ export function installRemoteInput(
     }
   });
   on(container, "pointerup", () => {
+    acted();
     setTimeout(() => void syncCaret(), 50);
   });
+  // Scrolling moves the caret without moving focus.
+  on(container, "wheel", acted, { capture: true, passive: true });
   const say = (text) => {
     if (!disposed) onStatus(text);
   };
@@ -440,6 +459,7 @@ export function installRemoteInput(
     "keydown",
     (event) => {
       if (!focused()) return;
+      acted();
       if ((event.isTrusted || event.cageNativeInput) && (!copyContext || ["Enter", " ", "Tab"].includes(event.key) ||
           event.ctrlKey || event.metaKey || event.altKey)) prepareCopy();
       if (

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
 import { webcrypto } from "node:crypto";
+import { caretPollDelay, caretPollFast, caretFreshFor } from "./caret-poll.mjs";
 const source = readFileSync(
   new URL("./remote-input.js", import.meta.url),
   "utf8",
@@ -59,8 +60,12 @@ function fixture(native = false, browserComposition = false, options = {}) {
   const context = {
     document: doc,
     window: win,
-    setTimeout,
-    clearTimeout,
+    setTimeout: options.setTimeout || setTimeout,
+    clearTimeout: options.clearTimeout || clearTimeout,
+    Date: options.Date || Date,
+    caretPollDelay,
+    caretPollFast,
+    caretFreshFor,
     Promise,
     Map,
     Set,
@@ -125,9 +130,9 @@ function fixture(native = false, browserComposition = false, options = {}) {
         compositions.push({ id, ...value });
       } : null,
       tabId: () => currentTabId,
-      caretRect: browserComposition ? async () => ({
+      caretRect: browserComposition ? options.caretRect || (async () => ({
         available: true, context: "a".repeat(32), rect: [240, 120, 0, 24],
-      }) : null,
+      })) : null,
       pasteContent: async (content) => {
         const value = await content;
         if (rfb.target) pastes.push(value.png || value.text);
@@ -401,6 +406,75 @@ test("browser composition is forwarded as preedit, then committed separately", a
       { id: "tab-1", mode: "update", text: "nihao", selectionStart: 5, selectionEnd: 5 },
       { id: "tab-1", mode: "commit", text: "你好", selectionStart: 0, selectionEnd: 0 },
     ]);
+  } finally {
+    f.controller.dispose();
+  }
+});
+
+// Timers and the clock advance together, one due timer at a time.
+function fakeClock() {
+  let now = 1_000_000, sequence = 0;
+  const timers = new Map();
+  return {
+    Date: { now: () => now },
+    setTimeout: (run, delay = 0) => { timers.set(++sequence, { at: now + delay, run }); return sequence; },
+    clearTimeout: (id) => { timers.delete(id); },
+    async advance(duration) {
+      const end = now + duration;
+      for (;;) {
+        const due = [...timers].filter(([, timer]) => timer.at <= end).sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!due) break;
+        timers.delete(due[0]);
+        now = due[1].at;
+        due[1].run();
+        for (let turn = 0; turn < 8; turn++) await Promise.resolve();
+      }
+      now = end;
+    },
+  };
+}
+
+test("caret readings back off while the viewer is quiet and resume with input", async () => {
+  const clock = fakeClock();
+  let readings = 0;
+  const f = fixture(false, true, { ...clock, caretRect: async () => {
+    readings++;
+    return { available: true, context: "a".repeat(32), rect: [240, 120, 0, 24] };
+  } });
+  try {
+    f.rfb.focus();
+    await clock.advance(2900);
+    assert.equal(readings, 12);
+    readings = 0;
+    // The earlier fixed interval read the caret 240 times in this minute.
+    await clock.advance(60000);
+    assert.ok(readings >= 30 && readings <= 50, `${readings} readings`);
+    readings = 0;
+    await clock.advance(1900);
+    assert.equal(readings, 1);
+    // Input reschedules a slow wait instead of waiting it out.
+    f.key("keydown", "a", "KeyA");
+    readings = 0;
+    await clock.advance(250);
+    assert.equal(readings, 1);
+    await clock.advance(1000);
+    assert.equal(readings, 5);
+  } finally {
+    f.controller.dispose();
+  }
+});
+
+test("a composition begins from the last reading of a quiet viewer", async () => {
+  const clock = fakeClock();
+  const f = fixture(false, true, clock);
+  try {
+    f.rfb.focus();
+    await clock.advance(60000);
+    // Just before the next slow reading, the latest one is two seconds old.
+    await clock.advance(1900);
+    inputEvent(f, "compositionstart");
+    assert.equal(f.compositions[0]?.mode, "begin");
+    assert.equal(f.compositions[0].context, "a".repeat(32));
   } finally {
     f.controller.dispose();
   }
