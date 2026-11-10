@@ -82,6 +82,7 @@ type Server struct {
 	diagnosticCount                                  int
 	tickets                                          map[string]time.Time
 	browserControl                                   *browserClient
+	controlSession                                   guestSession
 	windowsBrowserControl                            *windowsBrowserClient
 	nativeDownloads                                  map[string]*nativeDownload
 	nativeDownloadSlots                              chan struct{}

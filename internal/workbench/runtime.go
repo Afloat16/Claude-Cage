@@ -312,6 +312,7 @@ func (s *Server) runCage(args ...string) error {
 func (s *Server) startEnvironment(syncTimezone bool) error {
 	s.desktopViews.reset()
 	s.browserViews.reset()
+	s.controlSession.close()
 	s.desktopStatus.invalidate()
 	defer s.desktopStatus.invalidate()
 	if err := s.requireStorageReady(); err != nil {

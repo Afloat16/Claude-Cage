@@ -55,7 +55,7 @@ func (s *Server) claudeDesktopStatus(w http.ResponseWriter, r *http.Request) {
 			}
 			return json.Marshal(result)
 		}
-		return s.guest(ctx, claudeDesktopSnapshot)
+		return s.guestQuick(ctx, claudeDesktopSnapshot)
 	})
 	var state claudeDesktopState
 	if err != nil {
@@ -190,7 +190,7 @@ func (s *Server) claudeDesktopCredentials(w http.ResponseWriter, r *http.Request
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	b, err := s.guest(ctx, `set -eu
+	b, err := s.guestQuick(ctx, `set -eu
 systemctl is-active --quiet cage-claude-desktop.service
 password=$(cat /home/cage/.config/claude-cage/desktop-password)
 printf '%s\n' "$password"
@@ -249,7 +249,7 @@ for old in $(xrandr --query | awk '/^ +cage-/ {print $1}'); do
 done`, wid, hei, wid, hei, float64((wid+32)*(hei+8)*60)/1000000, wid, wid+8, wid+16, wid+32, hei, hei+1, hei+2, hei+8)
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	if _, err := s.guest(ctx, script); err != nil {
+	if _, err := s.guestQuick(ctx, script); err != nil {
 		http.Error(w, "Claude Desktop 画面尺寸未能调整", 502)
 		return
 	}
