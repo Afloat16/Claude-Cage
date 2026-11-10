@@ -17,6 +17,7 @@ import (
 
 	"al.essio.dev/pkg/shellescape"
 	"github.com/sylvinus/agent-vm/internal/guestos"
+	"github.com/sylvinus/agent-vm/internal/hostproxy"
 	"github.com/sylvinus/agent-vm/internal/vm"
 )
 
@@ -64,6 +65,7 @@ func installMacWorkbench(ctx context.Context, profile, state string, l *vm.Lima)
 	}
 	local := func(name string, args ...string) error {
 		cmd := exec.CommandContext(ctx, name, args...)
+		cmd.Env = append(append(os.Environ(), hostproxy.DownloadEnvironment()...), "CAGE_HOST_DOWNLOADER="+exe)
 		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
 		return cmd.Run()
 	}

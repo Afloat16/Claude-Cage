@@ -20,6 +20,24 @@ type SetupProgress struct {
 // continues through the existing redacted operation log.
 func parseSetupProgress(line string) *SetupProgress {
 	line = strings.TrimSpace(line)
+	if strings.HasPrefix(line, "CAGE_HOST_BYTES ") {
+		fields := strings.Fields(line)
+		if len(fields) != 4 {
+			return nil
+		}
+		label := macOSDownloadLabel(fields[1])
+		received, err := strconv.ParseInt(fields[2], 10, 64)
+		total, te := strconv.ParseInt(fields[3], 10, 64)
+		if label == "" || err != nil || te != nil || received < 0 || total < 0 || total > 0 && received > total {
+			return nil
+		}
+		return &SetupProgress{Phase: "image", Label: label, System: "macos", Operation: "download", Received: &received, Total: total}
+	}
+	if strings.HasPrefix(line, "下载 ") {
+		if label := macOSDownloadLabel(strings.TrimPrefix(line, "下载 ")); label != "" {
+			return &SetupProgress{Phase: "image", Label: label, System: "macos"}
+		}
+	}
 	if strings.HasPrefix(line, "CAGE_GUEST_BYTES ") {
 		fields := strings.Fields(line)
 		if len(fields) != 5 {
@@ -107,18 +125,6 @@ func parseSetupProgress(line string) *SetupProgress {
 		return p
 	}
 	switch line {
-	case "下载 editor.tgz":
-		return &SetupProgress{Phase: "image", Label: "正在下载 macOS 网页编辑器", System: "macos"}
-	case "下载 playwright.tgz":
-		return &SetupProgress{Phase: "image", Label: "正在下载浏览器控制组件", System: "macos"}
-	case "下载 node.tgz":
-		return &SetupProgress{Phase: "image", Label: "正在下载 Node.js", System: "macos"}
-	case "下载 macfuse.dmg":
-		return &SetupProgress{Phase: "image", Label: "正在下载 macFUSE 文件共享组件", System: "macos"}
-	case "下载 claude.dmg":
-		return &SetupProgress{Phase: "image", Label: "正在下载 Claude Desktop", System: "macos"}
-	case "下载 chrome.dmg":
-		return &SetupProgress{Phase: "image", Label: "正在下载 Chrome 浏览器", System: "macos"}
 	case "CAGE_IMAGE_READY":
 		return &SetupProgress{Phase: "image", Label: "正在启动 Linux 基础环境"}
 	case "CAGE_IMAGE_VERIFY":
@@ -142,6 +148,19 @@ func parseSetupProgress(line string) *SetupProgress {
 		return &SetupProgress{Phase: "services", Label: "正在配置桌面服务"}
 	}
 	return nil
+}
+
+func macOSDownloadLabel(name string) string {
+	component := map[string]string{
+		"editor.tgz": "macOS 网页编辑器", "playwright.tgz": "浏览器控制组件", "node.tgz": "Node.js",
+		"macfuse.dmg": "macFUSE 文件共享组件", "claude.dmg": "Claude Desktop", "chrome.dmg": "Chrome 浏览器",
+		"macos-cli-claude": "Claude Code", "macos-cli-uv.tar.gz": "uv 开发工具",
+		"macos-cli-python.tar.gz": "Python", "macos-cli-git.tar.gz": "Git",
+	}[name]
+	if component == "" {
+		return ""
+	}
+	return "正在下载 " + component
 }
 
 func guestProgressName(system string) string {

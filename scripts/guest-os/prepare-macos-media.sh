@@ -6,6 +6,14 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 media=$1
 src=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$media"
+fetch() {
+    if [[ -n ${CAGE_HOST_DOWNLOADER:-} ]]; then
+        "$CAGE_HOST_DOWNLOADER" host-download "$1" "$2" "$3" "${4:-}"
+    else
+        # Standalone source builds can supply curl proxy environment variables.
+        curl --disable -fsSL --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 15 --speed-time 60 --speed-limit 1 -H "Accept: ${4:-*/*}" "$1" -o "$2"
+    fi
+}
 download() {
     local name=$1 url=$2 expected=$3 api=${4:-}
     local target="$media/$name" temporary
@@ -15,8 +23,8 @@ download() {
     fi
     printf '下载 %s\n' "$name"
     temporary=$(mktemp "$media/.$name.XXXXXXXX")
-    if ! curl --disable -fsSL --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 15 --speed-time 90 --speed-limit 1024 "$url" -o "$temporary"; then
-        if [[ -z $api ]] || ! curl --disable -fsSL --proto '=https' --proto-redir '=https' --retry 2 --connect-timeout 15 --speed-time 90 --speed-limit 1024 -H 'Accept: application/octet-stream' "$api" -o "$temporary"; then
+    if ! fetch "$url" "$temporary" "$name"; then
+        if [[ -z $api ]] || ! fetch "$api" "$temporary" "$name" application/octet-stream; then
             rm "$temporary"
             return 1
         fi

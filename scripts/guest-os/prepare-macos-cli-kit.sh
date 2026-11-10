@@ -7,6 +7,13 @@ umask 077
 src=$(cd "$(dirname "$0")" && pwd)
 stage=$(mktemp -d "$(dirname "$1")/.cage-cli-kit.XXXXXXXX")
 trap 'rm -rf "$stage"' EXIT
+fetch() {
+    if [[ -n ${CAGE_HOST_DOWNLOADER:-} ]]; then
+        "$CAGE_HOST_DOWNLOADER" host-download "$1" "$2" "macos-cli-$3" "${4:-}"
+    else
+        curl --disable --proto '=https' --proto-redir '=https' --location --fail --silent --show-error --connect-timeout 15 --speed-time 60 --speed-limit 1 --retry 2 -H "Accept: ${4:-*/*}" "$1" -o "$2"
+    fi
+}
 download() {
     local name=$1 url=$2 digest=$3 api=$4
     # An existing guest may already have the exact signed release archives.
@@ -15,9 +22,10 @@ download() {
         cp "$cache/$name" "$stage/$name"
         if [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]]; then return; fi
     fi
-    if ! curl --proto '=https' --proto-redir '=https' --location --fail --silent --show-error --connect-timeout 15 --max-time 600 --retry 2 "$url" -o "$stage/$name"; then
+    printf '下载 macos-cli-%s\n' "$name"
+    if ! fetch "$url" "$stage/$name" "$name"; then
         [[ -n $api ]] || return 1
-        curl --proto '=https' --proto-redir '=https' --location --fail --silent --show-error --connect-timeout 15 --max-time 600 --retry 2 -H 'Accept: application/octet-stream' "$api" -o "$stage/$name"
+        fetch "$api" "$stage/$name" "$name" application/octet-stream
     fi
     [[ $(shasum -a 256 "$stage/$name" | cut -d' ' -f1) == "$digest" ]]
 }

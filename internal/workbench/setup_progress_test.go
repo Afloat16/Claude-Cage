@@ -93,3 +93,20 @@ func TestToolProgressUsesOnlyKnownPackageNames(t *testing.T) {
 		t.Fatalf("excess bytes entered UI: %+v", p)
 	}
 }
+
+func TestMacHostDownloadsReplacePreviousComponentProgress(t *testing.T) {
+	for _, name := range []string{"chrome.dmg", "macos-cli-claude", "macos-cli-uv.tar.gz", "macos-cli-python.tar.gz", "macos-cli-git.tar.gz"} {
+		p := parseSetupProgress("CAGE_HOST_BYTES " + name + " 25 100")
+		if p == nil || p.System != "macos" || p.Total != 100 || *p.Received != 25 {
+			t.Fatalf("missing host component progress: %s %+v", name, p)
+		}
+		if p := parseSetupProgress("下载 " + name); p == nil || p.Received != nil {
+			t.Fatalf("missing component start: %s %+v", name, p)
+		}
+	}
+	for _, line := range []string{"CAGE_HOST_BYTES unknown 1 2", "CAGE_HOST_BYTES chrome.dmg 3 2", "CAGE_HOST_BYTES chrome.dmg -1 2"} {
+		if p := parseSetupProgress(line); p != nil {
+			t.Fatalf("invalid host progress: %s", line)
+		}
+	}
+}

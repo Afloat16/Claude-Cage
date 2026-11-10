@@ -88,6 +88,14 @@ func run() int {
 		os.Unsetenv(name)
 	}
 	args := os.Args[1:]
+	if len(args) > 0 && args[0] == "host-download" {
+		ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer cancel()
+		if err := hostDownload(ctx, args[1:], os.Stdout); err != nil {
+			return fail(err)
+		}
+		return 0
+	}
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
 		fmt.Print(help)
 		return 0

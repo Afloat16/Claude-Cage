@@ -357,7 +357,7 @@ func cageDebianImages(images []limatype.Image) ([]byte, error) {
 		if !ok || img.Variant != "genericcloud" || img.Digest.Validate() != nil || img.Digest.Algorithm() != "sha512" {
 			continue
 		}
-		for _, base := range []string{"https://mirrors.nju.edu.cn/debian-cdimage/cloud/", "https://mirrors.ustc.edu.cn/debian-cdimage/cloud/", upstream} {
+		for _, base := range []string{upstream, "https://mirrors.nju.edu.cn/debian-cdimage/cloud/", "https://mirrors.ustc.edu.cn/debian-cdimage/cloud/"} {
 			candidate := img
 			candidate.Location = base + suffix
 			candidates = append(candidates, candidate)
