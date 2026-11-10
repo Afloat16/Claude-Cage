@@ -107,3 +107,23 @@ func TestStartJobDistinguishesNetworkFailureFromBootFailure(t *testing.T) {
 		}
 	}
 }
+
+func TestSettingsJobRetainsSaveWhenNetworkCheckFails(t *testing.T) {
+	s := testServer(t)
+	saved := savedProfile{Config: cage.DefaultConfig(), Preferences: s.preferences}
+	saved.Config.ExitPolicy = cage.ExitPolicy{Mode: "dynamic", Scope: "country", CountryCode: "US"}
+	_, err := s.submitJob("settings", func() error {
+		if err := s.apply(saved, false); err != nil {
+			return err
+		}
+		return networkCheckError{errors.New("检测通道 HTTP 503")}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	job := awaitJobIdle(t, &s.jobs)
+	cfg, err := cage.Load(s.configPath)
+	if err != nil || cfg.ExitPolicy != saved.Config.ExitPolicy || !job.SettingsSaved || job.Message != "设置已保存，环境已启动，联网检查未通过" || !strings.Contains(job.Error, "503") {
+		t.Fatalf("persisted settings and later network error: cfg=%v job=%+v err=%v", cfg.ExitPolicy, job, err)
+	}
+}

@@ -14,6 +14,7 @@ import (
 
 type Job struct {
 	Canceled      bool           `json:"canceled,omitempty"`
+	SettingsSaved bool           `json:"settings_saved,omitempty"`
 	SetupProgress *SetupProgress `json:"setup_progress,omitempty"`
 	ID            string         `json:"id"`
 	Kind          string         `json:"kind"`
@@ -157,6 +158,9 @@ func (m *jobManager) finishLocked(execution *jobExecution, err error) {
 	case errors.Is(err, context.Canceled):
 		m.state.Canceled = true
 		m.state.Message = "已取消"
+		if m.state.SettingsSaved {
+			m.state.Message = "设置已保存，后续操作已取消"
+		}
 		diagnostics.Log("info", "task", m.state.Kind+" canceled")
 	case err != nil:
 		m.state.Error = usererror.Display(jobName(m.state.Kind), err, "打开“操作详情”查看失败记录；仍无法处理时，"+failureHelp).Error()
@@ -164,6 +168,11 @@ func (m *jobManager) finishLocked(execution *jobExecution, err error) {
 		var networkFailure networkCheckError
 		if m.state.Kind == "start" && errors.As(err, &networkFailure) {
 			m.state.Message = "环境已启动，联网检查未通过"
+		} else if m.state.SettingsSaved {
+			m.state.Message = "设置已保存，等待环境恢复"
+			if errors.As(err, &networkFailure) {
+				m.state.Message = "设置已保存，环境已启动，联网检查未通过"
+			}
 		}
 		diagnostics.Log("error", "task", fmt.Sprintf("%s: %v; cause=%v", m.state.Kind, err, errors.Unwrap(err)))
 	default:
@@ -236,7 +245,18 @@ func (e *jobExecution) message(message string) {
 	e.owner.mu.Lock()
 	defer e.owner.mu.Unlock()
 	if e.id != "" && e.owner.state.ID == e.id && e.owner.state.Running {
+		if e.owner.state.SettingsSaved {
+			message = "设置已保存，" + message
+		}
 		e.owner.state.Message = message
+	}
+}
+
+func (e *jobExecution) settingsSaved() {
+	e.owner.mu.Lock()
+	defer e.owner.mu.Unlock()
+	if e.id != "" && e.owner.state.ID == e.id && e.owner.state.Running {
+		e.owner.state.SettingsSaved = true
 	}
 }
 
