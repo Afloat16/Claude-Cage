@@ -44,7 +44,6 @@ function rememberSelection() {
 const downloadPath = "/home/cage-browser/Downloads";
 mkdirSync(downloadPath, { recursive: true });
 const splitDirectory = "/usr/local/lib/cage-split";
-const browserIdentity = readFileSync(`${splitDirectory}/browser-identity.js`, "utf8");
 const extensionId = createHash("sha256").update(splitDirectory).digest("hex").slice(0, 32)
   .replace(/./g, c => String.fromCharCode(97 + parseInt(c, 16)));
 const splitURL = `chrome-extension://${extensionId}/control.html`;
@@ -66,6 +65,9 @@ const flags = [
   `--load-extension=${splitDirectory}`,
   "--user-data-dir=/home/cage-browser/profile",
   "--remote-debugging-pipe",
+  // The pipe carries user interaction. Set this before any document is created
+  // so normal pages, login popups and private contexts share the native getter.
+  "--disable-blink-features=AutomationControlled",
   // Kiosk mode blocks Chromium's DevTools UI, including F12. Ordinary
   // fullscreen keeps the guest browser chrome hidden while allowing inspection.
   "--start-fullscreen",
@@ -101,14 +103,7 @@ const pending = new Map(),
   targets = new Map(),
   sessions = new Map();
 const closingTargets = new Map();
-// Cross-process frames must be prepared before their first website script.
-// Reuse clipboard's frame discovery without giving it identity-policy state.
-function clipboardCDP(method, params, ...args) {
-  if (method === "Target.setAutoAttach")
-    params = { ...params, waitForDebuggerOnStart: true };
-  return cdp(method, params, ...args);
-}
-const browserClipboard = new BrowserClipboard(clipboardCDP, ({ id, text, context }) => {
+const browserClipboard = new BrowserClipboard(cdp, ({ id, text, context }) => {
   if (id !== activeId || !targets.has(id)) return;
   const payload = "event: clipboard\ndata: " + JSON.stringify({ id, text, context }) + "\n\n";
   for (const stream of events) stream.write(payload);
@@ -208,16 +203,6 @@ chrome.stdio[4].on("data", (chunk) => {
     }
     vault.event(event);
     const p = event.params || {};
-    if (event.method === "Target.attachedToTarget" && ["page", "iframe"].includes(p.targetInfo?.type) && p.waitingForDebugger) {
-      void (async () => {
-        try {
-          await cdp("Page.enable", {}, p.sessionId);
-          await cdp("Page.addScriptToEvaluateOnNewDocument", { source: browserIdentity, runImmediately: true }, p.sessionId);
-        } finally {
-          await cdp("Runtime.runIfWaitingForDebugger", {}, p.sessionId).catch(() => {});
-        }
-      })().catch(() => {});
-    }
     browserClipboard.event(event);
     if (event.sessionId === splitSession && event.method === "Runtime.bindingCalled" &&
         p.name === "cageFaviconChanged") refreshFavicon(p.payload);
@@ -316,10 +301,6 @@ async function session(id) {
       cdp("Target.attachToTarget", { targetId: id, flatten: true }).then(async (r) => {
         uploadSessions.set(r.sessionId, id);
         await cdp("Page.enable", {}, r.sessionId);
-        // Off-the-record contexts do not load the profile's extensions. Keep
-        // the same page identity there and on already-restored documents.
-        await cdp("Page.addScriptToEvaluateOnNewDocument", { source: browserIdentity }, r.sessionId);
-        await cdp("Runtime.evaluate", { expression: browserIdentity }, r.sessionId);
         await cdp("Page.setInterceptFileChooserDialog", { enabled: true }, r.sessionId);
         await browserClipboard.attach(r.sessionId, id).then(result => {
           if (result?.skipped.length) console.warn("Browser copy observer skipped a modified or replaced document; reload the page to enable copy buttons.");
@@ -978,9 +959,6 @@ server.listen(18500, "127.0.0.1");
   // A cold guest can spend several seconds initializing the sandbox and fonts.
   // Keep ordinary commands bounded separately from this initial handshake.
   await cdp("Browser.getVersion", {}, undefined, 30000);
-  // Website-created popups can run scripts before Cage activates them.
-  await cdp("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: true,
-    flatten: true, filter: [{ type: "page" }, { exclude: true }] });
   await cdp("Target.setDiscoverTargets", { discover: true });
   const { targetInfos } = await cdp("Target.getTargets");
   for (const t of targetInfos)

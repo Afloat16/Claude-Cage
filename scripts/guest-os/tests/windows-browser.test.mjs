@@ -98,6 +98,19 @@ async function fixture(t, configured = {}) {
   } };
 }
 
+integration("interactive browser identity is native in normal and private documents", async t => {
+  const f = await fixture(t);
+  for (const incognito of [false, true]) {
+    const { page } = await f.open("/identity", incognito);
+    assert.deepEqual(await page.evaluate(() => ({
+      automated: navigator.webdriver,
+      getter: Object.getOwnPropertyDescriptor(Navigator.prototype, "webdriver").get.toString(),
+    })), { automated: false, getter: "function get webdriver() { [native code] }" });
+  }
+  assert.ok(f.launchOptions().ignoreDefaultArgs.includes("--enable-automation"));
+  assert.equal(f.launchOptions().chromiumSandbox, true);
+});
+
 integration("actual Chromium tabs restore and project switching retains unsaved editor buffers", async t => {
   const f = await fixture(t);
   const one = await f.open("/one"), two = await f.open("/two");

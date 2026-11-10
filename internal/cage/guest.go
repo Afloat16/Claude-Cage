@@ -97,16 +97,12 @@ var browserSettingsPage string
 //go:embed split-extension/control.js
 var splitControl string
 
-//go:embed split-extension/browser-identity.js
-var browserIdentity string
-
 func splitExtensionScript() string {
 	return "sudo install -d -m 0755 /usr/local/lib/cage-split\n" +
 		"sudo tee /usr/local/lib/cage-split/manifest.json >/dev/null <<'CAGE_MANIFEST'\n" + splitManifest + "\nCAGE_MANIFEST\n" +
 		"sudo tee /usr/local/lib/cage-split/control.html >/dev/null <<'CAGE_HTML'\n" + splitPage + "\nCAGE_HTML\n" +
 		"sudo tee /usr/local/lib/cage-split/settings.html >/dev/null <<'CAGE_SETTINGS_HTML'\n" + browserSettingsPage + "\nCAGE_SETTINGS_HTML\n" +
-		"sudo tee /usr/local/lib/cage-split/control.js >/dev/null <<'CAGE_CONTROL'\n" + splitControl + "\nCAGE_CONTROL\n" +
-		"sudo tee /usr/local/lib/cage-split/browser-identity.js >/dev/null <<'CAGE_IDENTITY'\n" + browserIdentity + "\nCAGE_IDENTITY\n"
+		"sudo tee /usr/local/lib/cage-split/control.js >/dev/null <<'CAGE_CONTROL'\n" + splitControl + "\nCAGE_CONTROL\n"
 }
 
 func browserClipboardScript() string {

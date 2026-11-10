@@ -475,8 +475,10 @@ export function createNativeBrowserService(options = {}) {
           chromiumSandbox: true, viewport, deviceScaleFactor: displayScale, acceptDownloads: true,
           ...(timezone ? { timezoneId: timezone } : {}), ...(language ? { locale: language } : {}),
           ...(networkMode === "proxy" ? { proxy: { server: proxy, bypass: proxyBypass } } : {}),
-          args: ["--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
-          ignoreDefaultArgs: [...(extensionTools ? ["--disable-extensions"] : []), ...(mac ? ["--mute-audio"] : [])], timeout: 20000,
+          // CDP transports the user's input. Preserve the native browser identity
+          // in every context, including private pages that cannot load extensions.
+          args: ["--disable-blink-features=AutomationControlled", "--disable-quic", "--no-first-run", "--no-default-browser-check", "--restore-last-session", "--disable-session-crashed-bubble", "--host-resolver-rules=MAP *.cage-editor.localhost 127.0.0.1", ...(networkMode === "packet" ? ["--no-proxy-server"] : []), ...(extensionTools ? ["--enable-unsafe-extension-debugging", `--load-extension=${splitDirectory}`] : [])],
+          ignoreDefaultArgs: ["--enable-automation", ...(extensionTools ? ["--disable-extensions"] : []), ...(mac ? ["--mute-audio"] : [])], timeout: 20000,
         });
       } catch (error) { if (error.code) throw error; throw failure("browser_unavailable", "Windows 客机图形浏览器未能启动，请检查 GUI 会话和安装组件"); }
       context.setDefaultTimeout(7000); owner = context.browser();

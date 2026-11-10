@@ -25,7 +25,7 @@ export async function createPrivacyController({ preferences } = {}) {
       return;
     }
     res.setHeader('Content-Type', 'text/html');
-    res.end('<!doctype html><script>globalThis.webdriverAtLoad = navigator.webdriver; if (parent !== self) parent.postMessage({fixtureIdentity: navigator.webdriver}, "*")</script><title>Privacy fixture</title><form><input autocomplete="username"><input type="password" autocomplete="current-password"><button>Sign in</button></form>');
+    res.end('<!doctype html><script>globalThis.webdriverAtLoad = navigator.webdriver; if (parent !== self) parent.postMessage({fixtureIdentity: navigator.webdriver, fixtureGetter: Object.getOwnPropertyDescriptor(Navigator.prototype, "webdriver").get.toString()}, "*")</script><title>Privacy fixture</title><form><input autocomplete="username"><input type="password" autocomplete="current-password"><button>Sign in</button></form>');
   });
   await new Promise(resolve => site.listen(0, '127.0.0.1', resolve));
   const origin = `http://localhost:${site.address().port}`;
