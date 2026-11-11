@@ -26,7 +26,7 @@ func TestNativeFramePaceBacksOffUntilChangeOrInput(t *testing.T) {
 			t.Fatalf("pause %d after unchanged frames is %v", i, waits[i])
 		}
 	}
-	pace.input()
+	pace.input(start)
 	if pace.next().Sub(start) != nativeFrameInterval {
 		t.Fatal("input did not restore the full rate")
 	}
@@ -35,6 +35,36 @@ func TestNativeFramePaceBacksOffUntilChangeOrInput(t *testing.T) {
 	pace.answered(true)
 	if pace.next().Sub(start) != nativeFrameInterval {
 		t.Fatal("a changed frame did not restore the full rate")
+	}
+}
+
+func TestNativeFramePaceIsFasterOnlyWhileASmoothDisplayIsOperated(t *testing.T) {
+	start := time.Unix(1000, 0)
+	pace := nativeFramePace{smooth: true}
+	pace.requested(start)
+	if pace.next().Sub(start) != nativeFrameInterval {
+		t.Fatal("an unattended display was requested at the operating rate")
+	}
+	pace.input(start)
+	if pace.next().Sub(start) != nativeOperatingInterval {
+		t.Fatal("an operated display kept the usual rate")
+	}
+	// Unchanged frames still double the pause.
+	pace.answered(false)
+	if pace.next().Sub(start) != 2*nativeOperatingInterval {
+		t.Fatal("an unchanged operated display was not requested less often")
+	}
+	pace.answered(true)
+	later := start.Add(nativeOperatingHold)
+	pace.requested(later)
+	if pace.next().Sub(later) != nativeFrameInterval {
+		t.Fatal("the operating rate outlived the input")
+	}
+	desktop := nativeFramePace{}
+	desktop.requested(start)
+	desktop.input(start)
+	if desktop.next().Sub(start) != nativeFrameInterval {
+		t.Fatal("a display that is not smooth was requested at the operating rate")
 	}
 }
 

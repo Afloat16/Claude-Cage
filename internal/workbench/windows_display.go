@@ -37,6 +37,7 @@ type windowsWindowFrame struct {
 	Density   float64             `json:"density"`
 	Panes     []windowsWindowPane `json:"panes,omitempty"`
 	Overlays  []windowsWindowPane `json:"overlays,omitempty"`
+	Wheel     bool                `json:"pixelWheel,omitempty"` // the guest scrolls by a pointer event's distance
 }
 
 type windowsWindowPane struct {
@@ -426,6 +427,7 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 	sized := false
 	supportsResize := false
 	supportsFence := false
+	pixelWheel := false
 	rgbOrder := false
 	useZlib := false
 	useTight := false
@@ -605,9 +607,11 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 			useZlib = false
 			useTight = false
 			useTightPNG = false
-			fenceRequested := false
+			fenceRequested, wheelRequested := false, false
 			for i := 0; i < len(encodings); i += 4 {
 				switch int32(binary.BigEndian.Uint32(encodings[i:])) {
+				case cageWheelEncoding:
+					wheelRequested = true
 				case -312:
 					fenceRequested = true
 				case -223:
@@ -627,6 +631,19 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 				}
 			}
 			supportsFence = fenceRequested
+			// An older guest would scroll one fixed step for every distance.
+			wheelRequested = wheelRequested && initial.Wheel
+			if fenceRequested && wheelRequested && !pixelWheel {
+				// The viewer sends distances only after this confirmation.
+				confirmation := append([]byte{248, 0, 0, 0, 0x80, 0, 0, 0, byte(len(cageWheelCapability))}, cageWheelCapability...)
+				if err := write(confirmation); err != nil {
+					return err
+				}
+			}
+			pixelWheel = fenceRequested && wheelRequested
+			// Only the browser display offers the wheel. Its guest streams
+			// frames as it composes them, so scrolling can be shown at 60 Hz.
+			pace.smooth = pixelWheel
 		case 3:
 			if body[0] == 0 {
 				incremental = false
@@ -647,6 +664,30 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 				continue
 			}
 			if err := request(map[string]any{"action": "pointer", "target": frame.Target, "mask": body[0], "x": binary.BigEndian.Uint16(body[1:]), "y": binary.BigEndian.Uint16(body[3:])}, nil); err != nil {
+				return err
+			}
+		case cageWheelMessage:
+			dx, dy := int32(binary.BigEndian.Uint32(body[5:])), int32(binary.BigEndian.Uint32(body[9:]))
+			if !pixelWheel || body[0] != 0 || dx < -cageWheelLimit || dx > cageWheelLimit || dy < -cageWheelLimit || dy > cageWheelLimit {
+				return errors.New("画面滚动消息无效")
+			}
+			if !sized || dx == 0 && dy == 0 {
+				continue
+			}
+			// The direction bits let a guest without distances scroll one step.
+			mask := 0
+			if dx < 0 {
+				mask |= 32
+			} else if dx > 0 {
+				mask |= 64
+			}
+			if dy < 0 {
+				mask |= 8
+			} else if dy > 0 {
+				mask |= 16
+			}
+			if err := request(map[string]any{"action": "pointer", "target": frame.Target, "mask": mask,
+				"x": binary.BigEndian.Uint16(body[1:]), "y": binary.BigEndian.Uint16(body[3:]), "deltaX": dx, "deltaY": dy}, nil); err != nil {
 				return err
 			}
 		case 6:
@@ -670,10 +711,10 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 				}
 			}
 		}
-		if message[0] == 4 || message[0] == 5 || message[0] == 6 {
+		if message[0] == 4 || message[0] == 5 || message[0] == 6 || message[0] == cageWheelMessage {
 			// The window answers input at once: the next frame is not delayed
 			// by the pauses of an unchanged screen.
-			pace.input()
+			pace.input(time.Now())
 			if pending {
 				schedule()
 			}
@@ -681,20 +722,41 @@ func serveWindowsWindowRFB(stream io.ReadWriter, initial windowsWindowFrame, req
 	}
 }
 
-// nativeFrameInterval is the shortest time between two frame requests.
-const nativeFrameInterval = time.Second / 30
+// nativeFrameInterval is the shortest time between two frame requests, and
+// nativeOperatingInterval the one a browser display has while it is operated.
+const (
+	nativeFrameInterval     = time.Second / 30
+	nativeOperatingInterval = time.Second / 60
+	nativeOperatingHold     = time.Second
+)
+
+// The Cage browser display sends the scrolled distance in one message. It
+// offers the encoding, and uses the message once a fence names the capability.
+const (
+	cageWheelEncoding   = -57345
+	cageWheelMessage    = 180
+	cageWheelCapability = "cage-wheel-v1"
+	cageWheelLimit      = 2048
+)
 
 // nativeFramePace spaces frame requests to a native guest. Each one is a
 // round trip into the guest, also when its window has not changed, so the
 // pause doubles with every unchanged answer, up to about a quarter second.
-// A changed frame or the viewer's input restores the shortest pause.
+// A changed frame or the viewer's input restores the shortest pause. Every
+// frame is a complete image: a smooth display has the shorter pause only for
+// a moment after input, and plays unattended animation at the usual one.
 type nativeFramePace struct {
-	last      time.Time
-	unchanged int
+	last, acted time.Time
+	unchanged   int
+	smooth      bool
 }
 
 func (p *nativeFramePace) next() time.Time {
-	return p.last.Add(nativeFrameInterval << min(p.unchanged, 3))
+	interval := nativeFrameInterval
+	if p.smooth && !p.acted.IsZero() && p.last.Sub(p.acted) < nativeOperatingHold {
+		interval = nativeOperatingInterval
+	}
+	return p.last.Add(interval << min(p.unchanged, 3))
 }
 
 func (p *nativeFramePace) requested(now time.Time) { p.last = now }
@@ -707,7 +769,7 @@ func (p *nativeFramePace) answered(changed bool) {
 	}
 }
 
-func (p *nativeFramePace) input() { p.unchanged = 0 }
+func (p *nativeFramePace) input(now time.Time) { p.unchanged, p.acted = 0, now }
 
 // readRFBClientMessage reads one complete client message, type byte first.
 func readRFBClientMessage(stream io.Reader) ([]byte, error) {
@@ -747,6 +809,8 @@ func readRFBClientMessage(stream io.Reader) ([]byte, error) {
 			}
 			err = extend(int(size))
 		}
+	case cageWheelMessage:
+		err = extend(13)
 	case 248:
 		if err = extend(8); err == nil {
 			if message[8] > 64 {
