@@ -21,6 +21,7 @@ import { sendFiles, shellFilePaths } from "./file-transfer";
 import { installRemoteInput } from "./remote-input";
 import { useWindowVisibility } from "./window-visibility";
 import { displayGeometry, displaySizeSync } from "./remote-display.mjs";
+import { installLocalCursorFallback } from "./remote-cursor.mjs";
 import { RefreshCw, Clipboard, ArrowUpRight } from "lucide-react";
 import { SessionAccount } from "./session-account";
 import "@xterm/xterm/css/xterm.css";
@@ -88,6 +89,8 @@ export const RemoteView = forwardRef(function RemoteView(
           { credentials: { password }, cageBrowserDisplay: !desktop },
         );
         rfb.current = client;
+        installLocalCursorFallback(client._cursor,
+          !desktop && ["darwin", "macos"].includes(guestPlatform));
         client.scaleViewport = true;
         client.resizeSession = false;
         client.background = "#ffffff";
@@ -413,7 +416,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       void enqueue(async () => {
         const { value, error } = await ready;
         if (error) throw error;
-        if (disposed || !visibleRef.current || !focusedRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
+        if (disposed || !visibleRef.current || !focusedRef.current) throw new Error("终端已切换或断开，请重新粘贴");
         let text = value.text || "";
         if (value.files || value.fileSelection) {
           const result = await sendFiles(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && focusedRef.current && ws.readyState === WebSocket.OPEN });
@@ -577,7 +580,6 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
     if (!instance.current) return;
     instance.current.options.theme = terminalTheme(theme, variant);
     instance.current.options.fontFamily = theme.fonts.code || systemCodeFont;
-    instance.current.options.fontSize = appearance.codeFontSize;
     if (visibleRef.current) fit.current?.fit();
   }, [theme, variant, appearance.codeFontSize]);
   return (
