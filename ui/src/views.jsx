@@ -416,7 +416,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
       void enqueue(async () => {
         const { value, error } = await ready;
         if (error) throw error;
-        if (disposed || !visibleRef.current || !focusedRef.current) throw new Error("终端已切换或断开，请重新粘贴");
+        if (disposed || !visibleRef.current || !focusedRef.current || ws.readyState !== WebSocket.OPEN) throw new Error("终端已切换或断开，请重新粘贴");
         let text = value.text || "";
         if (value.files || value.fileSelection) {
           const result = await sendFiles(value, "terminal", session.id, { valid: () => !disposed && visibleRef.current && focusedRef.current && ws.readyState === WebSocket.OPEN });
@@ -580,6 +580,7 @@ export function TerminalView({ session, visible, focused = true, onStatus, onCon
     if (!instance.current) return;
     instance.current.options.theme = terminalTheme(theme, variant);
     instance.current.options.fontFamily = theme.fonts.code || systemCodeFont;
+    instance.current.options.fontSize = appearance.codeFontSize;
     if (visibleRef.current) fit.current?.fit();
   }, [theme, variant, appearance.codeFontSize]);
   return (
