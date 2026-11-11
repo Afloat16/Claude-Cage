@@ -51,6 +51,109 @@ func (e windowsWindowFailure) Error() string {
 	return "Windows 应用操作未完成，请确认客机已解锁且 Claude 窗口仍在运行"
 }
 
+// Retry only validated frame reads during short window/popup transitions.
+// Session, identity, permission and transport failures are never suppressed.
+func transientWindowFrame(code string) bool {
+	switch code {
+	case "browser_target_changed", "target_changed", "desktop_target_changed", "desktop_capture_busy", "desktop_empty_frame":
+		return true
+	}
+	return false
+}
+
+func requestDesktopFrame(ctx context.Context, request func(any, any) error, input map[string]any, output any) error {
+	for attempt := 0; ; attempt++ {
+		err := request(input, output)
+		var failure windowsWindowFailure
+		if attempt >= 5 || !errors.As(err, &failure) || !transientWindowFrame(failure.code) {
+			return err
+		}
+		timer := time.NewTimer(80 * time.Millisecond)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+// release ends the guest connection that owns this viewer's held keys and
+// buttons and opens another.
+func desktopViewerRequest(ctx context.Context, request func(any, any) error, release func() error) func(map[string]any, any) error {
+	inputSuspended := false
+	return func(input map[string]any, output any) error {
+		if input["action"] == "frame" {
+			if inputSuspended {
+				delete(input, "after")
+			}
+			err := requestDesktopFrame(ctx, request, input, output)
+			if err == nil && !output.(*windowsWindowFrame).Unchanged {
+				inputSuspended = false
+			}
+			return err
+		}
+		isInput := input["action"] == "pointer" || input["action"] == "key" || input["action"] == "text"
+		if isInput && inputSuspended {
+			return nil
+		}
+		err := request(input, output)
+		var failure windowsWindowFailure
+		if isInput && errors.As(err, &failure) && failure.code == "desktop_target_changed" {
+			// The guest keeps keys and buttons held when it rejects an event:
+			// a dropped key-up would leave its key down. Release them, then
+			// drop the old event and queued input; never replay it on a popup.
+			if err := release(); err != nil {
+				return err
+			}
+			inputSuspended = true
+			return nil
+		}
+		return err
+	}
+}
+
+// A viewer's guest connection owns the keys and buttons it holds down, and
+// the guest releases them when that connection ends.
+type desktopViewerConnection struct {
+	mu      sync.Mutex
+	current *nativeWindowConnection
+	closed  bool
+}
+
+func (c *desktopViewerConnection) request(input, output any) error {
+	c.mu.Lock()
+	current := c.current
+	c.mu.Unlock()
+	return current.request(input, output)
+}
+
+func (c *desktopViewerConnection) replace(open func() (*nativeWindowConnection, error)) error {
+	next, err := open()
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		next.Close()
+		return net.ErrClosed
+	}
+	previous := c.current
+	c.current = next
+	c.mu.Unlock()
+	previous.Close()
+	return nil
+}
+
+func (c *desktopViewerConnection) Close() {
+	c.mu.Lock()
+	c.closed = true
+	current := c.current
+	c.mu.Unlock()
+	current.Close()
+}
+
 type nativeWindowConnection struct {
 	cmd     *exec.Cmd
 	input   io.WriteCloser
@@ -137,14 +240,15 @@ func (s *Server) windowsDesktopRequest(ctx context.Context, action string, input
 func (s *Server) windowsDesktopVNC(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	connection, err := s.windowsWindowConnection(ctx)
+	first, err := s.windowsWindowConnection(ctx)
 	if err != nil {
 		http.Error(w, "Windows 应用画面尚未连接", 502)
 		return
 	}
+	connection := &desktopViewerConnection{current: first}
 	defer connection.Close()
 	var frame windowsWindowFrame
-	if err = connection.request(map[string]any{"action": "frame"}, &frame); err != nil {
+	if err = requestDesktopFrame(ctx, connection.request, map[string]any{"action": "frame"}, &frame); err != nil {
 		http.Error(w, err.Error(), 409)
 		return
 	}
@@ -154,6 +258,9 @@ func (s *Server) windowsDesktopVNC(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer close(done)
 		defer remote.Close()
+		request := desktopViewerRequest(ctx, connection.request, func() error {
+			return connection.replace(func() (*nativeWindowConnection, error) { return s.windowsWindowConnection(ctx) })
+		})
 		_ = serveWindowsWindowRFB(remote, frame, func(input map[string]any, output any) error {
 			s.mu.Lock()
 			keyboard := s.preferences.Keyboard
@@ -163,7 +270,7 @@ func (s *Server) windowsDesktopVNC(w http.ResponseWriter, r *http.Request) {
 					input["keysym"] = windowsGuestKeysym(key, keyboard)
 				}
 			}
-			return connection.request(input, output)
+			return request(input, output)
 		})
 	}()
 	s.streamVNC(w, r, local, local, func() { cancel(); local.Close(); remote.Close(); connection.Close() })
